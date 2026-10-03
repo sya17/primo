@@ -11,9 +11,9 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 
 ```bash
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
-               brightnessctl playerctl swayosd hyprsunset pavucontrol network-manager-applet polkit-kde-agent \
+               brightnessctl playerctl swayosd hyprsunset swaync pavucontrol network-manager-applet polkit-kde-agent \
                ttf-jetbrains-mono-nerd inter-font \
-               adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
+               capitaine-cursors noto-fonts-emoji adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
                nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
 git clone https://github.com/sya17/primo.git && cd primo
 ./scripts/install.sh --theme catppuccin-mocha   # add --dry-run to preview
@@ -83,6 +83,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `F` / `V` | Fullscreen / toggle floating |
 | `T` | Theme menu (pick any theme) |
 | `SHIFT+T` | Toggle dark / light theme |
+| `TAB` | Next layout for this workspace (dwindle, master, scrolling, monocle) |
 | `P` / `J` | Pseudotile / toggle split |
 | `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
 | `` ` `` (grave) | Drop-down terminal (floating, toggles a hidden workspace) |
@@ -109,6 +110,30 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
 written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
 `nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
+
+## Workspaces and layouts
+
+Each workspace has a purpose and a layout: 1 general (dwindle), 2 code (master), 3 reading/media
+(scrolling), 4 focus (monocle). `SUPER+TAB` (or a click on the bar icon) cycles the layout of the
+current workspace. Edit the presets in `config/hypr/modules/workspaces.lua`.
+
+## Notifications
+
+`swaync` gives a control center (click the bell in the bar): history, do-not-disturb, quick
+toggles, volume/brightness sliders and media controls. Right-click the bell for do-not-disturb.
+Without swaync installed, dunst is used and the bell just toggles do-not-disturb.
+
+## Login screen (SDDM)
+
+```bash
+sudo scripts/install-sddm-theme.sh        # copies the Primo theme + the active palette and wallpaper
+sddm-greeter-qt6 --test-mode --theme /usr/share/sddm/themes/primo   # preview in a window
+sudo scripts/install-sddm-theme.sh --uninstall                       # undo
+```
+
+Re-run it after switching themes if the login screen should follow. Cursor (white on dark themes,
+black on light) and fonts (Inter, JetBrainsMono Nerd Font, Noto Color Emoji) are set system-wide
+by `theme-switch` and `config/fontconfig`.
 
 ## File manager
 
