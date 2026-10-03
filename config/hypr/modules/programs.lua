@@ -1,7 +1,8 @@
 -- Default applications, shared by keybinds and rules.
 return {
     terminal    = "kitty",
-    fileManager = "env QT_QPA_PLATFORMTHEME=kde dolphin", -- explicit so it also themes in a session started before env.lua set it
+    fileManager = "~/.config/hypr/scripts/files.sh",            -- Nautilus, falls back to Dolphin
+    powerFiles  = "env QT_QPA_PLATFORMTHEME=kde dolphin",       -- split view, tabs, bulk rename, ...
     menu        = "pkill wofi || wofi --show drun",
     clipboard   = "cliphist list | wofi --dmenu -p Clipboard | cliphist decode | wl-copy",
     lock        = "pidof hyprlock || hyprlock",

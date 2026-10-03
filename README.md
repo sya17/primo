@@ -13,7 +13,8 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
                brightnessctl playerctl swayosd hyprsunset pavucontrol network-manager-applet polkit-kde-agent \
                ttf-jetbrains-mono-nerd inter-font \
-               adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools
+               adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
+               nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
 git clone https://github.com/sya17/primo.git && cd primo
 ./scripts/install.sh --theme catppuccin-mocha   # add --dry-run to preview
 ```
@@ -74,7 +75,9 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | Keys | Action |
 | --- | --- |
 | `Q` / `Return` | Terminal |
-| `E` / `R` | File manager / launcher |
+| `E` | File manager: Nautilus, a Finder-like floating window (Space = Quick Look) |
+| `SHIFT+E` | Dolphin for heavy lifting (split view, bulk rename, ...) |
+| `R` | Launcher |
 | `C` | Close window; asks first if a terminal still has a program running |
 | `SHIFT+C` | Close immediately, no confirmation |
 | `F` / `V` | Fullscreen / toggle floating |

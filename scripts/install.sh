@@ -26,7 +26,7 @@ run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 
 # ---- dependencies ----
 required=(Hyprland hyprpaper hyprlock hypridle cliphist wl-paste waybar wofi dunst kitty grim slurp wl-copy notify-send)
-optional=(kwriteconfig6 swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
+optional=(nautilus kwriteconfig6 swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
 missing=(); for c in "${required[@]}"; do command -v "$c" >/dev/null || missing+=("$c"); done
 if (( ${#missing[@]} )); then
     echo "Missing required commands: ${missing[*]}"
@@ -71,4 +71,5 @@ run ln -sf "$root/scripts/theme-switch" "$bin_dir/hypr-theme"
 echo "link: $bin_dir/hypr-theme"
 case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "note: add $bin_dir to PATH to use 'hypr-theme'" ;; esac
 
+"$root/scripts/configure-apps.sh" >/dev/null 2>&1 || true   # file manager prefs, defaults (safe to re-run)
 echo "Done. Log in to Hyprland, or run 'hyprctl reload' inside a session."

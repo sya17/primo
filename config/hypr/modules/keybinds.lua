@@ -6,6 +6,7 @@ local mod = "SUPER"
 hl.bind(mod .. " + Q",      hl.dsp.exec_cmd(programs.terminal))
 hl.bind(mod .. " + Return", hl.dsp.exec_cmd(programs.terminal))
 hl.bind(mod .. " + E",      hl.dsp.exec_cmd(programs.fileManager))
+hl.bind(mod .. " + SHIFT + E", hl.dsp.exec_cmd(programs.powerFiles))
 hl.bind(mod .. " + R",      hl.dsp.exec_cmd(programs.menu))
 hl.bind(mod .. " + L",      hl.dsp.exec_cmd(programs.lock))
 hl.bind(mod .. " + SHIFT + V", hl.dsp.exec_cmd(programs.clipboard))

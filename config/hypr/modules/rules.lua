@@ -51,6 +51,22 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Finder-style: the file manager opens as a centred floating window (SUPER+V tiles it).
+hl.window_rule({
+    name  = "files-window",
+    match = { class = "^org\\.gnome\\.Nautilus$" },
+    float = true,
+    center = true,
+    size  = "1100 700",
+})
+-- Quick Look (select a file, press Space): floating preview in the middle of the screen.
+hl.window_rule({
+    name  = "quick-look",
+    match = { class = "^org\\.gnome\\.NautilusPreviewer$" },
+    float = true,
+    center = true,
+})
+
 -- Firefox Picture-in-Picture: small, always on top, parked in the bottom-right corner.
 hl.window_rule({
     name  = "firefox-pip",
