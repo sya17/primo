@@ -23,6 +23,62 @@ hl.window_rule({
     float = true,
 })
 
+-- ── Utility apps: small floating windows instead of tiling ────────────────
+-- Settings panels and pickers are used briefly, so they float centred at a sensible size.
+local function utility(name, class, size)
+    hl.window_rule({
+        name  = "utility-" .. name,
+        match = { class = class },
+        float = true,
+        center = true,
+        size  = size,
+    })
+end
+
+utility("pavucontrol",   "^org\\.pulseaudio\\.pavucontrol$", "820 560")
+utility("nm-editor",     "^nm-connection-editor$",       "640 480")
+utility("nwg-look",      "^nwg-look$",                    "900 640")
+utility("nwg-displays",  "^nwg-displays$",                "1000 660")
+utility("blueman",       "^blueman-manager$",             "640 480")
+utility("polkit-agent",  "^org\\.kde\\.polkit-kde-authentication-agent-1$", "460 240")
+
+-- File pickers from any app (GTK/Qt portals): float, centred, roomy.
+hl.window_rule({
+    name  = "file-dialogs",
+    match = { title = "^(Open File|Open Files|Open Folder|Save As|Save File|Select .*|Choose .*)$" },
+    float = true,
+    center = true,
+    size  = "900 600",
+})
+
+-- Firefox Picture-in-Picture: small, always on top, parked in the bottom-right corner.
+hl.window_rule({
+    name  = "firefox-pip",
+    match = { class = "^firefox$", title = "^Picture-in-Picture$" },
+    float = true,
+    pin   = true,
+    keep_aspect_ratio = true,
+    size  = "480 270",
+    move  = "monitor_w-496 monitor_h-286", -- size 480x270 + 16px margin
+})
+
+-- Do not lock/suspend while something is fullscreen (video, presentation, game).
+hl.window_rule({
+    name  = "idle-inhibit-fullscreen",
+    match = { class = ".*" },
+    idle_inhibit = "fullscreen",
+})
+
+-- Drop-down terminal (SUPER+grave): lives in the special workspace "term".
+hl.window_rule({
+    name  = "scratch-terminal",
+    match = { class = "^scratchterm$" },
+    float = true,
+    center = true,
+    size  = "monitor_w*0.75 monitor_h*0.55",
+    workspace = "special:term",
+})
+
 -- Frosted-glass look: blur whatever sits behind the translucent bar, launcher and notifications.
 for _, ns in ipairs({ "waybar", "wofi", "notifications", "swayosd" }) do
     hl.layer_rule({

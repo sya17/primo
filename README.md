@@ -78,6 +78,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `SHIFT+T` | Toggle dark / light theme |
 | `P` / `J` | Pseudotile / toggle split |
 | `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
+| `` ` `` (grave) | Drop-down terminal (floating, toggles a hidden workspace) |
 | `S` / `ALT+S` | Toggle scratchpad / move window to it |
 | `SHIFT+S`, `Print` | Screenshot area to clipboard + `~/Pictures/Screenshots` |
 | `SHIFT+Print` | Screenshot full screen |
@@ -87,6 +88,13 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `X` | Power menu (lock, suspend, log out, restart, shut down) |
 | `M` | Log out (asks first) |
 | `N` | Toggle night light (hyprsunset) |
+
+## Window rules
+
+Small utility apps float centred instead of tiling: pavucontrol, nm-connection-editor, nwg-look,
+nwg-displays, blueman, polkit prompts and file pickers. Firefox Picture-in-Picture floats pinned in
+the bottom-right corner. Fullscreen windows inhibit idle/lock. Add more in
+`config/hypr/modules/rules.lua`; find a window's class with `hyprctl clients`.
 
 ## Notes
 

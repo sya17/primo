@@ -40,7 +40,8 @@ for i = 1, 10 do
     hl.bind(mod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
 end
 
--- Scratchpad
+-- Scratchpad: SUPER+grave drop-down terminal, SUPER+S generic scratchpad
+hl.bind(mod .. " + grave", hl.dsp.exec_cmd(programs.scratchTerm))
 hl.bind(mod .. " + S",         hl.dsp.workspace.toggle_special("magic"))
 hl.bind(mod .. " + ALT + S",   hl.dsp.window.move({ workspace = "special:magic" }))
 
