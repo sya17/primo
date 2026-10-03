@@ -10,7 +10,7 @@ hl.bind(mod .. " + R",      hl.dsp.exec_cmd(programs.menu))
 hl.bind(mod .. " + L",      hl.dsp.exec_cmd(programs.lock))
 hl.bind(mod .. " + SHIFT + V", hl.dsp.exec_cmd(programs.clipboard))
 hl.bind(mod .. " + D",      hl.dsp.exec_cmd("nwg-displays"))
-hl.bind(mod .. " + T",      hl.dsp.exec_cmd("nwg-look"))
+hl.bind(mod .. " + T",      hl.dsp.exec_cmd(programs.themeMenu))
 hl.bind(mod .. " + SHIFT + T", hl.dsp.exec_cmd(programs.toggleTheme)) -- dark <-> light
 
 -- Session: SUPER+X power menu, SUPER+M logs out (after confirmation)

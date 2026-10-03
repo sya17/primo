@@ -26,7 +26,7 @@ run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 
 # ---- dependencies ----
 required=(Hyprland hyprpaper hyprlock hypridle cliphist wl-paste waybar wofi dunst kitty grim slurp wl-copy notify-send)
-optional=(swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
+optional=(kwriteconfig6 swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
 missing=(); for c in "${required[@]}"; do command -v "$c" >/dev/null || missing+=("$c"); done
 if (( ${#missing[@]} )); then
     echo "Missing required commands: ${missing[*]}"
@@ -37,6 +37,10 @@ for c in "${optional[@]}"; do command -v "$c" >/dev/null || echo "note: optional
 fonts="$(fc-list : family)"   # capture first: grep -q + pipefail would misreport
 grep -qi "nerd font\|symbols nerd" <<<"$fonts" || echo "note: no Nerd Font found; bar icons will not render (pacman -S ttf-jetbrains-mono-nerd)"
 grep -qi "^inter" <<<"$fonts" || echo "note: font 'Inter' not found (pacman -S inter-font); falling back to Adwaita Sans"
+
+[[ -d /usr/share/themes/adw-gtk3 ]] || echo "note: adw-gtk3 not found (pacman -S adw-gtk-theme); GTK apps fall back to Adwaita"
+[[ -d /usr/share/icons/Papirus ]] || echo "note: Papirus icons not found (pacman -S papirus-icon-theme); using breeze icons"
+pacman -Q plasma-integration breeze >/dev/null 2>&1 || echo "note: Qt apps (Dolphin) need plasma-integration + breeze to follow the theme"
 
 # ---- generate theme first so the symlinked dirs are complete ----
 if (( dry )); then

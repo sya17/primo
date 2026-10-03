@@ -12,7 +12,8 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 ```bash
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
                brightnessctl playerctl swayosd hyprsunset pavucontrol network-manager-applet polkit-kde-agent \
-               ttf-jetbrains-mono-nerd inter-font
+               ttf-jetbrains-mono-nerd inter-font \
+               adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools
 git clone https://github.com/sya17/primo.git && cd primo
 ./scripts/install.sh --theme catppuccin-mocha   # add --dry-run to preview
 ```
@@ -77,6 +78,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `C` | Close window; asks first if a terminal still has a program running |
 | `SHIFT+C` | Close immediately, no confirmation |
 | `F` / `V` | Fullscreen / toggle floating |
+| `T` | Theme menu (pick any theme) |
 | `SHIFT+T` | Toggle dark / light theme |
 | `P` / `J` | Pseudotile / toggle split |
 | `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
@@ -86,10 +88,24 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `SHIFT+Print` | Screenshot full screen |
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history (cliphist + wofi) |
-| `D` / `T` | nwg-displays / nwg-look |
+| `D` | nwg-displays |
 | `X` | Power menu (lock, suspend, log out, restart, shut down) |
 | `M` | Log out (asks first) |
 | `N` | Toggle night light (hyprsunset) |
+
+## App theming (GTK and Qt)
+
+`theme-switch` also themes the apps around the desktop, from the same palette:
+
+- **GTK 3/4** (pavucontrol, nwg-look, file pickers, ...): `adw-gtk3` with named colours in
+  `~/.config/gtk-{3,4}.0/gtk.css`, plus `settings.ini` and `gsettings` (theme, icons, font).
+- **Qt / KDE** (Dolphin, ...): a KDE colour scheme (`Primo.colors`) merged into `kdeglobals`,
+  Breeze style and Papirus icons. Needs `plasma-integration` and `QT_QPA_PLATFORMTHEME=kde`
+  (set in `modules/env.lua`; log in again after the first install).
+
+These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
+written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
+`nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
 
 ## Window rules
 
