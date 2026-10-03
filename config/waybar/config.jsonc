@@ -10,7 +10,7 @@
     "margin-right": 8,
     "spacing": 0,
 
-    "modules-left": ["custom/launcher", "hyprland/workspaces"],
+    "modules-left": ["custom/launcher", "hyprland/workspaces", "custom/layout"],
     "modules-center": ["clock"],
     "modules-right": [
         "tray",
@@ -36,6 +36,16 @@
         "on-click": "activate",
         "format": "",
         "persistent-workspaces": { "*": 4 }
+    },
+
+    "custom/layout": {
+        "exec": "~/.config/hypr/scripts/layout-cycle.sh status",
+        "return-type": "json",
+        "interval": 2,
+        "signal": 10,
+        "format": "{icon}",
+        "format-icons": { "dwindle": "\uf009", "master": "\uf0db", "scrolling": "\uf07e", "monocle": "\uf2d0" },
+        "on-click": "~/.config/hypr/scripts/layout-cycle.sh"
     },
 
     "clock": {

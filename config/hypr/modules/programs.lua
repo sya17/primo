@@ -12,6 +12,7 @@ return {
     nightlight  = "~/.config/hypr/scripts/nightlight.sh toggle",
     scratchTerm = "~/.config/hypr/scripts/scratch-terminal.sh",
     themeMenu   = "~/.config/hypr/scripts/theme-menu.sh",
+    layoutCycle = "~/.config/hypr/scripts/layout-cycle.sh",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }

@@ -27,7 +27,7 @@ tooltip label { color: @text; padding: 2px 4px; }
     padding: 0 6px;
 }
 
-#custom-launcher, #clock, #network, #pulseaudio, #battery, #tray,
+#custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
 #custom-dnd, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
@@ -61,6 +61,9 @@ tooltip label { color: @text; padding: 2px 4px; }
     background-color: @accent;
 }
 #workspaces button.urgent { background-color: @red; }
+
+#custom-layout { color: @subtext; padding-left: 4px; }
+#custom-layout:hover { color: @accent2; }
 
 /* ── Clock ───────────────────────────────────────────── */
 #clock { padding: 0 14px; letter-spacing: 0.3px; }

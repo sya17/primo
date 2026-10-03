@@ -27,6 +27,7 @@ hl.bind(mod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mod .. " + J", hl.dsp.layout("togglesplit")) -- dwindle only
 hl.bind(mod .. " + F", hl.dsp.window.fullscreen())
+hl.bind(mod .. " + Tab", hl.dsp.exec_cmd(programs.layoutCycle)) -- next layout for this workspace
 
 -- Focus
 hl.bind(mod .. " + left",  hl.dsp.focus({ direction = "left" }))
