@@ -33,9 +33,19 @@ conf="$themes_dir/$theme/theme.conf"
 declare -A v
 while IFS='=' read -r key val; do
     [[ -z "$key" || "$key" == \#* ]] && continue
-    v[$key]="${val%%#*}"          # allow trailing comments
-    v[$key]="${v[$key]%"${v[$key]##*[![:space:]]}"}"
+    val="${val%% #*}"             # allow trailing " # comment"
+    v[$key]="${val%"${val##*[![:space:]]}"}"
 done < "$conf"
+
+# ---- validate before touching any output file ----
+required=(name base mantle crust surface0 surface1 overlay text subtext accent accent2
+          red orange yellow green cyan blue magenta font_sans font_mono font_icon
+          gaps_in gaps_out border_size rounding blur_size blur_passes)
+missing=(); for key in "${required[@]}"; do [[ -n "${v[$key]:-}" ]] || missing+=("$key"); done
+(( ${#missing[@]} == 0 )) || die "theme '$theme' is missing: ${missing[*]}"
+for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta; do
+    [[ "${v[$key]}" =~ ^[0-9a-fA-F]{6}$ ]] || die "theme '$theme': $key must be 6 hex digits without '#', got '${v[$key]}'"
+done
 
 # ---- derived values ----
 wp="${v[wallpaper]:-}"

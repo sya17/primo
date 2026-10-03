@@ -2,6 +2,9 @@
 -- the fallback keeps Hyprland usable before `theme-switch` has ever run.
 -- https://wiki.hypr.land/Configuring/Basics/Variables/
 local ok, theme = pcall(require, "theme")
+if not ok and not tostring(theme):find("module 'theme' not found", 1, true) then
+    error(theme) -- theme.lua exists but is broken: do not hide it
+end
 if not ok then
     theme = {
         border_size = 2, gaps_in = 5, gaps_out = 12, rounding = 10,

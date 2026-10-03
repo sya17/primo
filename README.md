@@ -77,6 +77,9 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 
 ## Notes
 
+- Clipboard history (`cliphist`) stores everything you copy, including passwords from a
+  password manager. Wipe it with `cliphist wipe`, or drop the `wl-paste ... cliphist store`
+  lines in `config/hypr/modules/autostart.lua` to disable it.
 - `nwg-displays` writes hyprlang `monitors.conf`, which the Lua config does not read; copy its
   result into `local.lua`.
 - Hyprland validation: `Hyprland --verify-config -c config/hypr/hyprland.lua`.
