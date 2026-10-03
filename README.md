@@ -38,12 +38,20 @@ kitty `theme.conf`) are git-ignored.
 ## Themes
 
 ```bash
-hypr-theme --list
-hypr-theme nord          # renders + reloads Hyprland, Waybar, Dunst, Kitty, Hyprpaper
+hypr-theme --list        # name + mode (dark/light)
+hypr-theme dark          # default; light and toggle work the same way
+hypr-theme light
+hypr-theme toggle        # SUPER+SHIFT+T
+hypr-theme nord          # any theme by name; renders + reloads Hyprland, Waybar, Dunst, Kitty, Hyprpaper
 hypr-theme --current
 ```
 
-Create a theme: copy `themes/catppuccin-mocha` to `themes/<name>`, edit `theme.conf`.
+Dark is the default (`catppuccin-mocha`). `dark`/`light` apply the theme last used in that mode,
+and the GTK `color-scheme` is switched too. Bundled: `catppuccin-mocha`, `nord` (dark),
+`catppuccin-latte` (light).
+
+Create a theme: copy `themes/catppuccin-mocha` to `themes/<name>`, edit `theme.conf`
+(set `mode=dark` or `mode=light`).
 Set `wallpaper=` to a file in that folder; otherwise `~/Pictures/wallpaper.jpg` is used.
 The bundled wallpapers are generated from each palette and are MIT-licensed:
 `scripts/gen-wallpaper.py <theme> [WIDTHxHEIGHT]`.
@@ -64,7 +72,10 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | --- | --- |
 | `Q` / `Return` | Terminal |
 | `E` / `R` | File manager / launcher |
-| `C` / `F` / `V` | Close / fullscreen / toggle floating |
+| `C` | Close window; asks first if a terminal still has a program running |
+| `SHIFT+C` | Close immediately, no confirmation |
+| `F` / `V` | Fullscreen / toggle floating |
+| `SHIFT+T` | Toggle dark / light theme |
 | `P` / `J` | Pseudotile / toggle split |
 | `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
 | `S` / `ALT+S` | Toggle scratchpad / move window to it |

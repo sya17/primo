@@ -11,13 +11,16 @@ hl.bind(mod .. " + L",      hl.dsp.exec_cmd(programs.lock))
 hl.bind(mod .. " + SHIFT + V", hl.dsp.exec_cmd(programs.clipboard))
 hl.bind(mod .. " + D",      hl.dsp.exec_cmd("nwg-displays"))
 hl.bind(mod .. " + T",      hl.dsp.exec_cmd("nwg-look"))
+hl.bind(mod .. " + SHIFT + T", hl.dsp.exec_cmd(programs.toggleTheme)) -- dark <-> light
 
 -- Session
 hl.bind(mod .. " + M", hl.dsp.exec_cmd(
     "command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
 
 -- Window management
-hl.bind(mod .. " + C", hl.dsp.window.close())
+-- Confirms first when a terminal still has a program running; SHIFT forces an immediate close.
+hl.bind(mod .. " + C",         hl.dsp.exec_cmd(programs.closeWindow))
+hl.bind(mod .. " + SHIFT + C", hl.dsp.window.close())
 hl.bind(mod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mod .. " + J", hl.dsp.layout("togglesplit")) -- dwindle only

@@ -7,3 +7,4 @@ $accent  = rgba({{accent}}ff)
 $red     = rgba({{red}}ff)
 $yellow  = rgba({{yellow}}ff)
 $font    = {{font_sans}}
+$lock_brightness = {{lock_brightness}}

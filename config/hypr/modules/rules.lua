@@ -22,3 +22,13 @@ hl.window_rule({
     move  = "20 monitor_h-120",
     float = true,
 })
+
+-- Frosted-glass look: blur whatever sits behind the translucent bar, launcher and notifications.
+for _, ns in ipairs({ "waybar", "wofi", "notifications" }) do
+    hl.layer_rule({
+        name  = "blur-" .. ns,
+        match = { namespace = "^" .. ns .. "$" },
+        blur  = true,
+        ignore_alpha = 0.3,
+    })
+end
