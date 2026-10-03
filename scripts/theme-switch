@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Render a theme into the config directories and reload the running apps.
+#
+# Usage: theme-switch [--no-reload] <theme>
+#        theme-switch --list | --current
+set -euo pipefail
+
+# Resolve the repo even when invoked through a symlink (e.g. ~/.local/bin/hypr-theme).
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(cd "$(dirname "$self")/.." && pwd)"
+themes_dir="$root/themes"
+tpl_dir="$root/templates"
+out_dir="$root/config"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-dotfiles"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+list_themes() { for d in "$themes_dir"/*/theme.conf; do basename "$(dirname "$d")"; done; }
+
+reload=1
+case "${1:-}" in
+    --list)    list_themes; exit 0 ;;
+    --current) cat "$state_dir/current" 2>/dev/null || echo "(none)"; exit 0 ;;
+    --no-reload) reload=0; shift ;;
+    -h|--help|"") sed -n '2,6p' "$self" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+theme="${1:-}"
+conf="$themes_dir/$theme/theme.conf"
+[[ -f "$conf" ]] || die "unknown theme '$theme' (available: $(list_themes | tr '\n' ' '))"
+
+# ---- parse key=value ----
+declare -A v
+while IFS='=' read -r key val; do
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    v[$key]="${val%%#*}"          # allow trailing comments
+    v[$key]="${v[$key]%"${v[$key]##*[![:space:]]}"}"
+done < "$conf"
+
+# ---- derived values ----
+wp="${v[wallpaper]:-}"
+[[ -n "$wp" && "$wp" != /* ]] && wp="$themes_dir/$theme/$wp"
+[[ -f "$wp" ]] || wp="$HOME/Pictures/wallpaper.jpg"
+v[wallpaper_path]="$wp"
+
+# ---- render ----
+render() { # template -> output
+    local tpl="$1" out="$2" content key
+    content="$(<"$tpl")"
+    for key in "${!v[@]}"; do
+        content="${content//\{\{$key\}\}/${v[$key]}}"
+    done
+    if grep -qo '{{[a-z_0-9]*}}' <<<"$content"; then
+        die "unresolved placeholder in $tpl: $(grep -o '{{[a-z_0-9]*}}' <<<"$content" | sort -u | tr '\n' ' ')"
+    fi
+    mkdir -p "$(dirname "$out")"
+    printf '%s\n' "$content" > "$out"
+}
+
+render "$tpl_dir/hypr/theme.lua.tpl"          "$out_dir/hypr/theme.lua"
+render "$tpl_dir/hypr/hyprpaper.conf.tpl"     "$out_dir/hypr/hyprpaper.conf"
+render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.conf"
+render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
+render "$tpl_dir/wofi/theme.css.tpl"          "$out_dir/wofi/theme.css"
+render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
+render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
+
+mkdir -p "$state_dir"
+echo "$theme" > "$state_dir/current"
+echo "Applied theme: ${v[name]:-$theme}"
+
+(( reload )) || exit 0
+
+# ---- reload whatever is running ----
+running() { pgrep -x "$1" >/dev/null; }
+
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    hyprctl reload >/dev/null
+    if running hyprpaper; then
+        pkill -x hyprpaper
+        sleep 0.2
+    fi
+    setsid -f hyprpaper >/dev/null 2>&1
+fi
+running waybar && pkill -SIGUSR2 -x waybar
+running dunst  && dunstctl reload
+running kitty  && pkill -SIGUSR1 -x kitty
+exit 0
