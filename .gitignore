@@ -7,6 +7,7 @@ config/waybar/style.css
 config/wofi/style.css
 config/wofi/menu.css
 config/swayosd/style.css
+config/swaync/style.css
 config/dunst/dunstrc.d/
 config/kitty/theme.conf
 

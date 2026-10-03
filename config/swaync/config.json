@@ -1,0 +1,49 @@
+{
+  "$schema": "/etc/xdg/swaync/configSchema.json",
+  "positionX": "right",
+  "positionY": "top",
+  "layer": "overlay",
+  "control-center-layer": "top",
+  "layer-shell": true,
+  "cssPriority": "user",
+  "control-center-margin-top": 6,
+  "control-center-margin-bottom": 8,
+  "control-center-margin-right": 8,
+  "control-center-margin-left": 0,
+  "control-center-width": 380,
+  "control-center-height": 700,
+  "fit-to-screen": false,
+  "notification-window-width": 360,
+  "notification-icon-size": 44,
+  "notification-body-image-height": 100,
+  "notification-body-image-width": 200,
+  "notification-2fa-action": true,
+  "notification-inline-replies": false,
+  "timeout": 6,
+  "timeout-low": 4,
+  "timeout-critical": 0,
+  "transition-time": 180,
+  "hide-on-clear": false,
+  "hide-on-action": true,
+  "keyboard-shortcuts": true,
+  "image-visibility": "when-available",
+  "script-fail-notify": true,
+  "widgets": ["title", "dnd", "buttons-grid", "volume", "backlight", "mpris", "notifications"],
+  "widget-config": {
+    "title": { "text": "Notifications", "clear-all-button": true, "button-text": "Clear" },
+    "dnd": { "text": "Do not disturb" },
+    "buttons-grid": {
+      "actions": [
+        { "label": "", "command": "nm-connection-editor", "type": "button" },
+        { "label": "", "command": "~/.config/hypr/scripts/nightlight.sh toggle", "type": "button" },
+        { "label": "", "command": "pavucontrol", "type": "button" },
+        { "label": "", "command": "~/.config/hypr/scripts/screenshot.sh area", "type": "button" },
+        { "label": "", "command": "pidof hyprlock || hyprlock", "type": "button" },
+        { "label": "", "command": "~/.config/hypr/scripts/power-menu.sh", "type": "button" }
+      ]
+    },
+    "volume": { "label": "", "show-per-app": false },
+    "backlight": { "label": "", "device": "amdgpu_bl1" },
+    "mpris": { "image-size": 56, "image-radius": 10 }
+  }
+}

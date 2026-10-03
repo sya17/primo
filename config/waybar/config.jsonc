@@ -18,7 +18,7 @@
         "network",
         "pulseaudio",
         "battery",
-        "custom/dnd",
+        "custom/notifications",
         "custom/nightlight",
         "custom/power"
     ],
@@ -98,14 +98,22 @@
         "tooltip-format": "{timeTo}"
     },
 
-    "custom/dnd": {
-        "exec": "~/.config/hypr/scripts/dnd.sh status",
+    // Click: open the notification center (swaync). Right-click: do not disturb.
+    "custom/notifications": {
+        "exec": "~/.config/hypr/scripts/notifications.sh",
         "return-type": "json",
-        "interval": 5,
-        "signal": 8,
         "format": "{icon}",
-        "format-icons": { "off": "", "on": "" },
-        "on-click": "~/.config/hypr/scripts/dnd.sh toggle"
+        "format-icons": {
+            "notification": "\uf0f3",
+            "none": "\uf0f3",
+            "inhibited-notification": "\uf1f6",
+            "inhibited-none": "\uf1f6",
+            "dnd-notification": "\uf1f6",
+            "dnd-none": "\uf1f6"
+        },
+        "on-click": "~/.config/hypr/scripts/notifications.sh panel",
+        "on-click-right": "~/.config/hypr/scripts/notifications.sh dnd",
+        "escape": true
     },
 
     "custom/nightlight": {

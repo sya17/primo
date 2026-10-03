@@ -21,4 +21,4 @@ done
 
 hyprctl eval "hl.workspace_rule({ workspace = \"$ws\", layout = \"$next\" })" >/dev/null
 pkill -RTMIN+10 waybar 2>/dev/null
-notify-send -h string:x-dunst-stack-tag:layout -t 1200 "Layout" "${next^}"
+notify-send -h string:x-dunst-stack-tag:layout -h string:x-canonical-private-synchronous:layout -t 1200 "Layout" "${next^}"

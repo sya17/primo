@@ -8,7 +8,7 @@ root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 bin_dir="$HOME/.local/bin"
 stamp="$(date +%Y%m%d-%H%M%S)"
-apps=(hypr waybar wofi dunst kitty swayosd fontconfig)
+apps=(hypr waybar wofi dunst kitty swayosd swaync fontconfig)
 theme="catppuccin-mocha"
 dry=0
 

@@ -28,7 +28,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 }
 
 #custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
-#custom-dnd, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
+#custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
     color: @text;
@@ -79,13 +79,16 @@ tooltip label { color: @text; padding: 2px 4px; }
 #battery.warning:not(.charging)  { color: @orange; }
 #battery.critical:not(.charging) { color: @red; animation: pulse 1s ease-in-out infinite alternate; }
 
-#custom-dnd.off, #custom-nightlight.off { color: @overlay; }
-#custom-dnd.on          { color: @red; }
+#custom-notifications.none { color: @overlay; }
+#custom-notifications.notification { color: @accent; }
+#custom-notifications.dnd-none, #custom-notifications.dnd-notification,
+#custom-notifications.inhibited-none, #custom-notifications.inhibited-notification { color: @red; }
+#custom-nightlight.off { color: @overlay; }
 #custom-nightlight.on   { color: @orange; }
 
 #custom-power { color: @subtext; padding-right: 11px; }
 #custom-power:hover { color: @red; }
 #custom-launcher:hover, #network:hover, #pulseaudio:hover,
-#custom-dnd:hover, #custom-nightlight:hover { color: @accent2; }
+#custom-notifications:hover, #custom-nightlight:hover { color: @accent2; }
 
 @keyframes pulse { to { opacity: 0.45; } }

@@ -5,7 +5,7 @@
 set -uo pipefail
 
 osd_dunst() { # label value icon
-    notify-send -h string:x-dunst-stack-tag:osd -h "int:value:$2" -t 1200 -i "$3" "$1" "$2%"
+    notify-send -h string:x-dunst-stack-tag:osd -h string:x-canonical-private-synchronous:osd -h "int:value:$2" -t 1200 -i "$3" "$1" "$2%"
 }
 volume() { wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{printf "%d", $2*100}'; }
 muted()  { wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED; }
