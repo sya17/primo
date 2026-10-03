@@ -122,6 +122,8 @@ render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
 render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
 render "$tpl_dir/swayosd/style.css.tpl"       "$out_dir/swayosd/style.css"
 render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
+render "$tpl_dir/sddm/theme.conf.tpl"         "$root/sddm/primo/theme.conf"
+cp -f "${v[wallpaper_path]}" "$root/sddm/primo/background.png" 2>/dev/null || true   # login screen uses the same wallpaper
 render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
 
 # ---- toolkit theming: written to ~/.config / ~/.local (not into the repo) ----

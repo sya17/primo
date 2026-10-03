@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=Primo
+Description=Compact, crisp login screen that follows the Primo palette
+Author=sya
+License=MIT
+Type=sddm-theme
+Version=0.1
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=primo
+Theme-API=2.0
