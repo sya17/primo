@@ -61,7 +61,7 @@ while IFS='=' read -r key val; do
 done < "$conf"
 
 # ---- validate before touching any output file ----
-required=(name mode shadow lock_brightness lock_tint base mantle crust surface0 surface1 overlay text subtext accent accent2
+required=(name mode shadow lock_brightness lock_tint bar_radius input_rounding base mantle crust surface0 surface1 overlay text subtext accent accent2
           red orange yellow green cyan blue magenta font_sans font_mono font_icon
           gaps_in gaps_out border_size rounding blur_size blur_passes)
 missing=(); for key in "${required[@]}"; do [[ -n "${v[$key]:-}" ]] || missing+=("$key"); done
@@ -73,6 +73,7 @@ done
 [[ "${v[mode]}" == dark || "${v[mode]}" == light ]] || die "theme '$theme': mode must be dark or light"
 
 # ---- derived values ----
+v[menu_radius]="$(( ${v[rounding]} + 6 ))"   # launcher / menu window = a bit rounder than its rows
 # <key>_rgb = "r, g, b" so templates can write rgba({{base_rgb}}, 0.9) (GTK4 has no alpha()).
 for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow; do
     hex="${v[$key]}"
@@ -100,6 +101,7 @@ render() { # template -> output
 render "$tpl_dir/hypr/theme.lua.tpl"          "$out_dir/hypr/theme.lua"
 render "$tpl_dir/hypr/hyprpaper.conf.tpl"     "$out_dir/hypr/hyprpaper.conf"
 render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.conf"
+render "$tpl_dir/waybar/style.css.tpl"        "$out_dir/waybar/style.css"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
 render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"

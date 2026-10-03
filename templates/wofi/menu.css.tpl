@@ -4,7 +4,7 @@
 window { margin: 0; background-color: transparent; font-size: 14px; }
 
 #window {
-    border-radius: 18px;
+    border-radius: {{menu_radius}}px;
     background-color: alpha(#{{base}}, 0.94);
     border: 1px solid alpha(#{{text}}, 0.12);
 }
@@ -14,7 +14,7 @@ window { margin: 0; background-color: transparent; font-size: 14px; }
 #scroll { margin: 0; border: none; }
 #input { margin: 0; padding: 0; border: none; background: transparent; min-height: 0; }
 
-#entry { padding: 9px 10px; margin: 2px 0; border: none; border-radius: 12px; }
+#entry { padding: 9px 10px; margin: 2px 0; border: none; border-radius: {{rounding}}px; }
 #text { margin: 0 6px; color: #{{text}}; }
 #entry:selected {
     background-color: alpha(#{{accent}}, 0.28);

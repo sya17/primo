@@ -47,14 +47,16 @@ hypr-theme --current
 ```
 
 Dark is the default (`catppuccin-mocha`). `dark`/`light` apply the theme last used in that mode,
-and the GTK `color-scheme` is switched too. Bundled: `catppuccin-mocha`, `nord` (dark),
-`catppuccin-latte` (light).
+and the GTK `color-scheme` is switched too. Bundled: `primo-dusk` (dark) and `primo-dawn` (light) are the signature pair: compact and crisp,
+periwinkle with a coral spark. Also `catppuccin-mocha`, `nord` (dark) and `catppuccin-latte` (light).
 
 Create a theme: copy `themes/catppuccin-mocha` to `themes/<name>`, edit `theme.conf`
 (set `mode=dark` or `mode=light`).
+Shape lives in the theme too: `rounding`, `gaps_*`, `bar_radius` (999 = pill) and `input_rounding`.
+`wallpaper_style=lines` adds flowing contour lines to the generated wallpaper.
 Set `wallpaper=` to a file in that folder; otherwise `~/Pictures/wallpaper.jpg` is used.
 The bundled wallpapers are generated from each palette and are MIT-licensed:
-`scripts/gen-wallpaper.py <theme> [WIDTHxHEIGHT]`.
+`scripts/gen-wallpaper.py <theme> [WIDTHxHEIGHT]` (styles: `gradient`, `lines`).
 To theme another app, add a template under `templates/` and one `render` line in
 `scripts/theme-switch`.
 

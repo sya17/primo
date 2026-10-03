@@ -10,7 +10,7 @@ window {
 }
 
 #window {
-    border-radius: 20px;
+    border-radius: {{menu_radius}}px;
     background-color: alpha(#{{base}}, 0.95);
     border: 1px solid alpha(#{{text}}, 0.12);
 }
@@ -19,7 +19,7 @@ window {
     margin: 15px;
     padding: 12px;
     border: 1px solid alpha(#{{text}}, 0.1);
-    border-radius: 12px;
+    border-radius: {{rounding}}px;
     background-color: alpha(#{{text}}, 0.05);
     color: #{{text}};
     font-weight: 600;
@@ -29,6 +29,6 @@ window {
 #inner-box { margin: 10px; border: none; background-color: transparent; }
 #scroll { margin: 0; border: none; }
 #text { margin: 8px; border: none; color: #{{subtext}}; }
-#entry { padding: 5px; border: none; border-radius: 10px; }
+#entry { padding: 5px; border: none; border-radius: {{rounding}}px; }
 #entry:selected { background-color: alpha(#{{accent}}, 0.2); border: none; }
 #entry:selected #text { color: #{{text}}; font-weight: bold; }

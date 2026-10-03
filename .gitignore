@@ -3,6 +3,7 @@ config/hypr/theme.lua
 config/hypr/hyprpaper.conf
 config/hypr/hyprlock-theme.conf
 config/waybar/theme.css
+config/waybar/style.css
 config/wofi/style.css
 config/wofi/menu.css
 config/swayosd/style.css
