@@ -34,8 +34,9 @@ if (( ${#missing[@]} )); then
     exit 1
 fi
 for c in "${optional[@]}"; do command -v "$c" >/dev/null || echo "note: optional '$c' not found"; done
-fc-list | grep -qi "nerd font\|symbols nerd" || echo "note: no Nerd Font found; bar icons will not render (pacman -S ttf-jetbrains-mono-nerd)"
-fc-list | grep -qi "inter" || echo "note: font 'Inter' not found (pacman -S inter-font); falling back to Adwaita Sans"
+fonts="$(fc-list : family)"   # capture first: grep -q + pipefail would misreport
+grep -qi "nerd font\|symbols nerd" <<<"$fonts" || echo "note: no Nerd Font found; bar icons will not render (pacman -S ttf-jetbrains-mono-nerd)"
+grep -qi "^inter" <<<"$fonts" || echo "note: font 'Inter' not found (pacman -S inter-font); falling back to Adwaita Sans"
 
 # ---- generate theme first so the symlinked dirs are complete ----
 if (( dry )); then
