@@ -2,14 +2,14 @@
 window#osd {
     padding: 12px 22px;
     border-radius: 999px;
-    background: alpha(#{{base}}, 0.9);
-    border: 1px solid alpha(#{{text}}, 0.12);
+    background: rgba({{base_rgb}}, 0.9);
+    border: 1px solid rgba({{text_rgb}}, 0.12);
 }
 window#osd #container { margin: 0; }
 window#osd image, window#osd label { color: #{{text}}; }
 window#osd progressbar:disabled, window#osd image:disabled { opacity: 0.45; }
 window#osd progressbar { min-height: 6px; border-radius: 999px; background: transparent; }
-window#osd trough { min-height: inherit; border-radius: inherit; border: none; background: alpha(#{{text}}, 0.18); }
+window#osd trough { min-height: inherit; border-radius: inherit; border: none; background: rgba({{text_rgb}}, 0.18); }
 window#osd progress {
     min-height: inherit; border-radius: inherit; border: none;
     background-image: linear-gradient(to right, #{{accent}}, #{{accent2}});

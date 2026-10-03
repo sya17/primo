@@ -17,6 +17,6 @@ window { margin: 0; background-color: transparent; font-size: 14px; }
 #entry { padding: 9px 10px; margin: 2px 0; border: none; border-radius: 12px; }
 #text { margin: 0 6px; color: #{{text}}; }
 #entry:selected {
-    background-image: linear-gradient(to right, alpha(#{{accent}}, 0.45), alpha(#{{accent2}}, 0.45));
+    background-color: alpha(#{{accent}}, 0.28);
 }
 #entry:selected #text { color: #{{text}}; font-weight: bold; }

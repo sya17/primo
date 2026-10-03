@@ -9,7 +9,7 @@ return {
     blur_size   = {{blur_size}},
     blur_passes = {{blur_passes}},
     colors = {
-        active_border   = { "rgba({{accent}}ee)", "rgba({{accent2}}ee)" },
+        active_border   = { "rgba({{accent}}ee)" },
         inactive_border = "rgba({{overlay}}aa)",
         shadow          = "rgba({{shadow}}ee)",
     },

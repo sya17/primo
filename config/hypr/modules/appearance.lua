@@ -10,7 +10,7 @@ if not ok then
         border_size = 2, gaps_in = 5, gaps_out = 12, rounding = 10,
         blur_size = 3, blur_passes = 1,
         colors = {
-            active_border   = { "rgba(33ccffee)", "rgba(00ff99ee)" },
+            active_border   = { "rgba(33ccffee)" },
             inactive_border = "rgba(595959aa)",
             shadow          = "rgba(1a1a1aee)",
         },

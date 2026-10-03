@@ -73,6 +73,11 @@ done
 [[ "${v[mode]}" == dark || "${v[mode]}" == light ]] || die "theme '$theme': mode must be dark or light"
 
 # ---- derived values ----
+# <key>_rgb = "r, g, b" so templates can write rgba({{base_rgb}}, 0.9) (GTK4 has no alpha()).
+for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow; do
+    hex="${v[$key]}"
+    v[${key}_rgb]="$((16#${hex:0:2})), $((16#${hex:2:2})), $((16#${hex:4:2}))"
+done
 wp="${v[wallpaper]:-}"
 [[ -n "$wp" && "$wp" != /* ]] && wp="$themes_dir/$theme/$wp"
 [[ -f "$wp" ]] || wp="$HOME/Pictures/wallpaper.jpg"

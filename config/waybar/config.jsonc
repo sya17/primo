@@ -29,7 +29,7 @@
         "tooltip": false
     },
 
-    // iOS page-dots: small dots, the active workspace stretches into a gradient pill.
+    // iOS page-dots: small dots, the active workspace stretches into a pill.
     "hyprland/workspaces": {
         "disable-scroll": false,
         "all-outputs": true,
@@ -81,7 +81,7 @@
 
     "battery": {
         "states": { "warning": 25, "critical": 12 },
-        "format": "{icon} {capacity}%",
+        "format": "{icon}   {capacity}%",
         "format-charging": " {capacity}%",
         "format-plugged": " {capacity}%",
         "format-icons": ["", "", "", "", ""],

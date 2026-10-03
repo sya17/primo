@@ -34,7 +34,7 @@ tooltip label { color: @text; padding: 2px 4px; }
     transition: color 0.25s ease, background-color 0.25s ease;
 }
 
-/* ── Launcher: gradient glyph ────────────────────────── */
+/* ── Launcher ────────────────────────────────────────── */
 #custom-launcher {
     font-size: 15px;
     color: @accent;
@@ -57,7 +57,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 #workspaces button:hover { background-color: alpha(@text, 0.55); }
 #workspaces button.active {
     min-width: 22px;
-    background-image: linear-gradient(to right, @accent, @accent2);
+    background-color: @accent;
 }
 #workspaces button.urgent { background-color: @red; }
 
