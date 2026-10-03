@@ -19,38 +19,38 @@
         "all-outputs": true,
         "on-click": "activate",
         "format": "{icon}",
-        "format-icons": { "active": "", "default": "", "urgent": "" },
+        "format-icons": { "active": "\uf111", "default": "\uf10c", "urgent": "\uf06a" },
         "persistent-workspaces": { "*": 3 }
     },
     "custom/launcher": {
-        "format": "",
+        "format": "\uf303",
         "on-click": "pkill wofi || wofi --show drun",
         "tooltip": false
     },
-    "cpu": { "format": " {usage}%", "tooltip": false },
-    "memory": { "format": " {}%" },
+    "cpu": { "format": "\uf2db {usage}%", "tooltip": false },
+    "memory": { "format": "\uf1c0 {}%" },
     "clock": {
         "format": "{:%a, %d %b  %H:%M}",
         "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>"
     },
     "network": {
-        "format-wifi": " {essid}",
-        "format-ethernet": " {ipaddr}",
-        "format-disconnected": "⚠ Disconnected",
+        "format-wifi": "\uf1eb {essid}",
+        "format-ethernet": "\uf796 {ipaddr}",
+        "format-disconnected": "\uf071 Disconnected",
         "tooltip-format": "{ifname} via {gwaddr}"
     },
     "pulseaudio": {
         "format": "{icon} {volume}%",
-        "format-muted": " Muted",
-        "format-icons": { "default": ["", "", ""] },
+        "format-muted": "\uf6a9 Muted",
+        "format-icons": { "default": ["\uf026", "\uf027", "\uf028"] },
         "on-click": "pavucontrol"
     },
     "battery": {
         "states": { "warning": 30, "critical": 15 },
         "format": "{icon} {capacity}%",
-        "format-charging": " {capacity}%",
-        "format-plugged": " {capacity}%",
-        "format-icons": ["", "", "", "", ""]
+        "format-charging": "\uf0e7 {capacity}%",
+        "format-plugged": "\uf1e6 {capacity}%",
+        "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"]
     },
     "tray": { "icon-size": 16, "spacing": 8 }
 }
