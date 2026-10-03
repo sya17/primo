@@ -96,7 +96,7 @@ hl.window_rule({
 })
 
 -- Frosted-glass look: blur whatever sits behind the translucent bar, launcher and notifications.
-for _, ns in ipairs({ "waybar", "wofi", "notifications", "swayosd" }) do
+for _, ns in ipairs({ "waybar", "wofi", "notifications", "swayosd", "swaync-control-center", "swaync-notification-window" }) do
     hl.layer_rule({
         name  = "blur-" .. ns,
         match = { namespace = "^" .. ns .. "$" },
