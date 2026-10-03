@@ -135,7 +135,8 @@ render_external() { # template -> destination; keep a one-time backup of files w
     render "$1" "$dest"
 }
 render_external "$tpl_dir/gtk/gtk.css.tpl"       "$config_home/gtk-3.0/gtk.css"
-render_external "$tpl_dir/gtk/gtk.css.tpl"       "$config_home/gtk-4.0/gtk.css"
+gtk4_tpl="$(mktemp)"; cat "$tpl_dir/gtk/gtk.css.tpl" "$tpl_dir/gtk/gtk4-accent.css.tpl" > "$gtk4_tpl"
+render_external "$gtk4_tpl"                       "$config_home/gtk-4.0/gtk.css"; rm -f "$gtk4_tpl"
 render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-3.0/settings.ini"
 render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-4.0/settings.ini"
 render_external "$tpl_dir/qt/Primo.colors.tpl"   "$data_home/color-schemes/Primo.colors"
