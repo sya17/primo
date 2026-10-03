@@ -89,6 +89,13 @@ if   [[ -d /usr/share/icons/Papirus ]]; then v[icon_theme]="$papirus"
 elif [[ -d /usr/share/icons/breeze ]];  then v[icon_theme]="$breeze"
 else v[icon_theme]="Adwaita"; fi
 
+# Cursor: white on dark themes, black on light ones. Prefer capitaine (macOS-like), fall back gracefully.
+cursor_has() { [[ -d "/usr/share/icons/$1/cursors" || -d "${XDG_DATA_HOME:-$HOME/.local/share}/icons/$1/cursors" ]]; }
+if [[ "${v[mode]}" == dark ]]; then candidates=(capitaine-cursors-light Breeze_Light Adwaita)
+else candidates=(capitaine-cursors breeze_cursors Adwaita); fi
+v[cursor_theme]=Adwaita; v[cursor_size]=24
+for c in "${candidates[@]}"; do cursor_has "$c" && { v[cursor_theme]="$c"; break; }; done
+
 # <key>_rgb = "r, g, b" so templates can write rgba({{base_rgb}}, 0.9) (GTK4 has no alpha()).
 for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow view; do
     hex="${v[$key]}"
@@ -144,6 +151,12 @@ render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-4.0/settings.
 render_external "$tpl_dir/qt/Primo.colors.tpl"   "$data_home/color-schemes/Primo.colors"
 sed -i -E '/^[A-Za-z:]+=[0-9]+, /s/, /,/g' "$data_home/color-schemes/Primo.colors"   # KDE expects "r,g,b"
 
+# Cursor for X11/Wayland apps that do not read GTK/KDE settings, plus KDE and the login screen.
+mkdir -p "$data_home/icons/default"
+printf '[Icon Theme]\nName=Default\nInherits=%s\n' "${v[cursor_theme]}" > "$data_home/icons/default/index.theme"
+command -v kwriteconfig6 >/dev/null && kwriteconfig6 --file kcminputrc --group Mouse --key cursorTheme "${v[cursor_theme]}"
+mkdir -p "$state_dir"; echo "${v[cursor_theme]}" > "$state_dir/cursor"
+
 # KDE/Qt apps read kdeglobals. Merge key by key so the user's other KDE settings survive.
 if command -v kwriteconfig6 >/dev/null; then
     kde_set() { kwriteconfig6 --file kdeglobals --group "$1" --key "$2" "$3"; }
@@ -171,6 +184,7 @@ echo "Applied theme: ${v[name]:-$theme} (${v[mode]})"
 
 # ---- tell GTK4 / libadwaita / browsers which colour scheme to use ----
 if command -v gsettings >/dev/null; then
+    gsettings set org.gnome.desktop.interface cursor-theme "${v[cursor_theme]}" 2>/dev/null || true
     gsettings set org.gnome.desktop.interface color-scheme "prefer-${v[mode]}" 2>/dev/null || true
     gsettings set org.gnome.desktop.interface gtk-theme  "${v[gtk_theme]}"  2>/dev/null || true
     gsettings set org.gnome.desktop.interface icon-theme "${v[icon_theme]}" 2>/dev/null || true
@@ -182,6 +196,7 @@ running() { pgrep -x "$1" >/dev/null; }
 
 if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
     hyprctl reload >/dev/null
+    hyprctl setcursor "${v[cursor_theme]}" "${v[cursor_size]}" >/dev/null 2>&1
     if running hyprpaper; then
         pkill -x hyprpaper
         sleep 0.2
