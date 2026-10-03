@@ -13,3 +13,7 @@ config/hypr/local.lua
 *.log
 *.swp
 .cache/
+
+# Written by nwg-displays (hyprlang format, not read by the Lua config)
+config/hypr/monitors.conf
+config/hypr/workspaces.conf
