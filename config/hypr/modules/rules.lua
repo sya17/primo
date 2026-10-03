@@ -56,8 +56,8 @@ hl.window_rule({
     name  = "files-window",
     match = { class = "^org\\.gnome\\.Nautilus$" },
     float = true,
-    center = true,
     size  = "1100 700",
+    move  = "monitor_w*0.5-550 monitor_h*0.5-330", -- GTK resizes after mapping, so `center` lands off-centre
 })
 -- Quick Look (select a file, press Space): floating preview in the middle of the screen.
 hl.window_rule({

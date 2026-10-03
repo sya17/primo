@@ -110,6 +110,13 @@ These files live in `~/.config` / `~/.local/share`, not in the repo. An existing
 written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
 `nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
 
+## File manager
+
+`SUPER+E` opens **Nautilus** as a floating Finder-style window: select a file and press **Space**
+for Quick Look (`sushi`), expand folders in place in list view, drag to the sidebar favourites.
+Images and PDFs open in Loupe and Papers. `SUPER+SHIFT+E` opens **Dolphin** for split view and
+bulk rename. `scripts/configure-apps.sh` applies the view settings and default apps (idempotent).
+
 ## Window rules
 
 Small utility apps float centred instead of tiling: pavucontrol, nm-connection-editor, nwg-look,

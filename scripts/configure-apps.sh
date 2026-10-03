@@ -48,6 +48,15 @@ done
 if [[ -f /usr/share/applications/org.gnome.Nautilus.desktop ]]; then
     xdg-mime default org.gnome.Nautilus.desktop inode/directory && echo "set:  inode/directory -> Nautilus"
 fi
+# Images and PDFs open in Loupe / Papers (same look as Nautilus) instead of the browser.
+set_default() { # desktop-file mime...
+    local d="$1"; shift
+    [[ -f "/usr/share/applications/$d" ]] || return 0
+    xdg-mime default "$d" "$@" && echo "set:  $* -> $d"
+}
+set_default org.gnome.Loupe.desktop image/jpeg image/png image/webp image/gif image/bmp image/tiff image/avif image/heif image/svg+xml
+set_default org.gnome.Papers.desktop application/pdf
+
 tl="$HOME/.config/xdg-terminals.list"
 [[ -f "$tl" ]] || { echo "kitty.desktop" > "$tl"; echo "set:  default terminal -> kitty"; }
 exit 0
