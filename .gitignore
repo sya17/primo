@@ -4,6 +4,8 @@ config/hypr/hyprpaper.conf
 config/hypr/hyprlock-theme.conf
 config/waybar/theme.css
 config/wofi/style.css
+config/wofi/menu.css
+config/swayosd/style.css
 config/dunst/dunstrc.d/
 config/kitty/theme.conf
 

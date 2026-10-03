@@ -3,54 +3,116 @@
     "position": "top",
     "mode": "dock",
     "exclusive": true,
-    "passthrough": false,
     "gtk-layer-shell": true,
-    "height": 38,
-    "margin-top": 8,
-    "margin-left": 12,
-    "margin-right": 12,
+    "height": 30,
+    "margin-top": 6,
+    "margin-left": 8,
+    "margin-right": 8,
+    "spacing": 0,
 
     "modules-left": ["custom/launcher", "hyprland/workspaces"],
     "modules-center": ["clock"],
-    "modules-right": ["tray", "cpu", "memory", "network", "pulseaudio", "battery"],
+    "modules-right": [
+        "tray",
+        "group/sys",
+        "network",
+        "pulseaudio",
+        "battery",
+        "custom/dnd",
+        "custom/nightlight",
+        "custom/power"
+    ],
 
-    "hyprland/workspaces": {
-        "disable-scroll": true,
-        "all-outputs": true,
-        "on-click": "activate",
-        "format": "{icon}",
-        "format-icons": { "active": "\uf111", "default": "\uf10c", "urgent": "\uf06a" },
-        "persistent-workspaces": { "*": 3 }
-    },
     "custom/launcher": {
-        "format": "\uf303",
+        "format": "",
         "on-click": "pkill wofi || wofi --show drun",
         "tooltip": false
     },
-    "cpu": { "format": "\uf2db {usage}%", "tooltip": false },
-    "memory": { "format": "\uf1c0 {}%" },
+
+    // iOS page-dots: small dots, the active workspace stretches into a gradient pill.
+    "hyprland/workspaces": {
+        "disable-scroll": false,
+        "all-outputs": true,
+        "on-click": "activate",
+        "format": "",
+        "persistent-workspaces": { "*": 4 }
+    },
+
     "clock": {
-        "format": "{:%a, %d %b  %H:%M}",
-        "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>"
+        "format": "{:%a %d %b  %H:%M}",
+        "tooltip-format": "<tt><small>{calendar}</small></tt>",
+        "calendar": { "format": { "today": "<span color='#ffffff'><b>{}</b></span>" } }
     },
+
+    // CPU / memory live in a drawer: hover the chip icon to reveal them.
+    "group/sys": {
+        "orientation": "inherit",
+        "drawer": {
+            "transition-duration": 350,
+            "children-class": "sys-child",
+            "transition-left-to-right": false
+        },
+        "modules": ["custom/sys", "cpu", "memory"]
+    },
+    "custom/sys": { "format": "", "tooltip": false },
+    "cpu": { "format": "{usage}%", "tooltip": false },
+    "memory": { "format": "{}%", "tooltip-format": "{used:0.1f} / {total:0.1f} GiB" },
+
     "network": {
-        "format-wifi": "\uf1eb {essid}",
-        "format-ethernet": "\uf796 {ipaddr}",
-        "format-disconnected": "\uf071 Disconnected",
-        "tooltip-format": "{ifname} via {gwaddr}"
+        "format-wifi": "{icon}",
+        "format-ethernet": "",
+        "format-disconnected": "",
+        "format-icons": [""],
+        "tooltip-format-wifi": "{essid}  ({signalStrength}%)\n{ipaddr}",
+        "tooltip-format-ethernet": "{ifname}  {ipaddr}",
+        "tooltip-format-disconnected": "Disconnected",
+        "on-click": "nm-connection-editor"
     },
+
     "pulseaudio": {
-        "format": "{icon} {volume}%",
-        "format-muted": "\uf6a9 Muted",
-        "format-icons": { "default": ["\uf026", "\uf027", "\uf028"] },
-        "on-click": "pavucontrol"
+        "format": "{icon}",
+        "format-muted": "",
+        "format-icons": { "default": ["", "", ""] },
+        "tooltip-format": "Volume {volume}%",
+        "scroll-step": 5,
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "on-click-right": "pavucontrol"
     },
+
     "battery": {
-        "states": { "warning": 30, "critical": 15 },
+        "states": { "warning": 25, "critical": 12 },
         "format": "{icon} {capacity}%",
-        "format-charging": "\uf0e7 {capacity}%",
-        "format-plugged": "\uf1e6 {capacity}%",
-        "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"]
+        "format-charging": " {capacity}%",
+        "format-plugged": " {capacity}%",
+        "format-icons": ["", "", "", "", ""],
+        "tooltip-format": "{timeTo}"
     },
-    "tray": { "icon-size": 16, "spacing": 8 }
+
+    "custom/dnd": {
+        "exec": "~/.config/hypr/scripts/dnd.sh status",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "format": "{icon}",
+        "format-icons": { "off": "", "on": "" },
+        "on-click": "~/.config/hypr/scripts/dnd.sh toggle"
+    },
+
+    "custom/nightlight": {
+        "exec": "~/.config/hypr/scripts/nightlight.sh status",
+        "return-type": "json",
+        "interval": 10,
+        "signal": 9,
+        "format": "{icon}",
+        "format-icons": { "off": "", "on": "" },
+        "on-click": "~/.config/hypr/scripts/nightlight.sh toggle"
+    },
+
+    "custom/power": {
+        "format": "",
+        "tooltip": false,
+        "on-click": "~/.config/hypr/scripts/power-menu.sh"
+    },
+
+    "tray": { "icon-size": 15, "spacing": 8 }
 }

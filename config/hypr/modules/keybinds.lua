@@ -13,9 +13,10 @@ hl.bind(mod .. " + D",      hl.dsp.exec_cmd("nwg-displays"))
 hl.bind(mod .. " + T",      hl.dsp.exec_cmd("nwg-look"))
 hl.bind(mod .. " + SHIFT + T", hl.dsp.exec_cmd(programs.toggleTheme)) -- dark <-> light
 
--- Session
-hl.bind(mod .. " + M", hl.dsp.exec_cmd(
-    "command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
+-- Session: SUPER+X power menu, SUPER+M logs out (after confirmation)
+hl.bind(mod .. " + X", hl.dsp.exec_cmd(programs.powerMenu))
+hl.bind(mod .. " + M", hl.dsp.exec_cmd(programs.powerMenu .. " logout"))
+hl.bind(mod .. " + N", hl.dsp.exec_cmd(programs.nightlight))
 
 -- Window management
 -- Confirms first when a terminal still has a program running; SHIFT forces an immediate close.
@@ -55,15 +56,16 @@ hl.bind(mod .. " + SHIFT + S", hl.dsp.exec_cmd(programs.screenshot .. " area"), 
 hl.bind("Print",               hl.dsp.exec_cmd(programs.screenshot .. " area"))
 hl.bind("SHIFT + Print",       hl.dsp.exec_cmd(programs.screenshot .. " full"))
 
--- Media keys (wireplumber, brightnessctl, playerctl)
+-- Media keys: OSD feedback via osd.sh (swayosd when installed, dunst otherwise)
 local locked  = { locked = true }
 local repeats = { locked = true, repeating = true }
-hl.bind("XF86AudioRaiseVolume",  hl.dsp.exec_cmd("wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), repeats)
-hl.bind("XF86AudioLowerVolume",  hl.dsp.exec_cmd("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"),      repeats)
-hl.bind("XF86AudioMute",         hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"),     repeats)
-hl.bind("XF86AudioMicMute",      hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),   repeats)
-hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd("brightnessctl -e4 -n2 set 5%+"),                  repeats)
-hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl -e4 -n2 set 5%-"),                  repeats)
+local osd = function(action) return hl.dsp.exec_cmd(programs.osd .. " " .. action) end
+hl.bind("XF86AudioRaiseVolume",  osd("volume-up"),       repeats)
+hl.bind("XF86AudioLowerVolume",  osd("volume-down"),     repeats)
+hl.bind("XF86AudioMute",         osd("volume-mute"),     repeats)
+hl.bind("XF86AudioMicMute",      osd("mic-mute"),        repeats)
+hl.bind("XF86MonBrightnessUp",   osd("brightness-up"),   repeats)
+hl.bind("XF86MonBrightnessDown", osd("brightness-down"), repeats)
 hl.bind("XF86AudioNext",         hl.dsp.exec_cmd("playerctl next"),       locked)
 hl.bind("XF86AudioPause",        hl.dsp.exec_cmd("playerctl play-pause"), locked)
 hl.bind("XF86AudioPlay",         hl.dsp.exec_cmd("playerctl play-pause"), locked)

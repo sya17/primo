@@ -8,7 +8,7 @@ root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 bin_dir="$HOME/.local/bin"
 stamp="$(date +%Y%m%d-%H%M%S)"
-apps=(hypr waybar wofi dunst kitty)
+apps=(hypr waybar wofi dunst kitty swayosd)
 theme="catppuccin-mocha"
 dry=0
 
@@ -26,7 +26,7 @@ run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 
 # ---- dependencies ----
 required=(Hyprland hyprpaper hyprlock hypridle cliphist wl-paste waybar wofi dunst kitty grim slurp wl-copy notify-send)
-optional=(brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
+optional=(swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
 missing=(); for c in "${required[@]}"; do command -v "$c" >/dev/null || missing+=("$c"); done
 if (( ${#missing[@]} )); then
     echo "Missing required commands: ${missing[*]}"

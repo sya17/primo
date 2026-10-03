@@ -4,72 +4,84 @@
 * {
     border: none;
     border-radius: 0;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     min-height: 0;
 }
 
-window#waybar {
-    background-color: transparent;
-}
+window#waybar { background: transparent; }
 
 tooltip {
-    background: alpha(@base, 0.92);
+    background: alpha(@base, 0.94);
+    border: 1px solid alpha(@text, 0.12);
     border-radius: 12px;
-    border: 1px solid alpha(@text, 0.1);
 }
-tooltip label { color: @text; }
+tooltip label { color: @text; padding: 2px 4px; }
 
-.modules-left,
-.modules-center,
-.modules-right {
-    background-color: alpha(@base, 0.85);
+/* ── Islands ─────────────────────────────────────────── */
+.modules-left, .modules-center, .modules-right {
+    background-color: alpha(@base, 0.82);
     border: 1px solid alpha(@text, 0.08);
-    border-radius: 20px;
-    padding: 2px 14px;
+    border-radius: 999px;
+    padding: 0 6px;
 }
 
-#workspaces { margin: 0 6px; }
-#workspaces button {
-    padding: 0 4px;
-    margin: 0 2px;
-    color: @overlay;
-    background: transparent;
-    border-radius: 10px;
-    transition: all 0.3s ease;
+#custom-launcher, #clock, #network, #pulseaudio, #battery, #tray,
+#custom-dnd, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
+    padding: 0 9px;
+    margin: 0;
+    color: @text;
+    transition: color 0.25s ease, background-color 0.25s ease;
 }
-#workspaces button:hover { background: alpha(@text, 0.1); color: @text; }
-#workspaces button.active { color: @accent; }
-#workspaces button.urgent { color: @red; }
 
+/* ── Launcher: gradient glyph ────────────────────────── */
 #custom-launcher {
-    font-size: 16px;
+    font-size: 15px;
     color: @accent;
-    padding-right: 14px;
-    margin-right: 8px;
-    border-right: 1px solid alpha(@text, 0.1);
+    padding-left: 10px;
+    padding-right: 8px;
 }
 
-#clock { color: @text; padding: 0 4px; }
+/* ── Workspaces: iOS page dots ───────────────────────── */
+#workspaces { margin: 0 4px 0 0; }
+#workspaces button {
+    min-width: 7px;
+    min-height: 7px;
+    margin: 10px 3px;     /* keep (bar height - 2*margin) = dot size so the dots stay round */
+    padding: 0;
+    border-radius: 999px;
+    background-color: alpha(@text, 0.28);
+    transition: all 0.35s cubic-bezier(0.23, 1, 0.32, 1);
+}
+#workspaces button label { font-size: 0; min-height: 0; padding: 0; margin: 0; } /* empty label would force a tall button */
+#workspaces button:hover { background-color: alpha(@text, 0.55); }
+#workspaces button.active {
+    min-width: 22px;
+    background-image: linear-gradient(to right, @accent, @accent2);
+}
+#workspaces button.urgent { background-color: @red; }
 
-#cpu, #memory, #network, #pulseaudio, #battery, #tray {
-    padding: 0 10px;
-    margin: 0 2px;
-    border-left: 1px solid alpha(@text, 0.1);
-}
-#tray { padding-left: 14px; }
-#cpu  { border-left: none; color: @subtext; }
-#memory { color: @subtext; }
-#network { color: @cyan; }
-#pulseaudio { color: @yellow; }
-#battery { color: @green; }
-#battery.charging { color: @yellow; }
-#battery.warning:not(.charging) { color: @orange; }
-#battery.critical:not(.charging) {
-    color: @red;
-    animation: blink 0.5s linear infinite alternate;
-}
+/* ── Clock ───────────────────────────────────────────── */
+#clock { padding: 0 14px; letter-spacing: 0.3px; }
 
-@keyframes blink {
-    to { background-color: @red; color: @crust; border-radius: 15px; }
-}
+/* ── Right side ──────────────────────────────────────── */
+#custom-sys { color: @subtext; }
+#cpu, #memory { color: @subtext; font-weight: 500; }
+#network      { color: @cyan; }
+#pulseaudio   { color: @yellow; }
+#pulseaudio.muted { color: @overlay; }
+#battery      { color: @green; }
+#battery.charging { color: @accent; }
+#battery.warning:not(.charging)  { color: @orange; }
+#battery.critical:not(.charging) { color: @red; animation: pulse 1s ease-in-out infinite alternate; }
+
+#custom-dnd.off, #custom-nightlight.off { color: @overlay; }
+#custom-dnd.on          { color: @red; }
+#custom-nightlight.on   { color: @orange; }
+
+#custom-power { color: @subtext; padding-right: 11px; }
+#custom-power:hover { color: @red; }
+#custom-launcher:hover, #network:hover, #pulseaudio:hover,
+#custom-dnd:hover, #custom-nightlight:hover { color: @accent2; }
+
+@keyframes pulse { to { opacity: 0.45; } }

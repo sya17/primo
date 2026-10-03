@@ -11,7 +11,7 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 
 ```bash
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
-               brightnessctl playerctl pavucontrol network-manager-applet polkit-kde-agent \
+               brightnessctl playerctl swayosd hyprsunset pavucontrol network-manager-applet polkit-kde-agent \
                ttf-jetbrains-mono-nerd inter-font
 git clone https://github.com/sya17/primo.git && cd primo
 ./scripts/install.sh --theme catppuccin-mocha   # add --dry-run to preview
@@ -84,7 +84,9 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history (cliphist + wofi) |
 | `D` / `T` | nwg-displays / nwg-look |
-| `M` | Exit Hyprland |
+| `X` | Power menu (lock, suspend, log out, restart, shut down) |
+| `M` | Log out (asks first) |
+| `N` | Toggle night light (hyprsunset) |
 
 ## Notes
 

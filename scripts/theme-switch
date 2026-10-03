@@ -61,7 +61,7 @@ while IFS='=' read -r key val; do
 done < "$conf"
 
 # ---- validate before touching any output file ----
-required=(name mode shadow lock_brightness base mantle crust surface0 surface1 overlay text subtext accent accent2
+required=(name mode shadow lock_brightness lock_tint base mantle crust surface0 surface1 overlay text subtext accent accent2
           red orange yellow green cyan blue magenta font_sans font_mono font_icon
           gaps_in gaps_out border_size rounding blur_size blur_passes)
 missing=(); for key in "${required[@]}"; do [[ -n "${v[$key]:-}" ]] || missing+=("$key"); done
@@ -97,6 +97,8 @@ render "$tpl_dir/hypr/hyprpaper.conf.tpl"     "$out_dir/hypr/hyprpaper.conf"
 render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.conf"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
+render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
+render "$tpl_dir/swayosd/style.css.tpl"       "$out_dir/swayosd/style.css"
 render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
 render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
 
@@ -125,5 +127,6 @@ if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
 fi
 running waybar && pkill -SIGUSR2 -x waybar
 running dunst  && dunstctl reload
+if running swayosd-server; then pkill -x swayosd-server; sleep 0.2; setsid -f swayosd-server --style "$HOME/.config/swayosd/style.css" >/dev/null 2>&1; fi
 running kitty  && pkill -SIGUSR1 -x kitty
 exit 0

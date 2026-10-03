@@ -3,6 +3,7 @@
     font = {{font_sans}} 11
     frame_color = "#{{overlay}}"
     corner_radius = {{rounding}}
+    highlight = "#{{accent}}, #{{accent2}}"   # gradient progress bar
 
 [urgency_low]
     background = "#{{base}}ee"

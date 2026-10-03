@@ -6,6 +6,9 @@ return {
     clipboard   = "cliphist list | wofi --dmenu -p Clipboard | cliphist decode | wl-copy",
     lock        = "pidof hyprlock || hyprlock",
     closeWindow = "~/.config/hypr/scripts/close-window.sh",
+    osd         = "~/.config/hypr/scripts/osd.sh",
+    powerMenu   = "~/.config/hypr/scripts/power-menu.sh",
+    nightlight  = "~/.config/hypr/scripts/nightlight.sh toggle",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }
