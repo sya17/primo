@@ -35,7 +35,7 @@ class Fake(dc.System):
     def processes(self): return self.procs
     def unit_active(self, unit, user=False): return unit in self.active
     def fonts(self): return self._fonts_text
-    def exists(self, path): return Path(path).exists() or str(path).startswith("/usr/lib/polkit")
+    def exists(self, path): return str(path).startswith("/usr/") or Path(path).exists()          # /usr is the same on every machine the test runs on
     def disk_free(self, path="/"): return self.free
 
 
