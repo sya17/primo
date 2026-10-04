@@ -1,3 +1,5 @@
+The title follows Conventional Commits (`fix(bar): keep the VPN icon inside the bar`): it becomes the commit message.
+
 What this changes, and why:
 
 How I tested it (and what I could not test):

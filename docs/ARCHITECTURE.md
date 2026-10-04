@@ -60,4 +60,5 @@ sample data.
 
 `scripts/check.sh` syntax-checks scripts, Python and Lua, runs ShellCheck, renders every theme into a temporary directory, validates the
 generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers, launcher, health checks and activity monitor. `scripts/check-docs.py` checks
-that every link and image in the Markdown files exists. CI runs both in an Arch container.
+that every link and image in the Markdown files exists. CI runs both in an Arch container, and checks that the commit messages follow
+Conventional Commits (`scripts/check-commits.py`); see [RELEASING.md](RELEASING.md) for versions and releases.

@@ -2,15 +2,23 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 # The checks need to read the code and nothing else: no token rights, no secrets.
 permissions:
   contents: read
 
+# A newer push to the same branch makes an older run pointless. main is never cancelled: every commit on it keeps its result,
+# and a release is only cut from a commit whose run passed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container: archlinux:latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -25,3 +33,27 @@ jobs:
         run: |
           pacman -S --noconfirm hyprland
           scripts/check.sh
+
+  # The release tool reads the commit messages to pick the next version, so they must follow Conventional Commits (docs/RELEASING.md).
+  # A pull request is judged by its title, because a squash merge turns the title into the commit.
+  commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Commit messages
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/check-commits.py --title "$TITLE"
+          elif git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            python3 scripts/check-commits.py "$BEFORE..$SHA"
+          else
+            python3 scripts/check-commits.py "$SHA"
+          fi

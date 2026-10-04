@@ -26,7 +26,7 @@ COLOUR = {dc.PASS: "32", dc.WARNING: "33", dc.FAIL: "31", dc.SKIPPED: "2"}
 
 def version():
     try:
-        m = re.search(r"^##\s+(\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
+        m = re.search(r"^##\s+\[?(\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
         return m.group(1) if m else "unknown"
     except OSError:
         return "unknown"

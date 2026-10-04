@@ -96,6 +96,15 @@ echo "launcher and health"
 python3 scripts/test-launcher.py >"$work/launcher.out" 2>&1 && pass "launcher sources: calculator, windows, workspaces, themes, clipboard only on request" || { fail "launcher"; tail -6 "$work/launcher.out"; }
 python3 scripts/test-doctor.py >"$work/doctor.out" 2>&1 && pass "health checks and the primo command" || { fail "doctor"; tail -6 "$work/doctor.out"; }
 
+echo "commit messages"
+python3 scripts/test-commits.py >"$work/commits.out" 2>&1 && pass "commit message format (Conventional Commits) is enforced" || { fail "commit message linter"; tail -6 "$work/commits.out"; }
+python3 - <<'PY' && pass "release config is valid JSON and keeps breaking changes below 1.0.0" || fail "release config"
+import json
+c = json.load(open(".releaserc.json"))
+rules = dict(c["plugins"])["@semantic-release/commit-analyzer"]["releaseRules"]
+assert {"breaking": True, "release": "minor"} in rules and c["tagFormat"] == "v${version}" and c["branches"] == ["main"]
+PY
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1

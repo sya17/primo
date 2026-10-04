@@ -62,6 +62,11 @@ id_ed25519*
 .netrc
 credentials.json
 
+# ---- Release tooling: CI copies .github/release/package*.json to the root and installs it there
+node_modules/
+/package.json
+/package-lock.json
+
 # ---- Logs, caches, editors, operating system
 *.log
 .cache/

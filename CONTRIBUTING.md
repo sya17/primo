@@ -8,6 +8,7 @@ open an issue first so we can agree on the shape before you write it.
 ```bash
 scripts/check.sh          # syntax, ShellCheck, theme rendering, tests. Works on a copy of the repo and never touches your desktop
 scripts/check-docs.py     # every link and image in the Markdown files must exist
+scripts/check-commits.py  # the last commit message follows Conventional Commits
 ```
 
 CI runs both on every push and pull request. `shellcheck` gives more findings than the script reports at first: run it on the files you touched.
@@ -22,6 +23,13 @@ contrast of at least 4.5:1.
 
 Add `templates/<app>/<file>.tpl` and one `render` line in `scripts/theme-switch`; the steps are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#add-a-themed-app).
+
+## Commits and pull requests
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `fix(bar): keep the VPN icon inside the bar`,
+`feat(launcher): search open windows`. The message decides the next version, so write the first line for the person who updates. A pull
+request title follows the same format; it becomes the commit when the pull request is squashed. Branches, versions and how a release is made
+are in [docs/RELEASING.md](docs/RELEASING.md). `scripts/check-commits.py` checks a message before you push.
 
 ## Rules for changes
 
