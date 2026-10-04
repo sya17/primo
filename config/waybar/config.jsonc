@@ -16,6 +16,7 @@
         "custom/recorder",
         "tray",
         "group/sys",
+        "custom/activity",
         "bluetooth",
         "network",
         "pulseaudio",
@@ -67,12 +68,14 @@
         },
         "modules": ["custom/sys", "cpu", "memory"]
     },
+    "custom/sys": { "format": "", "tooltip": false },
+
     // Hover: the three busiest apps (measured every 30 s). Click: open Activity.
-    "custom/sys": {
+    "custom/activity": {
         "exec": "~/.config/hypr/scripts/activity.py --top",
         "return-type": "json",
         "interval": 30,
-        "format": "",
+        "format": "󰐰",
         "on-click": "~/.config/hypr/scripts/activity.sh toggle"
     },
     "cpu": { "format": "{usage}%", "tooltip": false },

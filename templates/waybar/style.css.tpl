@@ -28,7 +28,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 }
 
 #custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
-#bluetooth, #custom-powerprofile, #custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
+#bluetooth, #custom-activity, #custom-powerprofile, #custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
     color: @text;
@@ -82,6 +82,8 @@ tooltip label { color: @text; padding: 2px 4px; }
 #bluetooth { color: @accent; }
 #bluetooth.off, #bluetooth.disabled { color: @overlay; }
 #bluetooth.connected { color: @accent2; }
+#custom-activity { color: @subtext; font-size: 17px; }
+#custom-activity.busy { color: @orange; }
 #custom-powerprofile.power-saver { color: @green; }
 #custom-powerprofile.balanced { color: @subtext; }
 #custom-powerprofile.performance { color: @orange; }
@@ -94,7 +96,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 
 #custom-power { color: @subtext; padding-right: 11px; }
 #custom-power:hover { color: @red; }
-#bluetooth:hover, #custom-powerprofile:hover, #custom-launcher:hover, #network:hover, #pulseaudio:hover,
+#bluetooth:hover, #custom-activity:hover, #custom-powerprofile:hover, #custom-launcher:hover, #network:hover, #pulseaudio:hover,
 #custom-notifications:hover, #custom-nightlight:hover { color: @accent2; }
 
 #custom-recorder.recording { color: @red; animation: pulse 1s ease-in-out infinite alternate; }

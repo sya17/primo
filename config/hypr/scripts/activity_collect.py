@@ -442,7 +442,7 @@ def describe(g, mine):
     return text
 
 
-def headline(groups):
+def headline(groups, names=None):
     """One plain sentence about the heaviest thing right now, computed from the measurements."""
     if not groups:
         return "Nothing to show"
@@ -455,7 +455,7 @@ def headline(groups):
     bits.append(fmt_bytes(top.mem))
     hot = max((p for p in top.pids_procs), key=lambda p: p.cpu, default=None) if hasattr(top, "pids_procs") else None
     inner = f" (mostly {script_name(hot)})" if hot and hot.pid not in top.leaders and hot.cpu > top.cpu / 2 else ""
-    return f"Busiest: {top.name}{inner} · " + " · ".join(bits)
+    return f"Busiest: {(names or {}).get(top.key, top.name)}{inner} · " + " · ".join(bits)
 
 
 # ----------------------------------------------------------------------------- actions

@@ -52,10 +52,11 @@ def top_main():
     sampler.sample()
     time.sleep(0.4)
     _procs, groups = snapshot(sampler)
-    best = sorted((g for g in groups if g.impact > 0.5), key=lambda g: -g.impact)[:3]
+    best = sorted((g for g in groups if g.impact > 0.5 and os.getpid() not in g.pids), key=lambda g: -g.impact)[:3]
     lines = [f"{html.escape(g.name)}: {g.cpu:.0f}% CPU" for g in best] or ["All quiet"]
     lines.append(f"<i>measured {time.strftime('%H:%M:%S')}, click for details</i>")
-    print(json.dumps({"text": "", "tooltip": "\n".join(lines)}))
+    busy = bool(best) and best[0].impact >= 50
+    print(json.dumps({"text": "", "class": "busy" if busy else "", "tooltip": "\n".join(lines)}))
 
 
 if "--top" in sys.argv:
@@ -250,6 +251,7 @@ class ActivityWindow(Adw.ApplicationWindow):
         self.tab = "apps"
         self.service_rows = []
         self.expand_first = False
+        self.svc_data = None
         self.apps = Apps()
 
         self.toasts = Adw.ToastOverlay()
@@ -271,6 +273,7 @@ class ActivityWindow(Adw.ApplicationWindow):
         text.append(self.headline)
         text.append(self.subline)
         top.append(text)
+        self.query = ""
         self.sorter = Adw.ToggleGroup(valign=Gtk.Align.CENTER)
         for name, label in (("impact", "Impact"), ("mem", "Memory"), ("cpu", "CPU")):
             self.sorter.add(Adw.Toggle(name=name, label=label))
@@ -279,12 +282,19 @@ class ActivityWindow(Adw.ApplicationWindow):
         top.append(self.sorter)
         body.append(top)
 
+        self.search = Gtk.SearchEntry(placeholder_text="Search apps, background programs and services", hexpand=True)
+        self.search.connect("search-changed", self.on_search)
+        self.search.set_key_capture_widget(self)         # just start typing
+        body.append(self.search)
+
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
         self.list.set_sort_func(lambda a, b: (b.sort > a.sort) - (b.sort < a.sort))
-        self.list.set_placeholder(Gtk.Label(label="Measuring…", margin_top=40, margin_bottom=40, css_classes=["dim-label"]))
+        self.empty = Gtk.Label(label="Measuring…", margin_top=60, valign=Gtk.Align.START, css_classes=["dim-label"])
         self.svc_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.stack = Gtk.Stack()
         self.stack.add_named(self.list, "list")
+        self.stack.add_named(self.empty, "empty")
+        self.stack.set_visible_child_name("empty")
         self.stack.add_named(self.svc_box, "services")
         self.scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.scroll.set_child(self.stack)
@@ -296,7 +306,7 @@ class ActivityWindow(Adw.ApplicationWindow):
         self.set_content(self.toasts)
 
         keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", lambda _c, kv, *_a: (self.close(), True)[1] if kv == Gdk.KEY_Escape else False)
+        keys.connect("key-pressed", self.on_key)
         self.add_controller(keys)
         self.connect("close-request", self.on_close)
         self.alive = True
@@ -307,7 +317,33 @@ class ActivityWindow(Adw.ApplicationWindow):
             self.set_tab(os.environ["PRIMO_ACTIVITY_TAB"])
             tabs.set_active_name(os.environ["PRIMO_ACTIVITY_TAB"])
             self.expand_first = True
+        if os.environ.get("PRIMO_ACTIVITY_QUERY"):
+            self.search.set_text(os.environ["PRIMO_ACTIVITY_QUERY"])
         GLib.timeout_add(1000, self.tick)         # first real numbers after a second
+
+    def on_key(self, _c, keyval, _code, state):
+        if keyval == Gdk.KEY_Escape:
+            if self.search.get_text():
+                self.search.set_text("")
+            else:
+                self.close()
+            return True
+        if keyval == Gdk.KEY_f and state & Gdk.ModifierType.CONTROL_MASK:
+            self.search.grab_focus()
+            return True
+        return False
+
+    def on_search(self, entry):
+        self.query = entry.get_text().strip().lower()
+        if self.tab == "services":
+            if self.svc_data:
+                self.fill_services(*self.svc_data)
+        else:
+            self.refresh_apps(resort=True)
+
+    def matches(self, *texts):
+        hay = " ".join(texts).lower()
+        return all(word in hay for word in self.query.split())
 
     # ---- loop
     def on_close(self, *_):
@@ -351,10 +387,15 @@ class ActivityWindow(Adw.ApplicationWindow):
             return
         total = ac.mem_info()["total"]
         kind = "app" if self.tab == "apps" else "bg"
-        # an app with a window, or one of the lifted tools, is an "app"; everything else runs in the background
-        shown = {g.key: g for g in self.groups if g.kind == kind}
+        # An app with a window, or one of the lifted tools, is an "app"; everything else runs in the background.
+        # A search looks through both.
+        if self.query:
+            shown = {g.key: g for g in self.groups if self.matches(g.name, g.doing, " ".join(" ".join(p.cmd) for p in g.pids_procs), " ".join(g.ports))}
+        else:
+            shown = {g.key: g for g in self.groups if g.kind == kind}
         for key in [k for k in self.rows if k not in shown]:
             self.list.remove(self.rows.pop(key))
+        names = {}
         for key, g in shown.items():
             row = self.rows.get(key)
             if row is None:
@@ -362,6 +403,7 @@ class ActivityWindow(Adw.ApplicationWindow):
                 self.list.append(row)
                 resort = True
             label, icon = self.apps.label_icon(g)
+            names[key] = label
             row.update(g, total, label, icon)
             row.sort = {"impact": (g.impact, g.mem), "mem": (g.mem, 0), "cpu": (g.cpu, g.mem)}[self.sort_by]
         if resort:
@@ -371,8 +413,14 @@ class ActivityWindow(Adw.ApplicationWindow):
             first = max(self.rows.values(), key=lambda r: r.sort)
             first.set_expanded(True)
             first.fill_detail(first.group)
-        self.headline.set_label(ac.headline(list(shown.values())) if shown else "Nothing here")
-        self.subline.set_label(f"{len(shown)} {'apps' if kind == 'app' else 'background programs'} · measured over the last 2 seconds")
+        self.empty.set_label(f"No match for “{self.query}”" if self.query else "Nothing here")
+        self.stack.set_visible_child_name("list" if shown else "empty")
+        if self.query:
+            self.headline.set_label(f"{len(shown)} match{'es' if len(shown) != 1 else ''} for “{self.query}”")
+            self.subline.set_label("Apps and background programs · measured over the last 2 seconds")
+        else:
+            self.headline.set_label(ac.headline(list(shown.values()), names) if shown else "Nothing here")
+            self.subline.set_label(f"{len(shown)} {'apps' if kind == 'app' else 'background programs'} · measured over the last 2 seconds")
 
     def refresh_footer(self):
         m = ac.mem_info()
@@ -415,11 +463,21 @@ class ActivityWindow(Adw.ApplicationWindow):
                     stack.extend(kids.get(p, []))
             return total
 
+        self.svc_data = (user, system)
         u_rows, u_timers = user
         s_rows, s_timers = system
-        self.headline.set_label(f"{len(u_rows)} user services and {len(s_rows)} system services running")
+        if self.query:
+            u_rows = [r for r in u_rows if self.matches(r["unit"], r["description"])]
+            s_rows = [r for r in s_rows if self.matches(r["unit"], r["description"])]
+            u_timers = [t for t in u_timers if self.matches(t["unit"], t.get("activates", ""))]
+            s_timers = [t for t in s_timers if self.matches(t["unit"], t.get("activates", ""))]
+            self.headline.set_label(f"{len(u_rows) + len(s_rows)} services match “{self.query}”")
+        else:
+            self.headline.set_label(f"{len(u_rows)} user services and {len(s_rows)} system services running")
         self.subline.set_label(f"{len(u_timers) + len(s_timers)} timers scheduled")
         for title, rows, is_user in (("Your services", u_rows, True), ("System services", s_rows, False)):
+            if self.query and not rows:
+                continue
             group = Adw.PreferencesGroup(title=title, description="" if is_user else "Read-only here: stopping these needs administrator rights")
             for r in sorted(rows, key=lambda r: -mem_of(r["pid"]) if r["pid"] else 0):
                 row = Adw.ActionRow(title=GLib.markup_escape_text(r["description"] or r["unit"]), subtitle=GLib.markup_escape_text(r["unit"]))
