@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|vpn|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|workflow|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -42,6 +42,7 @@ PAGES = [
     ("power", "Power", "battery-symbolic"),
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
     ("modes", "Modes", "emblem-system-symbolic"),
+    ("workflow", "Workflow", "view-list-symbolic"),
     ("vpn", "VPN", "network-vpn-symbolic"),
     ("more", "More", "preferences-other-symbolic"),
 ]
@@ -192,6 +193,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "power": self.build_power,
             "bluetooth": self.build_bluetooth,
             "modes": self.build_modes,
+            "workflow": self.build_workflow,
             "vpn": self.build_vpn,
             "more": self.build_more,
         }
@@ -1143,6 +1145,215 @@ class SettingsWindow(Adw.ApplicationWindow):
         view.set_content(page)
         dialog.set_child(view)
         dialog.present(self)
+
+    # ======================================================================= Workflow
+    def build_workflow(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import workflow_core
+        self.wf = workflow_core
+        self.wfc = workflow_core.load()
+        page = Adw.PreferencesPage()
+
+        self.cal_group = Adw.PreferencesGroup(title="Calendars", description="Meetings from Google Calendar, Outlook or any .ics link appear in the "
+                                              "Calendar and remind you before they start. Read only: nothing is sent back.")
+        page.add(self.cal_group)
+        self.apps_group = Adw.PreferencesGroup(title="Apps on workspaces", description="An app always opens on the workspace you choose")
+        page.add(self.apps_group)
+        self.snip_group = Adw.PreferencesGroup(title="Snippets", description="Text you reuse. Type its name in the launcher and it is copied")
+        page.add(self.snip_group)
+        backup = Adw.PreferencesGroup(title="Notes backup", description="Keeps a history of ~/Notes (a local git repository), every 30 minutes")
+        self.bk_on = Adw.SwitchRow(title="Back up notes automatically", active=self.wfc["backup"]["on"])
+        self.bk_push = Adw.SwitchRow(title="Also push to the remote", subtitle="Only if you added one: git remote add origin … in ~/Notes",
+                                     active=self.wfc["backup"]["push"])
+        self.bk_now = Adw.ActionRow(title="Back up now", subtitle="", activatable=True)
+        self.bk_now.add_prefix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
+
+        def on_bk(*_):
+            self.wfc["backup"] = {"on": self.bk_on.get_active(), "push": self.bk_push.get_active()}
+            self.wf_save()
+
+        def on_now(*_):
+            def work():
+                notes = Path(os.environ.get("PRIMO_NOTES_DIR", Path.home() / "Notes"))
+                res = workflow_core.backup_notes(notes, push=self.bk_push.get_active())
+                GLib.idle_add(self.bk_now.set_subtitle, res)
+
+            import threading
+            self.bk_now.set_subtitle("Working…")
+            threading.Thread(target=work, daemon=True).start()
+
+        self.bk_on.connect("notify::active", on_bk)
+        self.bk_push.connect("notify::active", on_bk)
+        self.bk_now.connect("activated", on_now)
+        for r in (self.bk_on, self.bk_push, self.bk_now):
+            backup.add(r)
+        page.add(backup)
+        self.wf_rows = {"cal": [], "apps": [], "snip": []}
+        self.refresh_workflow()
+        return page
+
+    def wf_save(self, rules=False):
+        self.wf.save(self.wfc)
+        if rules:
+            self.wf.write_rules(self.wfc["app_rules"])
+            sh("hyprctl", "reload")
+        sh("gdbus", "call", "--session", "--dest", "dev.primo.Hub", "--object-path", "/dev/primo/Hub", "--method",
+           "org.gtk.Actions.Activate", "workflow-reload", "[]", "{}")
+
+    def refresh_workflow(self):
+        for key, group in (("cal", self.cal_group), ("apps", self.apps_group), ("snip", self.snip_group)):
+            for r in self.wf_rows[key]:
+                group.remove(r)
+            self.wf_rows[key] = []
+
+        def add(key, group, row):
+            group.add(row)
+            self.wf_rows[key].append(row)
+
+        for i, feed in enumerate(self.wfc["ics"]):
+            host = re.sub(r"^\w+://([^/]+).*", r"\1", feed["url"])
+            row = Adw.ActionRow(title=GLib.markup_escape_text(feed.get("name") or host), subtitle=GLib.markup_escape_text(host + " · the full link is kept private"))
+            row.add_prefix(Gtk.Image.new_from_icon_name("x-office-calendar-symbolic"))
+            drop = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Remove")
+            drop.connect("clicked", lambda _b, n=i: self.wf_remove("ics", n))
+            row.add_suffix(drop)
+            add("cal", self.cal_group, row)
+        row = Adw.ActionRow(title="Add a calendar link…", subtitle="In Google Calendar: Settings > your calendar > Secret address in iCal format", activatable=True)
+        row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        row.connect("activated", lambda *_: self.wf_add_feed())
+        add("cal", self.cal_group, row)
+        leads = [5, 10, 15, 30, 60]
+        lead = Adw.ComboRow(title="Remind me before a meeting", model=Gtk.StringList.new([f"{m} minutes" for m in leads]))
+        lead.set_selected(leads.index(self.wfc["ics_alert"]) if self.wfc["ics_alert"] in leads else 1)
+        lead.connect("notify::selected", lambda r, _p: (self.wfc.update(ics_alert=leads[r.get_selected()]), self.wf_save()))
+        add("cal", self.cal_group, lead)
+
+        for i, rule in enumerate(self.wfc["app_rules"]):
+            row = Adw.ActionRow(title=GLib.markup_escape_text(rule["class"]), subtitle=f"Workspace {rule['ws']}" + ("" if rule.get("silent", True) else " · switches to it"))
+            drop = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Remove")
+            drop.connect("clicked", lambda _b, n=i: self.wf_remove("app_rules", n))
+            row.add_suffix(drop)
+            add("apps", self.apps_group, row)
+        row = Adw.ActionRow(title="Add an app…", subtitle="Pick one that is open now, or type its window class", activatable=True)
+        row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        row.connect("activated", lambda *_: self.wf_add_rule())
+        add("apps", self.apps_group, row)
+
+        for i, sn in enumerate(self.wfc["snippets"]):
+            preview = sn["text"].replace("\n", " ")[:70]
+            row = Adw.ActionRow(title=GLib.markup_escape_text(sn["name"]), subtitle=GLib.markup_escape_text(preview))
+            edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Edit")
+            edit.connect("clicked", lambda _b, n=i: self.wf_edit_snippet(n))
+            drop = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Remove")
+            drop.connect("clicked", lambda _b, n=i: self.wf_remove("snippets", n))
+            row.add_suffix(edit)
+            row.add_suffix(drop)
+            add("snip", self.snip_group, row)
+        row = Adw.ActionRow(title="New snippet…", subtitle="A command, an SQL query, a reply, an address", activatable=True)
+        row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        row.connect("activated", lambda *_: self.wf_edit_snippet(None))
+        add("snip", self.snip_group, row)
+
+    def wf_remove(self, key, index):
+        del self.wfc[key][index]
+        self.wf_save(rules=(key == "app_rules"))
+        self.refresh_workflow()
+
+    def wf_dialog(self, title, content, on_save, ok="Add"):
+        dialog = Adw.AlertDialog(heading=title)
+        dialog.set_extra_child(content)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("ok", ok)
+        dialog.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("ok")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _d, r: on_save() if r == "ok" else None)
+        dialog.present(self)
+
+    def wf_add_feed(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        name = Gtk.Entry(placeholder_text="Name, e.g. Work")
+        url = Gtk.Entry(placeholder_text="https://… .ics link", width_chars=44)
+        box.append(name)
+        box.append(url)
+
+        def save():
+            link = url.get_text().strip()
+            if not link:
+                return
+            self.toast("Checking the link…")
+
+            def work():
+                err = self.wf.fetch_feed(link)
+                GLib.idle_add(done, err)
+
+            def done(err):
+                if err:
+                    self.toast(err)
+                else:
+                    self.wfc["ics"].append({"name": name.get_text().strip() or "Calendar", "url": link})
+                    self.wf_save()
+                    self.refresh_workflow()
+                    self.toast("Calendar added")
+                return False
+
+            import threading
+            threading.Thread(target=work, daemon=True).start()
+
+        self.wf_dialog("Add a calendar", box, save)
+
+    def wf_add_rule(self):
+        import json as _json
+        classes = sorted({c["class"] for c in _json.loads(sh("hyprctl", "clients", "-j").stdout or "[]")
+                          if c.get("class") and not c["class"].startswith("dev.primo")})
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        pick = Gtk.DropDown.new_from_strings(["Type it below"] + classes)
+        entry = Gtk.Entry(placeholder_text="Window class, e.g. discord")
+        ws = Gtk.SpinButton.new_with_range(1, 10, 1)
+        ws.set_value(3)
+        silent = Gtk.CheckButton(label="Open it without switching to that workspace", active=True)
+        pick.connect("notify::selected", lambda d, _p: entry.set_text(classes[d.get_selected() - 1]) if d.get_selected() > 0 else None)
+        wsrow = Gtk.Box(spacing=10)
+        wsrow.append(Gtk.Label(label="Workspace", xalign=0, hexpand=True))
+        wsrow.append(ws)
+        for w in (pick, entry, wsrow, silent):
+            box.append(w)
+
+        def save():
+            cls = entry.get_text().strip()
+            if cls:
+                self.wfc["app_rules"] = [r for r in self.wfc["app_rules"] if r["class"] != cls] + [{"class": cls, "ws": int(ws.get_value()), "silent": silent.get_active()}]
+                self.wf_save(rules=True)
+                self.refresh_workflow()
+                self.toast("Saved: new windows of that app open there")
+
+        self.wf_dialog("App on a workspace", box, save)
+
+    def wf_edit_snippet(self, index):
+        sn = dict(self.wfc["snippets"][index]) if index is not None else {"name": "", "text": "", "tags": ""}
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        name = Gtk.Entry(placeholder_text="Name, e.g. curl health check", text=sn["name"])
+        tags = Gtk.Entry(placeholder_text="Tags (optional), e.g. sql db", text=sn.get("tags", ""))
+        text = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, monospace=True, top_margin=6, bottom_margin=6, left_margin=8, right_margin=8, css_classes=["card"])
+        text.get_buffer().set_text(sn["text"])
+        scroll = Gtk.ScrolledWindow(child=text, min_content_height=140, min_content_width=420)
+        for w in (name, tags, scroll):
+            box.append(w)
+
+        def save():
+            buf = text.get_buffer()
+            body = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+            if not name.get_text().strip() or not body.strip():
+                return
+            entry = {"name": name.get_text().strip(), "text": body, "tags": tags.get_text().strip()}
+            if index is None:
+                self.wfc["snippets"].append(entry)
+            else:
+                self.wfc["snippets"][index] = entry
+            self.wf_save()
+            self.refresh_workflow()
+
+        self.wf_dialog("Snippet", box, save, ok="Save")
 
     # ======================================================================= VPN
     VPN_TYPES = {"vpn": "OpenVPN", "wireguard": "WireGuard"}

@@ -178,6 +178,22 @@ ACTIONS = [
 ]
 
 
+def snippet_actions():
+    """Your snippets: pick one and its text is copied."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import workflow_core
+        out = []
+        for sn in workflow_core.load()["snippets"]:
+            def copy(sn=sn):
+                subprocess.Popen(["wl-copy", sn["text"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                spawn("notify-send", "-a", "Snippets", "-t", "2500", "-i", "edit-copy", f"Copied: {sn['name']}")
+            out.append((sn["name"], sn["text"].replace("\n", " ")[:80], "edit-paste", f"snippet {sn.get('tags', '')}", copy))
+        return out
+    except Exception:
+        return []
+
+
 def mode_actions():
     """One launcher action per mode you have: 'Start Work mode'."""
     try:
@@ -302,6 +318,10 @@ class LauncherWindow(Adw.ApplicationWindow):
                 continue
             items.append(Item("app", name, info.get_description() or "", gicon=info.get_icon(),
                               run=lambda i=info: self.launch_app(i), score=score))
+        for m in snippet_actions():
+            best = max(fuzzy(q, m[0]), fuzzy(q, m[3]) - 15)
+            if q and best > 0:
+                items.append(Item("action", m[0], m[1], icon=m[2], run=m[4], score=best - 4))
         for m in mode_actions():
             best = max(fuzzy(q, m[0]), fuzzy(q, m[3]) - 15)
             if q and best > 0:

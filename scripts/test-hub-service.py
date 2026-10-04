@@ -30,6 +30,7 @@ app = hub.Service(False)
 app.store = hc.Store(os.path.join(work, "hub.json"))
 app.ring_alarm = lambda a: rang.append(a["time"])
 app.write_status = lambda: None
+app.wf = {"ics": [], "ics_alert": 10, "backup": {"on": False, "push": False}, "app_rules": [], "snippets": []}
 now = datetime(2026, 10, 5, 9, 0)           # a Monday
 
 def due(minutes): return (now + timedelta(minutes=minutes)).isoformat(timespec="minutes")
@@ -93,6 +94,16 @@ app.focus_reset(); time.time = real_time
 app.add_reminder("finish", None, None, None); rid = app.store["reminders"][-1]["id"]
 app.complete_reminder(rid, True); assert app.store["reminders"][-1]["done_at"]
 app.complete_reminder(rid, False); assert "done_at" not in app.store["reminders"][-1]
+
+# meetings from a calendar feed: one reminder, a few minutes ahead, only once
+os.environ["XDG_CONFIG_HOME"] = os.path.join(work, "config")
+import workflow_core as wf
+soon = datetime.now() + timedelta(minutes=7)
+app.ics_events = [{"title": "Planning", "start": soon, "end": soon + timedelta(hours=1), "allday": False, "location": "Room 2", "uid": "u1"},
+                  {"title": "Holiday", "start": soon, "end": soon + timedelta(days=1), "allday": True, "location": "", "uid": "u2"},
+                  {"title": "Far", "start": soon + timedelta(hours=3), "end": soon + timedelta(hours=4), "allday": False, "location": "", "uid": "u3"}]
+sent.clear(); app.background_jobs(datetime.now()); app.background_jobs(datetime.now())
+assert [t for t in sent if "Planning" in t] == ["In 7 min: Planning"] and not any("Holiday" in t or "Far" in t for t in sent), sent
 
 # notes: typing is saved, an empty note is not kept
 page = hub.NotesPage(app)

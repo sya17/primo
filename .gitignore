@@ -4,9 +4,9 @@ config/hypr/confirm.css
 config/hypr/theme.env
 config/hypr/hyprpaper.conf
 config/hypr/hyprlock-theme.conf
+config/hypr/logo.svg
 config/waybar/theme.css
 config/waybar/style.css
-config/waybar/logo.svg
 config/wofi/style.css
 config/wofi/menu.css
 config/swayosd/style.css
@@ -29,9 +29,13 @@ config/hypr/workspaces.conf
 # Generated for the SDDM login theme
 sddm/primo/theme.conf
 sddm/primo/background.png
+sddm/primo/logo.svg
 
 # Generated VS Code theme extension
 vscode/
 
 # Generated Plymouth boot splash
 boot/
+
+# Written by Primo Settings (Workflow > Apps on workspaces)
+config/hypr/apprules.lua

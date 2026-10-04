@@ -79,6 +79,9 @@ python3 scripts/test-hub-service.py >"$work/hubsvc.out" 2>&1 && pass "time hub: 
 echo "modes"
 python3 scripts/test-modes.py >"$work/modes.out" 2>&1 && pass "modes: start sets things up, end puts them back" || { fail "modes"; tail -6 "$work/modes.out"; }
 
+echo "workflow"
+python3 scripts/test-workflow.py >"$work/wf.out" 2>&1 && pass "calendar feeds, app workspace rules, snippets, notes backup" || { fail "workflow helpers"; tail -6 "$work/wf.out"; }
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
@@ -98,7 +101,7 @@ json.loads(strip(pathlib.Path("config/waybar/config.jsonc").read_text()))
 json.loads(pathlib.Path("config/swaync/config.json").read_text())
 json.loads(strip((cfg / "fastfetch" / "config.jsonc").read_text()))
 import xml.etree.ElementTree as ET
-ET.parse("config/waybar/logo.svg")
+ET.parse("config/hypr/logo.svg"); ET.parse("sddm/primo/logo.svg")
 ET.parse(pathlib.Path(os.environ["XDG_DATA_HOME"]) / "icons/hicolor/scalable/apps/primo.svg")
 PY
 

@@ -17,6 +17,7 @@
         "tray",
         "group/sys",
         "custom/activity",
+        "custom/prs",
         "bluetooth",
         "custom/vpn",
         "network",
@@ -30,7 +31,7 @@
 
     // Primo mark, rendered in the theme's colours by theme-switch.
     "image#launcher": {
-        "exec": "echo ~/.config/waybar/logo.svg",
+        "exec": "echo ~/.config/hypr/logo.svg",
         "interval": 86400,
         "size": 16,
         "on-click": "~/.config/hypr/scripts/launcher.sh toggle",
@@ -157,6 +158,16 @@
     },
 
     // Red timer while a screen recording is running; hidden otherwise. Click to stop.
+    // Pull requests waiting for your review (needs `gh auth login`); hidden when none. Click: open them.
+    "custom/prs": {
+        "exec": "~/.config/hypr/scripts/gh-prs.sh status",
+        "return-type": "json",
+        "interval": 300,
+        "format": "\uf407 {}",
+        "hide-empty-text": true,
+        "on-click": "~/.config/hypr/scripts/gh-prs.sh open"
+    },
+
     // A shield while a VPN is connected; hidden otherwise. Click: Settings > VPN.
     "custom/vpn": {
         "exec": "~/.config/hypr/scripts/vpn.sh status",

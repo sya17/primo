@@ -22,6 +22,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import hub_core as hc  # noqa: E402
 import modes_core as mc  # noqa: E402
+import workflow_core as wf  # noqa: E402
 
 import gi  # noqa: E402
 
@@ -325,6 +326,8 @@ class CalendarPage(Gtk.Box):
         for i, name in enumerate(DAYS):
             self.grid.attach(label(name, "weekday", xalign=0.5), i, 0, 1, 1)
         busy = {datetime.fromisoformat(r["due"]).date() for r in self.app.store["reminders"] if r.get("due") and not r.get("done")}
+        for o in self.app.ics_events:
+            busy.add(o["start"].date())
         start = self.shown - timedelta(days=self.shown.weekday())
         for i in range(42):
             d = start + timedelta(days=i)
@@ -348,11 +351,21 @@ class CalendarPage(Gtk.Box):
         self.build_grid()
         self.day_label.set_label(self.sel.strftime("%A, %d %B"))
         clear(self.events)
+        meetings = [o for o in self.app.ics_events if o["start"].date() <= self.sel <= max(o["start"].date(), (o["end"] - timedelta(seconds=1)).date())]
+        for o in meetings:
+            row = Gtk.Box(spacing=10, margin_top=6, margin_bottom=6)
+            row.append(Gtk.Image(icon_name="x-office-calendar-symbolic", valign=Gtk.Align.CENTER, opacity=0.7))
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, spacing=1)
+            col.append(label(o["title"], wrap=True))
+            when = "All day" if o["allday"] else f"{o['start']:%H:%M} to {o['end']:%H:%M}"
+            col.append(label(" · ".join(x for x in (when, o["location"], o.get("calendar", "")) if x), "hub-small", wrap=True))
+            row.append(col)
+            self.events.append(row)
         items = sorted((r for r in self.app.store["reminders"] if r.get("due") and datetime.fromisoformat(r["due"]).date() == self.sel),
                        key=lambda r: r["due"])
         for r in items:
             self.events.append(reminder_row(self.app, r))
-        if not items:
+        if not items and not meetings:
             self.events.append(label("Nothing planned", "hub-small", margin_top=2, margin_bottom=6))
         self.adder.entry.set_placeholder_text(f"Add a reminder for {self.sel.strftime('%d %b')}…")
 
@@ -775,6 +788,13 @@ class FocusPage(Gtk.Box):
         day.add(brk)
         body.append(day)
 
+        # vpn
+        self.vpn_group = Adw.PreferencesGroup(title="VPN")
+        self.vpn_rows = []
+        body.insert_child_after(self.vpn_group, None)
+        self.vpn_busy = False
+        self.refresh_vpn()
+
         # mode
         mg = Adw.PreferencesGroup(title="Mode", description="Sets up apps, VPN, power and do-not-disturb for what you are about to do")
         self.mode_row = Adw.ActionRow(title="None running", subtitle="")
@@ -797,6 +817,47 @@ class FocusPage(Gtk.Box):
         pg.add(dnd)
         body.append(pg)
         self.tick()
+
+    def refresh_vpn(self):
+        def work():
+            def nm(*a):
+                try:
+                    return subprocess.run(["nmcli", "-t", *a], capture_output=True, text=True, timeout=6).stdout.splitlines()
+                except (OSError, subprocess.SubprocessError):
+                    return []
+            active = {l.split(":")[0] for l in nm("-f", "NAME,TYPE", "connection", "show", "--active") if l.split(":")[-1] in ("vpn", "wireguard")}
+            names = [l.rsplit(":", 1)[0].replace("\\:", ":") for l in nm("-f", "NAME,TYPE", "connection", "show") if l.rsplit(":", 1)[-1] in ("vpn", "wireguard")]
+            GLib.idle_add(self.apply_vpn, sorted(names), active)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def apply_vpn(self, names, active):
+        for r in self.vpn_rows:
+            self.vpn_group.remove(r)
+        self.vpn_rows = []
+        self.vpn_group.set_visible(bool(names))
+        for name in names:
+            row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle="Connected" if name in active else "Off")
+            sw = Gtk.Switch(active=name in active, valign=Gtk.Align.CENTER)
+            sw.connect("state-set", lambda w, state, n=name: self.vpn_toggle(w, state, n))
+            row.add_suffix(sw)
+            self.vpn_group.add(row)
+            self.vpn_rows.append(row)
+        return False
+
+    def vpn_toggle(self, sw, state, name):
+        if self.vpn_busy:
+            return True
+        self.vpn_busy = True
+
+        def work():
+            subprocess.run(["nmcli", "--wait", "45", "connection", "up" if state else "down", "id", name], capture_output=True)
+            subprocess.run(["pkill", "-RTMIN+13", "waybar"], capture_output=True)
+            self.vpn_busy = False
+            GLib.idle_add(self.refresh_vpn)
+
+        threading.Thread(target=work, daemon=True).start()
+        return False
 
     def sync_what(self):
         """Show the label of the running session (a mode may have set it), else the one for the next session."""
@@ -1340,10 +1401,15 @@ class Service(Adw.Application):
         self.store = hc.Store()
         self.last_break = 0.0
         self.ringing = []
+        self.wf = wf.load()
+        self.ics_events = []
+        self.last_fetch = 0.0
+        self.last_backup = time.time()
         for name, fn, param in (("toggle", lambda *_: self.toggle(), None), ("open", lambda _a, p: self.show(p.get_string()), "s"),
                                 ("focus-start", lambda _a, p: self.focus_start(*p.get_string().split("|", 1)), "s"),
                                 ("focus-end", lambda *_: self.focus_reset(), None),
                                 ("standup", lambda *_: self.standup(), None),
+                                ("workflow-reload", lambda *_: self.workflow_reload(), None),
                                 ("quit", lambda *_: self.quit(), None)):
             act = Gio.SimpleAction.new(name, GLib.VariantType(param) if param else None)
             act.connect("activate", fn)
@@ -1352,6 +1418,7 @@ class Service(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         self.hold()
+        self.load_events()
         self.check_due(datetime.now(), startup=True)
         GLib.timeout_add_seconds(1, self.tick)
 
@@ -1409,6 +1476,44 @@ class Service(Adw.Application):
 
     def toast(self, text):
         subprocess.Popen(["notify-send", "-a", "Hub", "-t", "3000", "-i", "emblem-ok", text])
+
+    # ---- calendar feeds (ICS) and the notes backup
+    def load_events(self):
+        today = date.today()
+        self.ics_events = wf.load_events(self.wf, today - timedelta(days=35), today + timedelta(days=70))
+        if self.visible():
+            self.window.changed()
+
+    def workflow_reload(self):
+        self.wf = wf.load()
+        self.last_fetch = 0.0
+        self.load_events()
+
+    def fetch_feeds(self):
+        def work():
+            for feed in self.wf["ics"]:
+                err = wf.fetch_feed(feed["url"])
+                if err:
+                    print("calendar feed", feed.get("name", ""), err, file=sys.stderr)
+            GLib.idle_add(lambda: (self.load_events(), False)[1])
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def background_jobs(self, now):
+        t = time.time()
+        if self.wf["ics"] and t - self.last_fetch > 1800:
+            self.last_fetch = t
+            self.fetch_feeds()
+        if self.wf["backup"]["on"] and t - self.last_backup > 1800:
+            self.last_backup = t
+            threading.Thread(target=lambda: wf.backup_notes(hc.NOTES_DIR, push=self.wf["backup"]["push"]), daemon=True).start()
+        for o in self.ics_events:
+            lead = (o["start"] - now).total_seconds() / 60
+            key = f"ics-{o['uid']}-{o['start']:%Y%m%d%H%M}"
+            if not o["allday"] and 0 < lead <= self.wf["ics_alert"] and key not in self.store["fired"]:
+                self.store["fired"][key] = now.timestamp()
+                sound("message.oga")
+                notify(f"In {max(1, round(lead))} min: {o['title']}", " · ".join(x for x in (f"{o['start']:%H:%M}", o["location"]) if x), icon="x-office-calendar")
 
     def standup(self):
         """Create today's daily note (once) and open it in Notes."""
@@ -1580,6 +1685,8 @@ class Service(Adw.Application):
     def tick(self):
         try:
             self.check_due(datetime.now())
+            if int(time.time()) % 10 == 0:
+                self.background_jobs(datetime.now())
             self.write_status()
             if self.visible():
                 self.window.tick()
@@ -1664,6 +1771,9 @@ class Service(Adw.Application):
         else:
             self.last_break = 0.0
         for k in [k for k in fired if k.startswith("end-") and k[4:] < f"{now - timedelta(days=3):%Y%m%d}"]:
+            del fired[k]
+            changed = True
+        for k in [k for k, v in fired.items() if k.startswith("ics-") and v < now.timestamp() - 86400]:
             del fired[k]
             changed = True
         return changed

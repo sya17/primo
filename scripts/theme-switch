@@ -146,13 +146,14 @@ render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.con
 render "$tpl_dir/confirm/confirm.css.tpl"      "$out_dir/hypr/confirm.css"
 render "$tpl_dir/waybar/style.css.tpl"        "$out_dir/waybar/style.css"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
-render "$tpl_dir/logo/bar.svg.tpl"            "$out_dir/waybar/logo.svg"
+render "$tpl_dir/logo/mark.svg.tpl"           "$out_dir/hypr/logo.svg"          # bar button + lock screen
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
 render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
 render "$tpl_dir/swaync/style.css.tpl"         "$out_dir/swaync/style.css"
 render "$tpl_dir/swayosd/style.css.tpl"       "$out_dir/swayosd/style.css"
 render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
 render "$tpl_dir/sddm/theme.conf.tpl"         "$root/sddm/primo/theme.conf"
+render "$tpl_dir/logo/mark.svg.tpl"           "$root/sddm/primo/logo.svg"
 cp -f "${v[wallpaper_path]}" "$root/sddm/primo/background.png" 2>/dev/null || true   # login screen uses the same wallpaper
 render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
 

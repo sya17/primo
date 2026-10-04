@@ -22,7 +22,7 @@ case "${1:-}" in
     *) echo "usage: $0 [--dry-run|--uninstall]" >&2; exit 2 ;;
 esac
 
-[[ -f "$src/theme.conf" && -f "$src/background.png" ]] || { echo "Run 'hypr-theme <theme>' first (it generates theme.conf and the wallpaper)."; exit 1; }
+[[ -f "$src/theme.conf" && -f "$src/background.png" && -f "$src/logo.svg" ]] || { echo "Run 'hypr-theme <theme>' first (it generates theme.conf and the wallpaper)."; exit 1; }
 (( dry )) || [[ $EUID -eq 0 ]] || { echo "Run with sudo."; exit 1; }
 
 # Cursor for the login screen follows the desktop (set by theme-switch, falls back to Breeze).
@@ -30,7 +30,7 @@ cursor="$(cat "${XDG_STATE_HOME:-${SUDO_USER:+/home/$SUDO_USER/.local/state}}/hy
 
 run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 run mkdir -p "$dest" "$(dirname "$conf")"
-run cp -f "$src/Main.qml" "$src/metadata.desktop" "$src/theme.conf" "$src/background.png" "$dest/"
+run cp -f "$src/Main.qml" "$src/metadata.desktop" "$src/theme.conf" "$src/background.png" "$src/logo.svg" "$dest/"
 if (( dry )); then
     echo "[dry-run] write $conf: Current=primo CursorTheme=$cursor"
 else

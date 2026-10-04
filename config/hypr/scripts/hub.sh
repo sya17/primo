@@ -22,6 +22,6 @@ if ! running; then
     for _ in $(seq 1 60); do running && break; sleep 0.05; done
 fi
 case "${1:-toggle}" in
-    toggle|standup) gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate "$1" "[]" "{}" >/dev/null ;;
+    toggle|standup|workflow-reload) gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate "$1" "[]" "{}" >/dev/null ;;
     *)      gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate open "[<'$1'>]" "{}" >/dev/null ;;
 esac

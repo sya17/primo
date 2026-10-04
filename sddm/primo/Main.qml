@@ -166,8 +166,18 @@ Item {
         }
     }
 
+    // Primo mark (bottom centre), level with the session and power buttons
+    Image {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: powerRow.verticalCenter
+        width: 32; height: 32
+        sourceSize: Qt.size(32, 32)
+        source: "logo.svg"
+    }
+
     // Power buttons (bottom-right)
     Row {
+        id: powerRow
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 28

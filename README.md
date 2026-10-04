@@ -59,6 +59,8 @@ Shape lives in the theme too: `rounding`, `gaps_*`, `bar_radius` (999 = pill) an
 Set `wallpaper=` to a file in that folder; otherwise `~/Pictures/wallpaper.jpg` is used.
 The bundled wallpapers are generated from each palette and are MIT-licensed:
 `scripts/gen-wallpaper.py <theme> [WIDTHxHEIGHT]` (styles: `gradient`, `lines`).
+The Primo logo follows the theme too: the bar button, the lock and login screens, the Settings icon (`primo`), fastfetch and the boot splash
+draw the mark in `logo` (accent on dark themes, text colour on light ones) and `logo_accent` (accent2); a theme may set both.
 To theme another app, add a template under `templates/` and one `render` line in
 `scripts/theme-switch`.
 
@@ -97,6 +99,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `O` | Overview: all workspaces and windows; click to focus, drag to move |
 | `CTRL + H` | Time hub under the bar clock (click the clock): calendar, reminders, clock (world, alarm, stopwatch, timer), focus, notes |
 | `CTRL + N` / `CTRL + T` | New note / reminders (type `besok jam 9 rapat #kerja` or `call the bank tomorrow 14:00`) |
+| `CTRL + W` | Modes: set up apps, VPN, power and do-not-disturb for work, research, writing… and put it back (your own in Settings > Modes) |
 | `SHIFT + Esc` | Activity: what runs in the background and what it costs (CPU, memory, GPU, connections); quit, force quit or freeze an app; services and timers; type to search (`Ctrl+F`); also the pulse icon in the bar |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
 | `,` | Settings (Appearance, Wallpaper, Displays) |

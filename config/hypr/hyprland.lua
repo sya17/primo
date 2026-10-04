@@ -13,6 +13,7 @@ require("modules.input")
 require("modules.workspaces")
 require("modules.keybinds")
 require("modules.rules")
+pcall(require, "apprules") -- written by Primo Settings (Workflow > Apps on workspaces; git-ignored)
 require("modules.autostart")
 
 pcall(require, "local")
