@@ -13,7 +13,7 @@
     --p-radius: {{rounding}}px;
 
     /* Window frame and toolbars */
-    --lwt-accent-color: var(--p-crust) !important;
+    --lwt-accent-color: var(--p-mantle) !important;   /* the strip behind the tabs: a notch darker than the toolbar */
     --lwt-text-color: var(--p-text) !important;
     --toolbar-bgcolor: var(--p-base) !important;
     --toolbar-color: var(--p-text) !important;
@@ -56,9 +56,35 @@
     --focus-outline-color: var(--p-accent) !important;
 }
 
-/* Shape follows the theme */
-.tab-background { border-radius: var(--p-radius) !important; }
-#urlbar-background, #searchbar { border-radius: var(--p-radius) !important; }
+/* ---- Shape and layout -------------------------------------------------------------- */
+/* Tabs: floating pills. The selected one is a raised surface with a soft accent outline. */
+:root { --tab-min-height: 34px !important; --tab-border-radius: var(--p-radius) !important; }
+.tabbrowser-tab { padding-inline: 2px !important; }
+.tab-background { margin-block: 3px !important; border: none !important; box-shadow: none !important;
+    border-radius: var(--p-radius) !important; }
+.tab-background[selected] { background-color: var(--p-surface0) !important;
+    outline: 1px solid color-mix(in srgb, var(--p-accent) 50%, transparent) !important; outline-offset: -1px !important; }
+.tabbrowser-tab:not([selected]):hover > .tab-stack > .tab-background {
+    background-color: color-mix(in srgb, var(--p-surface0) 55%, transparent) !important; }
+.tab-close-button { border-radius: 999px !important; }
+.tab-label { font-weight: 500 !important; }
+
+/* Toolbar: flat and compact, no separator lines */
+#nav-bar { box-shadow: none !important; border: none !important; padding-block: 3px !important; }
+#navigator-toolbox { border-bottom: none !important; }
+#TabsToolbar { background-color: var(--p-mantle) !important; }
+.toolbarbutton-1 { border-radius: var(--p-radius) !important; }
+.toolbarbutton-1:hover { background-color: var(--p-surface0) !important; }
+
+/* Address bar and suggestions */
+#urlbar, #urlbar-input-container { --urlbar-height: 34px; }
+#urlbar-background, #searchbar { border-radius: var(--p-radius) !important; border: none !important; }
 #urlbar[focused="true"] > #urlbar-background { box-shadow: 0 0 0 2px var(--p-accent) !important; }
 .urlbarView-row[selected] > .urlbarView-row-inner { background-color: var(--p-surface1) !important; }
+.urlbarView-row-inner { border-radius: var(--p-radius) !important; }
+
+/* Menus and panels */
 menupopup, panel { --panel-border-radius: var(--p-radius) !important; }
+menupopup { border-radius: var(--p-radius) !important; padding: 4px !important; }
+menuitem, menu { border-radius: calc(var(--p-radius) - 2px) !important; margin-inline: 2px !important; }
+menuitem[_moz-menuactive="true"], menu[_moz-menuactive="true"] { background-color: var(--p-surface1) !important; }

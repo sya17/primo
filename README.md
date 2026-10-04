@@ -146,7 +146,8 @@ a starter one that follows the desktop's dark/light mode (`window.autoDetectColo
 `theme-switch` writes `userChrome.css` / `userContent.css` into the profile your Firefox install
 uses (read from `installs.ini`; set `FIREFOX_PROFILE=/path` to pick another) and enables
 `toolkit.legacyUserProfileCustomizations.stylesheets` in `user.js`. **Restart Firefox** after switching
-themes: it reads these files at startup. Toolbar, tabs, address bar, menus and the new-tab page
+themes: it reads these files at startup. `scripts/firefox-theme.sh off|on` switches the styling off/on
+so you can compare it with stock Firefox. Toolbar, tabs, address bar, menus and the new-tab page
 follow the palette and the theme's corner radius.
 
 ## Boot splash (optional)
