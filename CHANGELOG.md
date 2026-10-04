@@ -17,7 +17,8 @@ First public release.
 - Time hub (click the bar clock, `SUPER+CTRL+H`): a dropdown with Calendar (month view, plans per day), Reminders (type
   natural text in English or Indonesian, repeats, snooze), Clock (world clocks, alarms, stopwatch, timers), Focus
   (pomodoro, work hours, end-of-day and break reminders, do-not-disturb while focusing) and Notes (Markdown files in
-  `~/Notes`, autosaved, pin to keep it open). A background service keeps timers, alarms and reminders running while
+  `~/Notes`, a list beside the editor, autosaved). The dropdown is wide and low, floats over your windows instead of pushing
+  them, closes when you switch workspace, and the pin button keeps it open and shows it on every workspace. A background service keeps timers, alarms and reminders running while
   the window is closed; a running timer or focus session shows next to the bar clock.
 - VPN: Settings page (connect, disconnect, import a .ovpn, remove) over NetworkManager, a shield in the bar while connected.
 - Wallpaper slideshow from a folder; live wallpapers (GIF through awww, video through mpvpaper, paused on battery).

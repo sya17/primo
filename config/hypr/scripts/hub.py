@@ -43,13 +43,18 @@ CSS = """
 window.primo-hub, window.primo-hub.background { background: transparent; box-shadow: none; }
 .hub-card { background-color: @window_bg_color; border-radius: 22px; border: 1px solid alpha(currentColor, 0.14);
             box-shadow: 0 8px 22px rgba(0,0,0,0.38); margin: 6px 14px 26px 14px; }
-.hub-time { font-size: 44px; font-weight: 300; font-feature-settings: "tnum"; }
+.hub-time { font-size: 38px; font-weight: 300; font-feature-settings: "tnum"; }
+.hub-sep { opacity: 0.5; }
+.hub-side { padding: 2px 0; }
+.tagchip { padding: 3px 11px; border-radius: 999px; min-height: 0; font-size: 12px; }
+.note-row { border-radius: 10px; }
+.note-row.active { background-color: alpha(@accent_bg_color, 0.22); }
 .hub-date { opacity: 0.65; }
 .hub-h { font-size: 11px; font-weight: 700; opacity: 0.55; }
 .hub-small { font-size: 11px; opacity: 0.6; }
 .hub-big { font-size: 34px; font-weight: 300; font-feature-settings: "tnum"; }
 .ring-text { font-size: 40px; font-weight: 300; font-feature-settings: "tnum"; }
-.day { padding: 0; min-width: 0; min-height: 38px; border-radius: 999px; }
+.day { padding: 0; min-width: 0; min-height: 32px; border-radius: 999px; }
 .day.other { opacity: 0.32; }
 .day.today { background-color: @accent_bg_color; color: @accent_fg_color; font-weight: 700; }
 .day.sel { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
@@ -249,19 +254,28 @@ def quick_add_box(app, placeholder, day=None):
 # ----------------------------------------------------------------------------- pages
 class CalendarPage(Gtk.Box):
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         self.app = app
         self.today = date.today()
         self.shown = self.today.replace(day=1)
         self.sel = self.today
-        head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_top=4)
-        self.time = label("", "hub-time", xalign=0.5)
-        self.date = label("", "hub-date", xalign=0.5)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, width_request=330, hexpand=False)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True)
+        self.append(left)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
+        self.append(right)
+        head = Gtk.Box(spacing=12, valign=Gtk.Align.CENTER)
+        self.time = label("", "hub-time")
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.date = label("", "hub-date")
+        self.week = label("", "hub-small")
+        col.append(self.date)
+        col.append(self.week)
         head.append(self.time)
-        head.append(self.date)
-        self.append(head)
+        head.append(col)
+        left.append(head)
 
-        nav = Gtk.Box(spacing=4, margin_top=6)
+        nav = Gtk.Box(spacing=4, margin_top=2)
         self.month = label("", "title-4", hexpand=True)
         prev = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["flat", "circular"])
         nxt = Gtk.Button(icon_name="go-next-symbolic", css_classes=["flat", "circular"])
@@ -271,16 +285,19 @@ class CalendarPage(Gtk.Box):
         today.connect("clicked", lambda *_: self.go_today())
         for w in (self.month, today, prev, nxt):
             nav.append(w)
-        self.append(nav)
+        left.append(nav)
 
-        self.grid = Gtk.Grid(column_homogeneous=True, row_spacing=2, column_spacing=2)
-        self.append(self.grid)
-        self.day_label = label("", "hub-h", margin_top=8)
-        self.append(self.day_label)
+        self.grid = Gtk.Grid(column_homogeneous=True, row_spacing=1, column_spacing=1)
+        left.append(self.grid)
+        self.day_label = label("", "title-4")
+        right.append(self.day_label)
         self.events = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.append(scrolled(self.events, 130))
+        ev = scrolled(self.events, 250)
+        ev.set_vexpand(True)
+        ev.set_propagate_natural_height(False)
+        right.append(ev)
         self.adder = quick_add_box(app, "Add a reminder for this day…")
-        self.append(self.adder)
+        right.append(self.adder)
         self.refresh()
 
     def move(self, step):
@@ -309,7 +326,7 @@ class CalendarPage(Gtk.Box):
         start = self.shown - timedelta(days=self.shown.weekday())
         for i in range(42):
             d = start + timedelta(days=i)
-            btn = Gtk.Button(css_classes=["flat", "day"])
+            btn = Gtk.Button(css_classes=["flat", "day"], halign=Gtk.Align.CENTER, width_request=36)
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
             col.append(label(str(d.day), xalign=0.5))
             dot = label("●", "day-dot", xalign=0.5)
@@ -327,7 +344,7 @@ class CalendarPage(Gtk.Box):
 
     def refresh(self):
         self.build_grid()
-        self.day_label.set_label(self.sel.strftime("%A, %d %B").upper())
+        self.day_label.set_label(self.sel.strftime("%A, %d %B"))
         clear(self.events)
         items = sorted((r for r in self.app.store["reminders"] if r.get("due") and datetime.fromisoformat(r["due"]).date() == self.sel),
                        key=lambda r: r["due"])
@@ -340,25 +357,54 @@ class CalendarPage(Gtk.Box):
     def tick(self):
         now = datetime.now()
         self.time.set_label(now.strftime("%H:%M"))
-        self.date.set_label(now.strftime("%A, %d %B %Y") + f" · week {now.isocalendar()[1]}")
+        self.date.set_label(now.strftime("%A, %d %B"))
+        self.week.set_label(f"{now.year} · week {now.isocalendar()[1]}")
         if now.date() != self.today:
             self.go_today()
 
 
 class RemindersPage(Gtk.Box):
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         self.app = app
+        self.filter = None
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, width_request=290, hexpand=False)
         self.adder = quick_add_box(app, "Call the bank tomorrow 14:00 #work")
-        self.append(self.adder)
+        left.append(self.adder)
+        left.append(label("Try “in 30m”, “besok jam 9”, “every weekday 9:30”, or add #tag.", "hub-small", wrap=True))
+        self.counts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=6)
+        left.append(self.counts)
+        self.tags = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=6, row_spacing=6, max_children_per_line=4)
+        left.append(self.tags)
+        self.append(left)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.append(scrolled(self.body, 440))
+        scroll = scrolled(self.body, 360)
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+        scroll.set_propagate_natural_height(False)
+        self.append(scroll)
+        self.refresh()
+
+    def set_filter(self, tag):
+        self.filter = None if tag == self.filter else tag
         self.refresh()
 
     def refresh(self):
         clear(self.body)
+        clear(self.counts)
         now = datetime.now()
         rems = self.app.store["reminders"]
+        tags = sorted({r["tag"] for r in rems if r.get("tag")})
+        clear(self.tags)
+        for tag in tags:
+            b = Gtk.ToggleButton(label="#" + tag, active=(self.filter == tag), css_classes=["tagchip"])
+            b.connect("clicked", lambda _b, t=tag: self.set_filter(t))
+            self.tags.append(b)
+        if self.filter and self.filter not in tags:
+            self.filter = None
+        if self.filter:
+            rems = [r for r in rems if r.get("tag") == self.filter]
         open_ = [r for r in rems if not r.get("done")]
         sections = [("OVERDUE", [r for r in open_ if r.get("due") and datetime.fromisoformat(r["due"]) < now]),
                     ("TODAY", [r for r in open_ if r.get("due") and datetime.fromisoformat(r["due"]).date() == now.date()
@@ -368,6 +414,11 @@ class RemindersPage(Gtk.Box):
                     ("DONE", [r for r in rems if r.get("done")][-8:])]
         shown = False
         for title, items in sections:
+            if items and title != "DONE":
+                row = Gtk.Box(spacing=8)
+                row.append(label(title.title(), "hub-small", hexpand=True))
+                row.append(label(str(len(items)), "hub-small"))
+                self.counts.append(row)
             if not items:
                 continue
             shown = True
@@ -375,8 +426,7 @@ class RemindersPage(Gtk.Box):
             for r in sorted(items, key=lambda r: r.get("due") or "9"):
                 self.body.append(reminder_row(self.app, r, now))
         if not shown:
-            self.body.append(label("No reminders yet. Type one above: a time, a day, or both. "
-                                   "“in 30m”, “besok jam 9”, “every weekday 9:30”.", "hub-small", wrap=True, margin_top=14))
+            self.body.append(label("Nothing here yet. Type a reminder on the left: a time, a day, or both.", "hub-small", wrap=True, margin_top=14))
 
     def tick(self):
         pass
@@ -384,19 +434,24 @@ class RemindersPage(Gtk.Box):
 
 class ClockPage(Gtk.Box):
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         self.app = app
-        self.tabs = Adw.ToggleGroup(halign=Gtk.Align.CENTER)
-        for name, text in (("world", "World"), ("alarm", "Alarm"), ("watch", "Stopwatch"), ("timer", "Timer")):
-            self.tabs.add(Adw.Toggle(name=name, label=text))
+        self.tabs = Adw.ToggleGroup(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.START, width_request=150)
+        for name, text, icon in (("world", "World", "find-location-symbolic"), ("alarm", "Alarm", "alarm-symbolic"),
+                                 ("watch", "Stopwatch", "stopwatch-symbolic"), ("timer", "Timer", "timer-symbolic")):
+            self.tabs.add(Adw.Toggle(name=name, label=text, icon_name=icon))
         self.append(self.tabs)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.world = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.alarm = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.watch = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.timer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for name, w in (("world", self.world), ("alarm", self.alarm), ("watch", self.watch), ("timer", self.timer)):
-            self.stack.add_named(w, name)
+            inner = scrolled(w, 360)
+            inner.set_propagate_natural_height(False)
+            self.stack.add_named(inner, name)
+        self.stack.set_hexpand(True)
         self.append(self.stack)
         self.tabs.set_active_name(app.store["last_tab"] if app.store["last_tab"] in ("world", "alarm", "watch", "timer") else "world")
         self.tabs.connect("notify::active-name", lambda g, _p: self.switch(g.get_active_name()))
@@ -656,10 +711,11 @@ def parse_duration(text):
 
 class FocusPage(Gtk.Box):
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         self.app = app
-        self.ring = Ring(size=190, thick=11)
-        self.append(self.ring)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, width_request=290, valign=Gtk.Align.CENTER, hexpand=False)
+        self.ring = Ring(size=200, thick=11)
+        left.append(self.ring)
         row = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
         self.go = Gtk.Button(css_classes=["pill", "suggested-action"])
         self.skip = Gtk.Button(label="Skip", css_classes=["pill"])
@@ -669,10 +725,15 @@ class FocusPage(Gtk.Box):
         self.reset.connect("clicked", lambda *_: app.focus_reset())
         for b in (self.reset, self.go, self.skip):
             row.append(b)
-        self.append(row)
+        left.append(row)
+        self.append(left)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.append(scrolled(body, 330))
+        scroll = scrolled(body, 360)
+        scroll.set_hexpand(True)
+        scroll.set_propagate_natural_height(False)
+        self.append(scroll)
         work = app.store["work"]
         pomo = app.store["pomodoro"]
 
@@ -767,16 +828,16 @@ class FocusPage(Gtk.Box):
 
 
 class NotesPage(Gtk.Box):
+    """A list on the left, the editor on the right (like Apple Notes). Everything is saved as you type."""
+
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         self.app = app
         self.path = None
         self.save_id = 0
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
-        self.append(self.stack)
+        self.loading = True
 
-        # list
-        lst = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=270, hexpand=False)
         bar = Gtk.Box(spacing=6)
         self.search = Gtk.SearchEntry(placeholder_text="Search notes", hexpand=True)
         self.search.connect("search-changed", lambda *_: self.refresh())
@@ -784,44 +845,50 @@ class NotesPage(Gtk.Box):
         new.connect("clicked", lambda *_: self.new_note())
         bar.append(self.search)
         bar.append(new)
-        lst.append(bar)
+        left.append(bar)
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        lst.append(scrolled(self.list, 440))
-        self.stack.add_named(lst, "list")
+        sc = scrolled(self.list, 360)
+        sc.set_vexpand(True)
+        sc.set_propagate_natural_height(False)
+        left.append(sc)
+        self.append(left)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
 
-        # editor
-        ed = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
         top = Gtk.Box(spacing=6)
-        back = Gtk.Button(child=Adw.ButtonContent(label="Notes", icon_name="go-previous-symbolic"), css_classes=["flat"])
-        back.connect("clicked", lambda *_: self.close_note())
-        self.edited = label("", "hub-small", hexpand=True, xalign=1)
-        drop = Gtk.Button(icon_name="user-trash-symbolic", css_classes=["flat", "circular"], tooltip_text="Delete this note")
-        drop.connect("clicked", lambda *_: self.delete_note())
-        for w in (back, self.edited, drop):
-            top.append(w)
-        ed.append(top)
+        self.edited = label("", "hub-small", hexpand=True)
+        self.drop = Gtk.Button(icon_name="user-trash-symbolic", css_classes=["flat", "circular"], tooltip_text="Delete this note")
+        self.drop.connect("clicked", lambda *_: self.delete_note())
+        top.append(self.edited)
+        top.append(self.drop)
+        right.append(top)
         self.view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, css_classes=["note-editor"], left_margin=4, right_margin=4,
-                                 top_margin=6, bottom_margin=10, vexpand=True)
+                                 top_margin=4, bottom_margin=10, vexpand=True)
         self.buf = self.view.get_buffer()
         self.buf.connect("changed", self.on_changed)
-        title_tag = self.buf.create_tag("title", weight=700, scale=1.35)
-        self.title_tag = title_tag
-        hint = label("Title on the first line, then write…", "hub-small", margin_start=8, margin_top=8, valign=Gtk.Align.START, can_target=False)
-        self.buf.connect("changed", lambda b: hint.set_visible(b.get_char_count() == 0))
-        over = Gtk.Overlay(child=Gtk.ScrolledWindow(child=self.view, min_content_height=360, max_content_height=420,
-                                                    hscrollbar_policy=Gtk.PolicyType.NEVER))
-        over.add_overlay(hint)
-        ed.append(over)
-        self.stack.add_named(ed, "edit")
+        self.title_tag = self.buf.create_tag("title", weight=700, scale=1.35)
+        self.hint = label("Select a note, or press + to write a new one.", "hub-small", margin_start=8, margin_top=4, valign=Gtk.Align.START, can_target=False)
+        over = Gtk.Overlay(child=Gtk.ScrolledWindow(child=self.view, hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True))
+        over.add_overlay(self.hint)
+        right.append(over)
+        self.append(right)
+        self.set_editor(False)
         self.refresh()
+        first = hc.list_notes()
+        if first:
+            self.open_note(first[0]["path"], focus=False)
+        self.loading = False
+
+    def set_editor(self, on):
+        self.view.set_sensitive(on)
+        self.drop.set_sensitive(on)
+        self.hint.set_visible(not on)
 
     def refresh(self):
-        if self.stack.get_visible_child_name() == "edit":
-            return
         clear(self.list)
         q = self.search.get_text().strip().lower()
         shown = 0
-        for n in hc.list_notes():
+        for n in hc.list_notes(self.path):
             if q:
                 try:
                     if q not in n["path"].read_text().lower():
@@ -829,24 +896,36 @@ class NotesPage(Gtk.Box):
                 except OSError:
                     continue
             shown += 1
-            btn = Gtk.Button(css_classes=["flat"])
-            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1, halign=Gtk.Align.START, margin_top=4, margin_bottom=4)
-            col.append(label(n["title"], "note-title", ellipsize=Pango.EllipsizeMode.END))
+            btn = Gtk.Button(css_classes=["flat", "note-row"] + (["active"] if self.path and n["path"] == self.path else []))
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1, halign=Gtk.Align.START, margin_top=3, margin_bottom=3)
+            col.append(label(n["title"], "note-title", ellipsize=Pango.EllipsizeMode.END, max_width_chars=28))
             when = datetime.fromtimestamp(n["mtime"])
-            col.append(label(f"{when:%d %b} · {n['preview']}" if n["preview"] else f"{when:%d %b}", "note-prev", ellipsize=Pango.EllipsizeMode.END, max_width_chars=42))
+            col.append(label(f"{when:%d %b} · {n['preview']}" if n["preview"] else f"{when:%d %b}", "note-prev", ellipsize=Pango.EllipsizeMode.END,
+                             max_width_chars=30))
             btn.set_child(col)
             btn.connect("clicked", lambda _b, p=n["path"]: self.open_note(p))
             self.list.append(btn)
         if not shown:
-            self.list.append(label("No notes match." if q else "No notes yet. Press + to write one. They are Markdown files in ~/Notes.",
-                                   "hub-small", wrap=True, margin_top=14))
+            self.list.append(label("No notes match." if q else "No notes yet. They are Markdown files in ~/Notes.", "hub-small", wrap=True, margin_top=14))
 
     def new_note(self):
+        self.finish_current()
         path = hc.new_note_path()
         path.write_text("")
         self.open_note(path)
 
-    def open_note(self, path):
+    def finish_current(self):
+        """Save what is open; an empty note is not worth keeping."""
+        if self.save_id:
+            GLib.source_remove(self.save_id)
+            self.flush()
+        if self.path and self.path.exists() and not self.path.read_text().strip():
+            self.path.unlink()
+        self.path = None
+
+    def open_note(self, path, focus=True):
+        if self.path and Path(path) != self.path:
+            self.finish_current()
         self.path = Path(path)
         self.loading = True
         try:
@@ -857,11 +936,12 @@ class NotesPage(Gtk.Box):
         self.restyle()
         self.loading = False
         self.edited.set_label("")
-        self.stack.set_visible_child_name("edit")
-        if self.get_root():
-            self.get_root().pin.set_active(True)   # moving the mouse away must not close a note you are writing in
-        self.view.grab_focus()
-        self.buf.place_cursor(self.buf.get_end_iter())
+        self.set_editor(True)
+        self.hint.set_visible(False)
+        self.refresh()
+        if focus:
+            self.view.grab_focus()
+            self.buf.place_cursor(self.buf.get_end_iter())
 
     def restyle(self):
         start, end = self.buf.get_bounds()
@@ -872,7 +952,7 @@ class NotesPage(Gtk.Box):
         self.buf.apply_tag(self.title_tag, start, first_end)
 
     def on_changed(self, *_):
-        if getattr(self, "loading", True) or not self.path:
+        if self.loading or not self.path:
             return
         self.restyle()
         self.edited.set_label("Saving…")
@@ -886,16 +966,13 @@ class NotesPage(Gtk.Box):
             start, end = self.buf.get_bounds()
             self.path.write_text(self.buf.get_text(start, end, False))
             self.edited.set_label("Saved")
+            self.refresh()
         return False
 
     def close_note(self):
-        if self.save_id:
-            GLib.source_remove(self.save_id)
-            self.flush()
-        if self.path and self.path.exists() and not self.path.read_text().strip():
-            self.path.unlink()           # an empty note is not worth keeping
-        self.path = None
-        self.stack.set_visible_child_name("list")
+        self.finish_current()
+        self.buf.set_text("")
+        self.set_editor(False)
         self.refresh()
 
     def delete_note(self):
@@ -915,7 +992,10 @@ class NotesPage(Gtk.Box):
                     self.save_id = 0
                 self.path.unlink(missing_ok=True)
                 self.path = None
-                self.stack.set_visible_child_name("list")
+                self.loading = True
+                self.buf.set_text("")
+                self.loading = False
+                self.set_editor(False)
                 self.refresh()
 
         dialog.connect("response", answered)
@@ -929,7 +1009,7 @@ class NotesPage(Gtk.Box):
 # ----------------------------------------------------------------------------- the dropdown
 class HubWindow(Adw.ApplicationWindow):
     def __init__(self, app, tab):
-        super().__init__(application=app, default_width=460, default_height=700, title="Hub")
+        super().__init__(application=app, default_width=800, default_height=470, title="Hub")
         self.add_css_class("primo-hub")
         self.set_decorated(False)
         self.set_resizable(False)
@@ -943,19 +1023,20 @@ class HubWindow(Adw.ApplicationWindow):
         top = Gtk.Box(margin_top=12, margin_start=14, margin_end=10)
         self.picker = Adw.ToggleGroup(hexpand=True, halign=Gtk.Align.CENTER)
         for name, icon, tip in TABS:
-            self.picker.add(Adw.Toggle(name=name, icon_name=icon, tooltip=tip))
-        self.pin = Gtk.ToggleButton(icon_name="view-pin-symbolic", css_classes=["flat", "circular"], tooltip_text="Keep open")
-        self.pin.connect("toggled", lambda b: setattr(self, "pinned", b.get_active()))
+            self.picker.add(Adw.Toggle(name=name, icon_name=icon, label=tip))
+        self.pin = Gtk.ToggleButton(icon_name="view-pin-symbolic", css_classes=["flat", "circular"],
+                                    tooltip_text="Pin: stay open, and follow you across workspaces")
+        self.pin.connect("toggled", self.on_pin)
         top.append(self.picker)
         top.append(self.pin)
         card.append(top)
-        self.title = label("", "title-3", margin_start=18)
-        card.append(self.title)
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=140, vhomogeneous=False)
+        self.title = label("")           # kept for show_tab; the tab names are on the picker itself
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=140, vhomogeneous=True,
+                               height_request=372)
         self.pages = {}
-        self.stack.set_margin_start(16)
-        self.stack.set_margin_end(16)
-        self.stack.set_margin_bottom(16)
+        self.stack.set_margin_start(20)
+        self.stack.set_margin_end(20)
+        self.stack.set_margin_bottom(18)
         card.append(self.stack)
         outer = Gtk.Box(valign=Gtk.Align.START)
         outer.append(card)
@@ -1008,11 +1089,7 @@ class HubWindow(Adw.ApplicationWindow):
     def on_key(self, _c, keyval, _code, state):
         ctrl = state & Gdk.ModifierType.CONTROL_MASK
         if keyval == Gdk.KEY_Escape:
-            notes = self.pages.get("notes")
-            if self.tab == "notes" and notes and notes.stack.get_visible_child_name() == "edit":
-                notes.close_note()
-            else:
-                self.close()
+            self.close()
             return True
         if ctrl and Gdk.KEY_1 <= keyval <= Gdk.KEY_5:
             self.picker.set_active_name(TABS[keyval - Gdk.KEY_1][0])
@@ -1026,11 +1103,34 @@ class HubWindow(Adw.ApplicationWindow):
     def hold_open(self, on):
         self.holds = max(0, self.holds + (1 if on else -1))
 
+    def on_pin(self, button):
+        """Pinned = stays open when focus moves away and is shown on every workspace (Hyprland's pin)."""
+        self.pinned = button.get_active()
+        addr = self.address()
+        if addr:
+            subprocess.run(["hyprctl", "dispatch", f'hl.dsp.window.pin({{ window = "address:{addr}", action = "{"enable" if self.pinned else "disable"}" }})'],
+                           capture_output=True)
+
+    def address(self):
+        try:
+            import json
+            for c in json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True, timeout=3).stdout or "[]"):
+                if c["class"] == APP_ID and c["title"] == "Hub":
+                    return c["address"]
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        return None
+
     def on_active_changed(self, *_):
         if os.environ.get("PRIMO_HUB_DEBUG"):
             print("active:", self.is_active(), "pinned", self.pinned, "holds", self.holds, file=sys.stderr)
         if not self.is_active():
-            GLib.timeout_add(250, lambda: (self.close() if self.alive and not self.is_active() and not self.pinned and not self.holds else None, False)[1])
+            GLib.timeout_add(250, lambda: (self.close() if self.alive and not self.is_active() and not self.pinned and not self.holds
+                                           and not self.editing() else None, False)[1])
+
+    def editing(self):
+        notes = self.pages.get("notes")
+        return bool(notes and self.tab == "notes" and notes.path and notes.view.has_focus())
 
     def on_close(self, *_):
         notes = self.pages.get("notes")

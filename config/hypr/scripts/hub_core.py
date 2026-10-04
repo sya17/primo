@@ -242,13 +242,16 @@ def fmt_clock(seconds):
 
 
 # ----------------------------------------------------------------------------- notes
-def list_notes():
+def list_notes(keep=None):
+    """Notes, newest first. Empty files are left out (a note you opened and never typed in), except `keep`."""
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     notes = []
     for p in NOTES_DIR.glob("*.md"):
         try:
             text = p.read_text()
         except OSError:
+            continue
+        if not text.strip() and p != keep:
             continue
         lines = [ln.strip().lstrip("#").strip() for ln in text.splitlines() if ln.strip()]
         notes.append({"path": p, "title": lines[0] if lines else "New note", "preview": lines[1] if len(lines) > 1 else "",
