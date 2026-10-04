@@ -95,6 +95,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
 | `O` | Overview: all workspaces and windows; click to focus, drag to move |
+| `SHIFT + Esc` | Activity: what runs in the background and what it costs (CPU, memory, GPU, connections); quit, force quit or freeze an app; services and timers |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
 | `,` | Settings (Appearance, Wallpaper, Displays) |
 | `D` | Settings > Displays |

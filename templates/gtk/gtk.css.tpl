@@ -2,6 +2,7 @@
    Named colours understood by libadwaita (GTK4) and adw-gtk3 (GTK3). */
 @define-color accent_color #{{accent}};
 @define-color accent_bg_color #{{accent}};
+@define-color accent2_color #{{accent2}};
 @define-color accent_fg_color #{{base}};
 @define-color destructive_color #{{red}};
 @define-color destructive_bg_color #{{red}};

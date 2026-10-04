@@ -46,6 +46,24 @@ for conf in themes/*/theme.conf; do
     else fail "$t: $(head -1 "$work/err")"; fi
 done
 
+echo "activity"
+python3 - <<'PY' && pass "Activity groups apps, lifts a tool's helper servers under it, protects the session" || fail "Activity collector"
+import sys
+sys.path.insert(0, "config/hypr/scripts")
+import activity_collect as ac
+P = lambda pid, ppid, comm, cmd=(): ac.Proc(pid, ppid, comm, "S", ac.ME, pid, 0, 1 << 20, list(cmd), pss=1 << 20)
+procs = {p.pid: p for p in (
+    P(10, 1, "Hyprland"), P(11, 10, "kitty"), P(12, 11, "zsh"),
+    P(13, 12, "devtool"), P(14, 13, "uv", ["uv", "tool", "uvx", "lang-server", "start-helper-server"]), P(15, 14, "python", ["python", "lang-server"]),
+    P(16, 10, "waybar"))}
+s = ac.Sampler()
+groups = {g.name: g for g in ac.group_apps(procs, s, {11: [{"class": "kitty", "title": "t", "address": "0x1", "workspace": 1}]})}
+assert "Dev Tool" in groups and "lang-server" in groups["Dev Tool"].doing, groups.keys()
+assert 15 in groups["Dev Tool"].pids and 15 not in groups["kitty"].pids
+assert groups["kitty"].kind == "app" and groups["waybar"].kind == "bg"
+assert ac.signal_group(ac.Group(key="x", name="Hyprland", kind="bg", leaders=[10], protected=True), 0) == 0
+PY
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1

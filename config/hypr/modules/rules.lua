@@ -109,6 +109,15 @@ hl.window_rule({
     no_anim = true,
 })
 
+-- Activity: floating, centred.
+hl.window_rule({
+    name  = "activity",
+    match = { class = "^dev\\.primo\\.Activity$" },
+    float = true,
+    size  = "800 720",
+    move  = "monitor_w*0.5-400 monitor_h*0.5-360",
+})
+
 -- Settings window: centred, roomy.
 hl.window_rule({
     name  = "settings-window",

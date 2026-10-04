@@ -67,7 +67,14 @@
         },
         "modules": ["custom/sys", "cpu", "memory"]
     },
-    "custom/sys": { "format": "", "tooltip": false },
+    // Hover: the three busiest apps (measured every 30 s). Click: open Activity.
+    "custom/sys": {
+        "exec": "~/.config/hypr/scripts/activity.py --top",
+        "return-type": "json",
+        "interval": 30,
+        "format": "",
+        "on-click": "~/.config/hypr/scripts/activity.sh toggle"
+    },
     "cpu": { "format": "{usage}%", "tooltip": false },
     "memory": { "format": "{}%", "tooltip-format": "{used:0.1f} / {total:0.1f} GiB" },
 

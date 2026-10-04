@@ -36,6 +36,9 @@ hl.bind("ALT + SHIFT + Tab", hl.dsp.exec_cmd(programs.switcher .. " prev"))
 -- Overview: every workspace and its windows (click to focus, drag to move)
 hl.bind(mod .. " + O", hl.dsp.exec_cmd(programs.overview))
 
+-- Activity: what is running in the background and what it costs
+hl.bind(mod .. " + SHIFT + Escape", hl.dsp.exec_cmd(programs.activity))
+
 -- Window management
 -- Confirms first when a terminal still has a program running; SHIFT forces an immediate close.
 hl.bind(mod .. " + C",         hl.dsp.exec_cmd(programs.closeWindow))

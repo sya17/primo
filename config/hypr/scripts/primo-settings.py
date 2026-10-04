@@ -873,6 +873,22 @@ class SettingsWindow(Adw.ApplicationWindow):
         saver.connect("notify::active", on_saver)
         warn.add(saver)
         page.add(warn)
+
+        busy = Adw.PreferencesGroup(title="Busy apps", description="Only checked while on battery, every 30 seconds")
+        alert = Adw.SwitchRow(title="Warn about an app that keeps the CPU busy",
+                              subtitle="After 5 minutes above 50% CPU. Open Activity (Super+Shift+Esc) to quit or freeze it",
+                              active=(STATE_DIR / "activity-alert").exists())
+
+        def on_alert(row, _p):
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            if row.get_active():
+                (STATE_DIR / "activity-alert").write_text("")
+            else:
+                (STATE_DIR / "activity-alert").unlink(missing_ok=True)
+
+        alert.connect("notify::active", on_alert)
+        busy.add(alert)
+        page.add(busy)
         return page
 
     def set_profile(self, name):
