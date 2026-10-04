@@ -819,6 +819,10 @@ class FocusPage(Gtk.Box):
         self.tick()
 
     def refresh_vpn(self):
+        if os.environ.get("PRIMO_SHOT_MODE"):      # screenshots must not show the names of your own VPN profiles
+            self.vpn_group.set_visible(False)
+            return
+
         def work():
             def nm(*a):
                 try:

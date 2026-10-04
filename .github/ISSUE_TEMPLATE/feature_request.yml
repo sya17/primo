@@ -1,0 +1,11 @@
+name: Idea or new theme
+description: Suggest a feature, or offer a theme
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like, and why
+      description: Start with the problem you are trying to solve. Primo stays small, so a clear problem helps more than a long list.
+    validations:
+      required: true

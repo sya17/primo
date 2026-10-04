@@ -12,7 +12,7 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "workflow.json"
+CONFIG = Path(os.environ.get("PRIMO_WORKFLOW_CONFIG") or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "workflow.json")
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "hub"
 HYPR_DIR = Path(os.environ.get("PRIMO_HYPR_DIR", Path.home() / ".config" / "hypr"))
 

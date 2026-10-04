@@ -1,265 +1,101 @@
-# Primo — Hyprland Dotfiles
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.png">
+    <img src="docs/assets/banner-dark.png" alt="Primo: one palette for the whole Hyprland desktop. Five themes: Primo Dusk, Primo Dawn, Catppuccin Mocha, Catppuccin Latte and Nord." width="100%">
+  </picture>
+</h1>
 
-Themeable Hyprland setup (Lua config) with Waybar, Wofi, Dunst, Kitty and Hyprpaper.
-Colours, fonts, gaps and rounding come from one theme file and are rendered into every app.
+<p align="center">
+  <b>A calm, themeable Hyprland desktop for Arch Linux.</b><br>
+  One theme file colours the bar, launcher, terminal, lock screen, login screen, GTK and Qt apps, Firefox and VS Code,<br>
+  and switches all of them at once, dark or light.
+</p>
 
-> Targets Hyprland ≥ 0.55 (Lua configuration). Tested on Arch Linux with Hyprland 0.56.
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#one-palette-five-themes">Themes</a> ·
+  <a href="#what-comes-with-it">What is in it</a> ·
+  <a href="docs/KEYBINDINGS.md">Keybindings</a> ·
+  <a href="docs/TOOLS.md">Tools</a> ·
+  <a href="docs/THEMING.md">Make a theme</a>
+</p>
 
-<!-- TODO: add screenshots to docs/screenshots/ and embed them here -->
+Primo started as one person's Hyprland setup on one laptop, so it is small and opinionated: compact and crisp, a little macOS in spirit,
+with a periwinkle accent and a coral spark. It comes with its own Settings, launcher, time hub and activity monitor, written for it.
+Take all of it, or take a theme, a script or an idea.
+
+## One palette, five themes
+
+<picture>
+  <img src="docs/assets/themes.png" alt="The colours of all five themes, one row each: Primo Dusk and Primo Dawn, Catppuccin Mocha and Latte, and Nord. Each row shows the background, surfaces, text, accent colours and the red, orange, yellow, green, cyan and magenta of that theme." width="100%">
+</picture>
+
+```bash
+hypr-theme dawn          # every app switches at once
+hypr-theme toggle        # dark or light (SUPER+SHIFT+T)
+```
+
+**Primo Dusk** (dark) and **Primo Dawn** (light) are the signature pair. Catppuccin Mocha, Catppuccin Latte and Nord come with it. A theme
+is one short file with colours, fonts and shape (corner radius, gaps, a pill-shaped bar if you like); [make your own](docs/THEMING.md).
+Wallpapers are drawn from each palette, so they always match.
+
+## What comes with it
+
+**Time hub.** Click the clock in the bar and a panel drops down: a calendar with your meetings, reminders you type in plain words
+(`call the bank tomorrow 14:00 #work`), alarms and timers, a focus session that counts where your hours go, and notes. It floats over your
+windows instead of pushing them, and its timers keep running when it is closed.
+
+**Activity.** `SUPER+SHIFT+Esc` shows what runs in the background and what it costs: CPU, memory, GPU, open connections, and who is holding
+port 8080. Quit, force quit or freeze something with a click and a confirmation. The session itself is protected.
+
+**Modes.** One action sets the machine up for what you are about to do (apps on their workspaces, a VPN, a power mode, do-not-disturb, a
+focus session) and puts it back when you end it. Work, Research, Writing and Relax are there to start from; make your own.
+
+Also in the box:
+
+- **Settings** with appearance, wallpaper (slideshow, GIF, video), displays with a safe 10-second revert, power, Bluetooth and VPN.
+- **Launcher** for apps, a calculator, your snippets, files and the web, plus a window switcher and a workspace overview.
+- **Clipboard history**, screenshots with annotation, and screen recording with a timer in the bar.
+- **Lock screen, login screen** and an optional **boot splash**, all drawn from the same palette.
+- **Nautilus** as a floating Finder-style window with Quick Look, a notification centre, night light and battery warnings.
+
+Everything is described in [docs/TOOLS.md](docs/TOOLS.md), and every key in [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 
 ## Install
 
+Primo needs **Arch Linux** and **Hyprland 0.55 or newer** (the Lua configuration). Install the packages first; the list is in
+[docs/INSTALL.md](docs/INSTALL.md). Then:
+
 ```bash
-sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
-               brightnessctl playerctl swayosd hyprsunset swaync starship eza bat fzf btop zoxide fastfetch satty wf-recorder power-profiles-daemon bluez bluez-utils blueman reflector pacman-contrib ufw timeshift keepassxc telegram-desktop qbittorrent baobab noto-fonts-cjk awww hyprpicker jq pavucontrol network-manager-applet polkit-kde-agent \
-               ttf-jetbrains-mono-nerd inter-font \
-               capitaine-cursors noto-fonts-emoji adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
-               nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
 git clone https://github.com/sya17/primo.git && cd primo
-./scripts/install.sh --theme catppuccin-mocha   # add --dry-run to preview
+./scripts/install.sh --dry-run --theme primo-dusk     # prints what it would do, changes nothing
+./scripts/install.sh --theme primo-dusk
 ```
 
-`install.sh` symlinks `config/<app>` to `~/.config/<app>` (existing directories are moved to
-`<app>.bak-<timestamp>`), links `hypr-theme` into `~/.local/bin`, and renders the chosen theme.
+The installer links the configs into `~/.config` and moves a folder that is already there to `<app>.bak-<timestamp>`. Nothing is deleted.
+To go back, remove the links and move the backups back. Log out and in once after the first install.
 
-## Layout
+## What is tested
 
-```text
-config/
-  hypr/            hyprland.lua + modules/ (monitors, env, appearance, animations,
-                   input, keybinds, rules, autostart, programs), scripts/
-  waybar/ wofi/ dunst/ kitty/
-templates/         per-app templates with {{placeholders}}
-themes/<name>/     theme.conf (palette, fonts, shape) + optional wallpaper
-scripts/           install.sh, theme-switch, gen-wallpaper.py
-```
+Primo is developed and tested on one machine: Arch Linux, Hyprland 0.56, an HP laptop with AMD graphics and a single 1920×1080 screen.
 
-Files generated by `theme-switch` (`theme.lua`, `theme.css`, `wofi/style.css`, `hyprpaper.conf`, `hyprlock-theme.conf`, `10-theme.conf`,
-kitty `theme.conf`) are git-ignored.
-
-## Themes
-
-```bash
-hypr-theme --list        # name + mode (dark/light)
-hypr-theme dark          # default; light and toggle work the same way
-hypr-theme light
-hypr-theme toggle        # SUPER+SHIFT+T
-hypr-theme nord          # any theme by name; renders + reloads Hyprland, Waybar, Dunst, Kitty, Hyprpaper
-hypr-theme --current
-```
-
-Dark is the default (`catppuccin-mocha`). `dark`/`light` apply the theme last used in that mode,
-and the GTK `color-scheme` is switched too. Bundled: `primo-dusk` (dark) and `primo-dawn` (light) are the signature pair: compact and crisp,
-periwinkle with a coral spark. Also `catppuccin-mocha`, `nord` (dark) and `catppuccin-latte` (light).
-
-Create a theme: copy `themes/catppuccin-mocha` to `themes/<name>`, edit `theme.conf`
-(set `mode=dark` or `mode=light`).
-Shape lives in the theme too: `rounding`, `gaps_*`, `bar_radius` (999 = pill) and `input_rounding`.
-`wallpaper_style=lines` adds flowing contour lines to the generated wallpaper.
-Set `wallpaper=` to a file in that folder; otherwise `~/Pictures/wallpaper.jpg` is used.
-The bundled wallpapers are generated from each palette and are MIT-licensed:
-`scripts/gen-wallpaper.py <theme> [WIDTHxHEIGHT]` (styles: `gradient`, `lines`).
-The Primo logo follows the theme too: the bar button, the lock and login screens, the Settings icon (`primo`), fastfetch and the boot splash
-draw the mark in `logo` (accent on dark themes, text colour on light ones) and `logo_accent` (accent2); a theme may set both.
-To theme another app, add a template under `templates/` and one `render` line in
-`scripts/theme-switch`.
-
-## Per-machine settings
-
-Create `~/.config/hypr/local.lua` (git-ignored, loaded last) for monitors and devices:
-
-```lua
-hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 1 })
-```
-
-## Keybinds (`SUPER` = mod)
-
-| Keys | Action |
+| | |
 | --- | --- |
-| `Q` / `Return` | Terminal |
-| `E` | File manager: Nautilus, a Finder-like floating window (Space = Quick Look) |
-| `SHIFT+E` | Dolphin for heavy lifting (split view, bulk rename, ...) |
-| `R` / `SPACE` | Launcher: apps, calculator, actions, files, web search (Spotlight-style) |
-| `C` | Close window; asks first if a terminal still has a program running |
-| `SHIFT+C` | Close immediately, no confirmation |
-| `F` / `V` | Fullscreen / toggle floating |
-| `T` | Theme menu (pick any theme) |
-| `SHIFT+T` | Toggle dark / light theme |
-| `TAB` | Next layout for this workspace (dwindle, master, scrolling, monocle) |
-| `P` / `J` | Pseudotile / toggle split |
-| `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
-| `` ` `` (grave) | Drop-down terminal (floating, toggles a hidden workspace) |
-| `S` / `ALT+S` | Toggle scratchpad / move window to it |
-| `SHIFT+S`, `Print` | Screenshot area to clipboard + `~/Pictures/Screenshots` (notification: Annotate / Show in folder) |
-| `SHIFT+A` | Screenshot area, then annotate it (satty) |
-| `SHIFT+Print` | Screenshot full screen |
-| `SHIFT+R` / `CTRL+R` | Record an area / the whole screen with audio; press again to stop (red timer in the bar) |
-| `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
-| `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
-| `O` | Overview: all workspaces and windows; click to focus, drag to move |
-| `CTRL + H` | Time hub under the bar clock (click the clock): calendar, reminders, clock (world, alarm, stopwatch, timer), focus, notes |
-| `CTRL + N` / `CTRL + T` | New note / reminders (type `besok jam 9 rapat #kerja` or `call the bank tomorrow 14:00`) |
-| `CTRL + W` | Modes: set up apps, VPN, power and do-not-disturb for work, research, writing… and put it back (your own in Settings > Modes) |
-| `SHIFT + Esc` | Activity: what runs in the background and what it costs (CPU, memory, GPU, connections); quit, force quit or freeze an app; services and timers; type to search (`Ctrl+F`); also the pulse icon in the bar |
-| `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
-| `,` | Settings (Appearance, Wallpaper, Displays) |
-| `D` | Settings > Displays |
-| `W` | Settings > Wallpaper |
-| `X` | Power menu (lock, suspend, log out, restart, shut down) |
-| `M` | Log out (asks first) |
-| `N` | Toggle night light (hyprsunset) |
+| Checked on every push | Shell syntax and ShellCheck, Python and Lua syntax, all five themes render with no placeholder left, generated TOML, JSON and SVG are valid, and the logic of the hub, modes, calendar feeds and activity monitor has tests. [![CI](https://github.com/sya17/primo/actions/workflows/ci.yml/badge.svg)](https://github.com/sya17/primo/actions/workflows/ci.yml) |
+| Checked by hand on that machine | The bar, launcher, Settings, time hub, activity monitor, theme switching, and the Firefox and VS Code themes. |
+| Not tested | NVIDIA graphics, several monitors, a display scale above 1, other distributions, and the boot splash on a real boot. Video wallpapers need `mpvpaper`, and the Docker view needs your user in the `docker` group. |
 
-## App theming (GTK and Qt)
+CI cannot start a Hyprland session (it only tries `Hyprland --verify-config`, best effort), so the compositor config is mostly checked by hand. If something breaks on your machine, an
+[issue](https://github.com/sya17/primo/issues/new/choose) with the output of `hyprctl version` helps a lot.
 
-`theme-switch` also themes the apps around the desktop, from the same palette:
+## Keep reading
 
-- **GTK 3/4** (pavucontrol, nwg-look, file pickers, ...): `adw-gtk3` with named colours in
-  `~/.config/gtk-{3,4}.0/gtk.css`, plus `settings.ini` and `gsettings` (theme, icons, font).
-- **Qt / KDE** (Dolphin, ...): a KDE colour scheme (`Primo.colors`) merged into `kdeglobals`,
-  Breeze style and Papirus icons. Needs `plasma-integration` and `QT_QPA_PLATFORMTHEME=kde`
-  (set in `modules/env.lua`; log in again after the first install).
-
-These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
-written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
-`nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
-
-## Terminal
-
-```bash
-scripts/setup-shell.sh            # prompt, fzf, zoxide, eza/bat aliases, btop theme (adds one block to ~/.bashrc)
-scripts/setup-shell.sh --remove   # undo
-```
-
-`starship` prompt, `fzf`, `btop` and `fastfetch` take their colours from the active theme and
-change with it. Nothing else in `~/.bashrc` is touched, and a one-time backup is kept.
-
-## Screenshots and recordings
-
-Screenshots land in `~/Pictures/Screenshots` and on the clipboard; the notification offers
-**Annotate** (satty, palette from the theme) and **Show in folder**. Recordings (`wf-recorder`) land
-in `~/Videos/Recordings`; a red timer appears in the bar and clicking it stops the recording.
-`sudo scripts/enable-lock-osd.sh` adds an on-screen indicator for Caps Lock / Num Lock.
-
-## Editors
-
-`python3 scripts/gen-vscode-theme.py --install` turns every theme into a **VS Code** colour theme
-(`Primo Dusk`, `Primo Dawn`, `Catppuccin ...`, `Nord`) and, when you have no `settings.json` yet, writes
-a starter one that follows the desktop's dark/light mode (`window.autoDetectColorScheme`).
-`install.sh` runs it when `code` is installed.
-
-## Firefox
-
-`theme-switch` writes `userChrome.css` / `userContent.css` into the profile your Firefox install
-uses (read from `installs.ini`; set `FIREFOX_PROFILE=/path` to pick another) and enables
-`toolkit.legacyUserProfileCustomizations.stylesheets` in `user.js`. **Restart Firefox** after switching
-themes: it reads these files at startup. `scripts/firefox-theme.sh off|on` switches the styling off/on
-so you can compare it with stock Firefox. Toolbar, tabs, address bar, menus and the new-tab page
-follow the palette and the theme's corner radius.
-
-## Boot splash (optional)
-
-```bash
-sudo pacman -S plymouth
-python3 scripts/gen-plymouth-theme.py                # gradient ring + pulsing dots from the palette
-sudo scripts/install-boot-splash.sh                  # shows the plan, changes nothing
-sudo scripts/install-boot-splash.sh --apply          # adds the plymouth hook + "quiet splash", rebuilds initramfs
-sudo scripts/install-boot-splash.sh --uninstall      # puts every file back
-```
-
-Every file it touches is backed up first, the *fallback* boot entry is left untouched (pick it from the
-boot menu if anything ever misbehaves), and a failed `mkinitcpio` restores your config. systemd-boot
-has no graphical theme, so only the splash and a quieter boot are changed. Test it once while you have
-a recovery USB at hand; this part cannot be verified from inside the desktop session.
-
-## Launcher
-
-Work application shortcuts (SUPER is the Windows key):
-
-- `SUPER+CTRL+E`: VS Code.
-- `SUPER+CTRL+O`: Obsidian.
-- `SUPER+CTRL+K`: KeePassXC.
-- `SUPER+CTRL+B`: btop in Kitty.
-- `SUPER+CTRL+A`: Flameshot annotation, with final actions limited to saving locally
-  in `~/Pictures/Screenshots` and copying to the clipboard.
-
-`SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often
-you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter copies the result), system
-actions (lock, sleep, dark/light mode, night light, settings pages), files under your home folder,
-and a web search fallback. It runs as a small background service so it opens instantly.
-
-## Laptop: power, Bluetooth, system setup
-
-- **Power mode** (`power-profiles-daemon`): an icon in the bar cycles Power Saver / Balanced / Performance;
-  Settings > Power shows charge, time left, battery health and the low-battery options.
-- **Battery watch** warns at 20% (and switches to Power Saver until you plug in), 10%, and suspends at 4%.
-- **Bluetooth** (`bluez`, `blueman`): bar icon with the number of connected devices; Settings > Bluetooth lists
-  paired devices with Connect / Disconnect / Forget.
-- `sudo scripts/setup-system.sh` shows the plan; `--apply` enables bluetooth, power-profiles-daemon, fast
-  mirrors (`reflector`), `paccache` and a `ufw` firewall (deny incoming). Each edited file is backed up.
-- `SUPER+CTRL+P` picks a colour from the screen (`hyprpicker`) and copies the hex value.
-- With `awww` installed, wallpaper changes animate (Settings > Wallpaper > Transition); without it
-  `hyprpaper` is used.
-
-## Settings
-
-`SUPER+,` opens **Primo Settings**, a libadwaita app styled by the active theme:
-
-- **Appearance**: dark/light switch and theme cards with a live palette preview.
-- **Wallpaper**: gallery of theme art and `~/Pictures`; pick any image. A chosen wallpaper
-  survives theme switches until you press "Use the theme's wallpaper".
-- **Displays**: resolution, refresh rate, scale, rotation and arrangement for each monitor.
-  Changes are applied live and revert by themselves after 10 seconds unless you press Keep.
-  Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored).
-- **More**: shortcuts to Sound, Network, Bluetooth and the notification center.
-
-It replaces `nwg-displays`, which writes hyprlang files the Lua config does not read.
-Needs `python-gobject` and `libadwaita` (both come with Nautilus).
-
-## Workspaces and layouts
-
-Each workspace has a purpose and a layout: 1 general (dwindle), 2 code (master), 3 reading/media
-(scrolling), 4 focus (monocle). `SUPER+TAB` (or a click on the bar icon) cycles the layout of the
-current workspace. Edit the presets in `config/hypr/modules/workspaces.lua`.
-
-## Notifications
-
-`swaync` gives a control center (click the bell in the bar): history, do-not-disturb, quick
-toggles, volume/brightness sliders and media controls. Right-click the bell for do-not-disturb.
-Without swaync installed, dunst is used and the bell just toggles do-not-disturb.
-
-## Login screen (SDDM)
-
-```bash
-sudo scripts/install-sddm-theme.sh        # copies the Primo theme + the active palette and wallpaper
-sddm-greeter --test-mode --theme /usr/share/sddm/themes/primo   # preview in a window (Qt5, what SDDM really runs)
-sudo scripts/install-sddm-theme.sh --uninstall                       # undo
-```
-
-Re-run it after switching themes if the login screen should follow. Cursor (white on dark themes,
-black on light) and fonts (Inter, JetBrainsMono Nerd Font, Noto Color Emoji) are set system-wide
-by `theme-switch` and `config/fontconfig`.
-
-## File manager
-
-`SUPER+E` opens **Nautilus** as a floating Finder-style window: select a file and press **Space**
-for Quick Look (`sushi`), expand folders in place in list view, drag to the sidebar favourites.
-Images and PDFs open in Loupe and Papers. `SUPER+SHIFT+E` opens **Dolphin** for split view and
-bulk rename. `scripts/configure-apps.sh` applies the view settings and default apps (idempotent).
-
-## Window rules
-
-Small utility apps float centred instead of tiling: pavucontrol, nm-connection-editor, nwg-look,
-nwg-displays, blueman, polkit prompts and file pickers. Firefox Picture-in-Picture floats pinned in
-the bottom-right corner. Fullscreen windows inhibit idle/lock. Add more in
-`config/hypr/modules/rules.lua`; find a window's class with `hyprctl clients`.
-
-## Notes
-
-- Clipboard history (`cliphist`) stores everything you copy, including passwords from a
-  password manager. Wipe it with `cliphist wipe`, or drop the `wl-paste ... cliphist store`
-  lines in `config/hypr/modules/autostart.lua` to disable it.
-- Hyprland validation: `Hyprland --verify-config -c config/hypr/hyprland.lua`.
+- [Install in detail](docs/INSTALL.md): packages, what the installer touches, optional extras and how to undo each one.
+- [Keybindings](docs/KEYBINDINGS.md) and [the tools that come with Primo](docs/TOOLS.md).
+- [Theming](docs/THEMING.md): make a theme, how GTK, Qt, Firefox and VS Code follow it.
+- [How it fits together](docs/ARCHITECTURE.md), the [changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md).
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE). The Catppuccin and Nord palettes belong to their authors; fonts, icons and the apps Primo themes belong to theirs.

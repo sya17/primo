@@ -1,0 +1,30 @@
+name: Bug report
+description: Something does not work, or looks wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. A screenshot helps; hide anything private first.
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Which part
+      description: For example the bar, launcher, Settings, time hub, activity, a theme, an installer script.
+  - type: textarea
+    id: system
+    attributes:
+      label: Your system
+      description: Paste the output of `hyprctl version | head -3` and `uname -r`, and say which GPU you have.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or log
+      description: The error text, or `hyprctl configerrors`. Remove personal paths and names.
+      render: shell

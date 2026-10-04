@@ -14,6 +14,8 @@ jobs:
         run: pacman -Syu --noconfirm python python-gobject libadwaita gtk4 shellcheck lua git
       - name: Static checks
         run: scripts/check.sh
+      - name: Docs links
+        run: python3 scripts/check-docs.py
       - name: Hyprland config (best effort)
         continue-on-error: true
         run: |
