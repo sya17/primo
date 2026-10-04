@@ -5,9 +5,10 @@ Everything here is measured, nothing is guessed:
   connections and listening ports (ss); microphone, camera, audio and screen-share use.
 Per-app network *speed* is not available without root, so it is not shown.
 
-Apps are found by walking each process up to the first "launcher" (Hyprland, systemd --user ...). A few
-tools are lifted out of the terminal that started them (Dev Tool, Builder), so their helper servers
-(lang-server, ...) show up under them instead of under `kitty`.
+Apps are found by walking each process up to the first "launcher" (Hyprland, systemd --user ...). Command-line
+tools that run helper servers of their own can be lifted out of the terminal that started them, so the helpers show up
+under the tool instead of under `kitty`. Which tools and helpers is set per machine in ~/.config/primo/activity.json:
+  {"lift": {"<process name>": "<label>"}, "helpers": ["<word in a helper's command line>"], "helpers_label": "Servers"}
 """
 import json
 import os
@@ -23,7 +24,20 @@ ME = os.getuid()
 PROC = Path("/proc")
 
 BOUNDARY = {"Hyprland", "systemd", "sddm-helper", "dbus-broker", "dbus-broker-lau"}
-LIFT = {"devtool": "Dev Tool", "builder": "Builder"}
+
+
+def _local():
+    try:
+        path = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "primo" / "activity.json"
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+_LOCAL = _local()
+LIFT = _LOCAL.get("lift", {})
+HELPERS = [w.lower() for w in _LOCAL.get("helpers", [])]
+HELPERS_LABEL = _LOCAL.get("helpers_label", "Helpers")
 RENAME = {"start-hyprland": "Hyprland"}
 SHELLS = {"bash", "zsh", "fish", "sh", "dash", "nu"}
 TERMINALS = {"kitty", "foot", "alacritty", "wezterm-gui", "konsole", "gnome-terminal-"}
@@ -297,14 +311,15 @@ class Sampler:
 
 # ----------------------------------------------------------------------------- grouping
 def helper_name(cmd):
-    text = " ".join(cmd)
-    if "lang-server" in text:
-        return "lang-server"
-    m = re.search(r"plugins/cache/[^/]+/([^/]+)/", text)
-    if m and ("helper" in text.lower() or "--stdio" in text):
+    """Name of a helper server from its command line, when it carries one of the configured words."""
+    text = " ".join(cmd).lower()
+    if not any(w in text for w in HELPERS):
+        return None
+    m = re.search(r"plugins/cache/[^/]+/([^/]+)/", " ".join(cmd))
+    if m:
         return m.group(1)
     for a in cmd[1:]:
-        if "helper" in a.lower() and not a.startswith("-") and "=" not in a:
+        if any(w in a.lower() for w in HELPERS) and not a.startswith("-") and "=" not in a:
             return Path(a).stem
     return None
 
@@ -413,16 +428,16 @@ def group_apps(procs, sampler, windows):
 
 def describe(g, mine):
     if g.name in LIFT.values():
-        helper = {}
+        helpers = {}
         for pid in g.pids:
             n = helper_name(mine[pid].cmd)
-            # count servers, not their helper processes: only the topmost process of each one
+            # count servers, not their own child processes: only the topmost process of each one
             if n and mine[pid].comm not in LIFT and helper_name(mine.get(mine[pid].ppid, mine[pid]).cmd if mine[pid].ppid in mine else []) != n:
-                helper[n] = helper.get(n, 0) + 1
+                helpers[n] = helpers.get(n, 0) + 1
         sessions = len(g.leaders)
         text = f"{sessions} session{'s' if sessions != 1 else ''}"
-        if helper:
-            text += " · helper: " + ", ".join(f"{n} ×{c}" if c > 1 else n for n, c in sorted(helper.items()))
+        if helpers:
+            text += f" · {HELPERS_LABEL}: " + ", ".join(f"{n} ×{c}" if c > 1 else n for n, c in sorted(helpers.items()))
         return text
     if g.windows:
         title = g.windows[0]["title"] or ""

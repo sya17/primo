@@ -627,24 +627,13 @@ class SettingsWindow(Adw.ApplicationWindow):
         return row
 
     def install_login_theme(self):
-        """theme-switch already updated /var/lib/primo-login when install-sddm-theme.sh has set it up; else install (admin password)."""
+        """theme-switch has already updated /var/lib/primo-login when install-sddm-theme.sh set it up once.
+        No pkexec here on purpose: the script lives in a folder you own, so anything running as you could change it
+        before an admin password prompt runs it as root."""
         if os.access("/var/lib/primo-login", os.W_OK):
             self.toast("Login screen updated")
-            return
-        if not Path("/usr/share/sddm/themes/primo").is_dir():
-            self.toast("Saved. Install the login theme once: sudo scripts/install-sddm-theme.sh")
-            return
-        proc = Gio.Subprocess.new(["pkexec", str(REPO / "scripts" / "install-sddm-theme.sh")],
-                                  Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
-
-        def finished(p, res):
-            try:
-                p.wait_finish(res)
-            except GLib.Error:
-                pass
-            self.toast("Login screen updated" if p.get_successful() else "Login screen not updated (password not given)")
-
-        proc.wait_async(None, finished)
+        else:
+            self.toast("Saved. To show it at login, run once in a terminal: sudo scripts/install-sddm-theme.sh")
 
     def on_choose_file(self, *_):
         self.pick_media("Choose a wallpaper", self.set_wallpaper)   # videos need mpvpaper

@@ -54,7 +54,7 @@ from; make your own in Settings > Modes. A mode can ask for a project folder and
 ## Activity (`SUPER+SHIFT+Esc`, or the pulse icon in the bar)
 
 What is running and what it costs: apps and background programs with CPU, memory, GPU, disk and connections, grouped by process tree
-(a command-line tool and its helper servers show up together). Badges appear only when something really uses the microphone, camera or screen share.
+(a command-line tool and its helper servers show up together; which tools is set in `~/.config/primo/activity.json`). Badges appear only when something really uses the microphone, camera or screen share.
 Quit, force quit or freeze with a confirmation; the session itself is protected. Tabs for services and timers, and a **Dev** tab: who
 holds a port, build tools and runtimes with their folder, and Docker containers (needs your user in the `docker` group). Type to search.
 

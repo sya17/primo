@@ -11,7 +11,7 @@ First public release.
 - Apps written for this setup: Primo Settings (appearance, wallpaper, displays), Spotlight-style
   launcher, Alt+Tab switcher, clipboard history, themed confirm dialog.
 - Activity (`SUPER+SHIFT+Esc`): apps and background programs with CPU, memory, GPU, disk and connections, grouped
-  by process tree (a command-line tool's helper servers show up under it); badges for microphone, camera and screen
+  by process tree (a command-line tool's helper servers show up under it, set per machine); badges for microphone, camera and screen
   sharing; quit / force quit / freeze with confirmation (the session itself is protected); user and system services
   and timers; Waybar tooltip with the three busiest apps; optional warning about an app that keeps the CPU busy on battery.
 - Time hub (click the bar clock, `SUPER+CTRL+H`): a dropdown with Calendar (month view, plans per day), Reminders (type

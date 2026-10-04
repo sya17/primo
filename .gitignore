@@ -20,6 +20,14 @@ config/hypr/local.lua
 config/hypr/displays.lua
 
 *.log
+
+# Secrets and personal files that must never be committed
+*.kdbx
+*.ovpn
+*.ics
+.env*
+*.pem
+*.key
 *.swp
 .cache/
 

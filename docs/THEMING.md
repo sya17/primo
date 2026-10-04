@@ -30,7 +30,8 @@ draw it in `logo` (accent on dark themes, text colour on light ones) and `logo_a
 Settings > Wallpaper > Lock and login screens picks what shows behind the clock: the desktop wallpaper (default), blurred
 windows (lock screen only), or a picture, GIF or video of their own. Videos show one frame; a GIF moves on the login screen.
 `install-sddm-theme.sh` (once, with sudo) links the login theme's colours, logo and background to `/var/lib/primo-login`,
-a folder owned by you, so the login screen follows theme and wallpaper changes without sudo.
+a folder owned by you, so the login screen follows theme and wallpaper changes without sudo. The login screen (SDDM greeter)
+reads those files, so anything running as you can change what it shows; its code (`Main.qml`) stays root-owned.
 
 ## GTK and Qt apps
 
