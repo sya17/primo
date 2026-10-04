@@ -25,6 +25,13 @@ Primo started as one person's Hyprland setup on one laptop, so it is small and o
 with a periwinkle accent and a coral spark. It comes with its own Settings, launcher, time hub and activity monitor, written for it.
 Take all of it, or take a theme, a script or an idea.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dawn-desktop.webp">
+    <img src="docs/screenshots/dusk-desktop.webp" alt="A Kitty terminal on the Primo desktop showing fastfetch with the Primo logo, over a soft wallpaper with fine flowing lines. Shown in Primo Dusk when your GitHub theme is dark, and in Primo Dawn when it is light." width="100%">
+  </picture>
+</p>
+
 ## One palette, five themes
 
 <picture>
@@ -36,6 +43,15 @@ hypr-theme dawn          # every app switches at once
 hypr-theme toggle        # dark or light (SUPER+SHIFT+T)
 ```
 
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dusk-settings.webp" alt="Primo Settings on the Appearance page in Primo Dusk: a Dark and Light switch, and five theme cards, each with a small preview of its palette. Primo Dusk is selected." width="100%"></td>
+    <td width="50%"><img src="docs/screenshots/dawn-settings.webp" alt="The same Settings page in Primo Dawn, the light theme. Primo Dawn is selected." width="100%"></td>
+  </tr>
+</table>
+
+The same Settings window in Primo Dusk and Primo Dawn. Switching changes the bar, windows, terminal, lock screen and the apps around them together.
+
 **Primo Dusk** (dark) and **Primo Dawn** (light) are the signature pair. Catppuccin Mocha, Catppuccin Latte and Nord come with it. A theme
 is one short file with colours, fonts and shape (corner radius, gaps, a pill-shaped bar if you like); [make your own](docs/THEMING.md).
 Wallpapers are drawn from each palette, so they always match.
@@ -45,6 +61,13 @@ Wallpapers are drawn from each palette, so they always match.
 **Time hub.** Click the clock in the bar and a panel drops down: a calendar with your meetings, reminders you type in plain words
 (`call the bank tomorrow 14:00 #work`), alarms and timers, a focus session that counts where your hours go, and notes. It floats over your
 windows instead of pushing them, and its timers keep running when it is closed.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dawn-hub-calendar.webp">
+    <img src="docs/screenshots/dusk-hub-calendar.webp" alt="The time hub panel: a month calendar on the left with dots on days that have plans, and on the right the plans of the selected day: three meetings and one repeating reminder, with a box to add another." width="86%">
+  </picture>
+</p>
 
 **Activity.** `SUPER+SHIFT+Esc` shows what runs in the background and what it costs: CPU, memory, GPU, open connections, and who is holding
 port 8080. Quit, force quit or freeze something with a click and a confirmation. The session itself is protected.

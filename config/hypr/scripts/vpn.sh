@@ -6,5 +6,6 @@ names="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$
 if [[ -z "$names" ]]; then
     echo '{"text":"","class":"idle","tooltip":""}'
 else
-    jq -nc --arg t "VPN connected: $(tr '\n' ',' <<<"$names" | sed 's/,$//; s/,/, /g')" '{text:"󰕥", class:"on", tooltip:$t}'
+    jq -nc --arg t "VPN connected: $(tr '\n' ',' <<<"$names" | sed 's/,$//; s/,/, /g')" 'def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+        {text:"󰕥", class:"on", tooltip:($t | esc)}'
 fi

@@ -186,7 +186,7 @@ def snippet_actions():
         out = []
         for sn in workflow_core.load()["snippets"]:
             def copy(sn=sn):
-                subprocess.Popen(["wl-copy", sn["text"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(["wl-copy", "--", sn["text"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 spawn("notify-send", "-a", "Snippets", "-t", "2500", "-i", "edit-copy", f"Copied: {sn['name']}")
             out.append((sn["name"], sn["text"].replace("\n", " ")[:80], "edit-paste", f"snippet {sn.get('tags', '')}", copy))
         return out
@@ -304,7 +304,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         result = calculate(q)
         if result is not None:
             items.append(Item("calc", f"= {result}", "Press Enter to copy", icon="accessories-calculator",
-                              run=lambda r=result: subprocess.run(["wl-copy", r]), score=1000, big=True))
+                              run=lambda r=result: subprocess.run(["wl-copy", "--", r]), score=1000, big=True))
         history = load_history()
         for info in self.app.apps:
             name = info.get_display_name() or ""

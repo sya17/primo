@@ -111,7 +111,8 @@ def notify(title, body, actions=None, on_action=None, icon="appointment-soon"):
     cmd = ["notify-send", "-a", "Hub", "-u", "critical", "-i", icon]
     for name, text in (actions or []):
         cmd += ["-A", f"{name}={text}"]
-    cmd += ["--", title, body]
+    # Calendar entries and reminder text can come from other people (a meeting invite), and notification daemons render markup: show it as text.
+    cmd += ["--", GLib.markup_escape_text(title), GLib.markup_escape_text(body)]
 
     def run():
         try:
@@ -1032,7 +1033,7 @@ class ReportPage(Gtk.Box):
 
     def copy(self):
         since, until = self.bounds()
-        subprocess.Popen(["wl-copy", hc.markdown_summary(self.app.store["log"], since, until)])
+        subprocess.Popen(["wl-copy", "--", hc.markdown_summary(self.app.store["log"], since, until)])
         self.app.toast("Summary copied (Markdown)")
 
     def export(self):

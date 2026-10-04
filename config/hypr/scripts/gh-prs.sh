@@ -15,8 +15,10 @@ case "${1:-status}" in
         n="$(jq -r '.total_count // 0' <<<"$json")"
         if [[ "$n" == 0 ]]; then out="$hidden"
         else
-            out="$(jq -c --arg n "$n" '{text: ("\($n)"), class: "waiting",
-                tooltip: ("Waiting for your review (" + $n + ")\n" + ([.items[] | "\(.repository_url | split("/") | .[-1]) #\(.number)  \(.title)"] | join("\n")))}' <<<"$json")"
+            # Repository names and PR titles are written by other people and Waybar tooltips render markup: escape them.
+            out="$(jq -c --arg n "$n" 'def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+                {text: ("\($n)"), class: "waiting",
+                tooltip: ("Waiting for your review (" + $n + ")\n" + ([.items[] | "\(.repository_url | split("/") | .[-1]) #\(.number)  \(.title)" | esc] | join("\n")))}' <<<"$json")"
         fi
         mkdir -p "$(dirname "$cache")"; echo "$out" | tee "$cache" ;;
 esac

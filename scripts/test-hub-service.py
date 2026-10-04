@@ -25,6 +25,7 @@ import hub
 import hub_core as hc
 
 sent, rang = [], []
+real_notify = hub.notify
 hub.notify = lambda title, body, **kw: sent.append(title)
 hub.sound = lambda *a, **k: None
 hub.set_dnd = lambda on: None
@@ -97,6 +98,14 @@ app.focus_reset(); time.time = real_time
 app.add_reminder("finish", None, None, None); rid = app.store["reminders"][-1]["id"]
 app.complete_reminder(rid, True); assert app.store["reminders"][-1]["done_at"]
 app.complete_reminder(rid, False); assert "done_at" not in app.store["reminders"][-1]
+
+# a meeting invite must not be able to put markup (links, images) into a notification
+captured = []
+real_run = hub.subprocess.run
+hub.subprocess.run = lambda cmd, **kw: captured.append(cmd) or type("R", (), {"stdout": ""})()
+real_notify('Invite <a href="http://x">join</a>', "room & <img src=file:///etc/passwd>")
+time.sleep(0.3); hub.subprocess.run = real_run
+assert captured and captured[0][-2:] == ["Invite &lt;a href=&quot;http://x&quot;&gt;join&lt;/a&gt;", "room &amp; &lt;img src=file:///etc/passwd&gt;"], captured
 
 # meetings from a calendar feed: one reminder, a few minutes ahead, only once
 os.environ["XDG_CONFIG_HOME"] = os.path.join(work, "config")

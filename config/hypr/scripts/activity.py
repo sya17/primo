@@ -672,7 +672,7 @@ class ActivityWindow(Adw.ApplicationWindow):
             threading.Thread(target=go, daemon=True).start()
 
     def copy_cmd(self, cmd):
-        subprocess.Popen(["wl-copy", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(["wl-copy", "--", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.toast("Command copied")
 
     # ---- actions

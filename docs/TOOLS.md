@@ -23,6 +23,8 @@ A libadwaita app with these pages:
 
 ## Launcher (`SUPER+Space`)
 
+<img src="screenshots/dusk-launcher.webp" alt="The launcher with the word fire typed: Mozilla Firefox under Applications, two files, and a web search." width="46%" align="right">
+
 One search box for everything: applications ranked by how often you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter
 copies the result), system actions (lock, sleep, dark and light, night light, settings pages, modes, calendar, reminders, notes),
 your snippets, files under your home folder, and a web search fallback.
@@ -41,6 +43,17 @@ and shows it on every workspace.
 - **Report**: where your focus time went (today, week, month, by category, day and label), as CSV or a Markdown summary, and a daily
   standup note built from what you finished and what is due.
 - **Notes**: plain Markdown files in `~/Notes`, saved as you type, with a list beside the editor.
+
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/dusk-hub-reminders.webp" alt="Reminders tab: a box to type a reminder in plain words, counts for today, later and no date, a tag filter, and the list grouped by day." width="100%"></td>
+    <td width="50%"><img src="screenshots/dusk-hub-focus.webp" alt="Focus tab: a gradient ring counting down a focus session labelled Write the README, with Reset, Pause and Skip, and the work-day settings on the right." width="100%"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/dusk-hub-report.webp" alt="Report tab: two hours of focus time this week, split by category and by label, with Copy, CSV and Standup buttons." width="100%"></td>
+    <td width="50%"><img src="screenshots/dusk-hub-notes.webp" alt="Notes tab: a list of notes beside an editor showing a note called Meeting notes." width="100%"></td>
+  </tr>
+</table>
 
 A background service keeps timers, alarms and reminders running while the window is closed. Its data is
 `~/.local/state/hyprland-dotfiles/hub/hub.json`.
