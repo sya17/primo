@@ -85,6 +85,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 #custom-vpn.on { color: @green; }
 #custom-vpn.idle { padding: 0; margin: 0; }
 #custom-hubstatus { color: @accent; padding: 0 8px 0 0; font-size: 12px; }
+#custom-hubstatus.mode { color: @green; }
 #custom-hubstatus.idle { padding: 0; margin: 0; }
 #custom-activity { color: @subtext; font-size: 17px; }
 #custom-activity.busy { color: @orange; }

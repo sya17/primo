@@ -41,6 +41,9 @@ hl.bind(mod .. " + CTRL + H", hl.dsp.exec_cmd(programs.hub .. " toggle"))
 hl.bind(mod .. " + CTRL + N", hl.dsp.exec_cmd(programs.hub .. " new-note"))
 hl.bind(mod .. " + CTRL + T", hl.dsp.exec_cmd(programs.hub .. " reminders"))
 
+-- Modes: set the machine up for work, research, writing... (and put it back)
+hl.bind(mod .. " + CTRL + W", hl.dsp.exec_cmd(programs.mode .. " menu"))
+
 -- Activity: what is running in the background and what it costs
 hl.bind(mod .. " + SHIFT + Escape", hl.dsp.exec_cmd(programs.activity))
 

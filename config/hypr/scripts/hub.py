@@ -21,6 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import hub_core as hc  # noqa: E402
+import modes_core as mc  # noqa: E402
 
 import gi  # noqa: E402
 
@@ -763,6 +764,15 @@ class FocusPage(Gtk.Box):
         day.add(brk)
         body.append(day)
 
+        # mode
+        mg = Adw.PreferencesGroup(title="Mode", description="Sets up apps, VPN, power and do-not-disturb for what you are about to do")
+        self.mode_row = Adw.ActionRow(title="None running", subtitle="")
+        self.mode_btn = Gtk.Button(valign=Gtk.Align.CENTER, css_classes=["pill"])
+        self.mode_btn.connect("clicked", lambda *_: self.mode_click())
+        self.mode_row.add_suffix(self.mode_btn)
+        mg.add(self.mode_row)
+        body.insert_child_after(mg, None)
+
         # pomodoro settings
         pg = Adw.PreferencesGroup(title="Focus sessions")
         for key, title, lo, hi in (("focus", "Focus", 5, 120), ("short", "Short break", 1, 30), ("long", "Long break", 5, 60), ("cycles", "Sessions before a long break", 2, 8)):
@@ -776,6 +786,11 @@ class FocusPage(Gtk.Box):
         pg.add(dnd)
         body.append(pg)
         self.tick()
+
+    def mode_click(self):
+        script = HERE / "modes.py"
+        subprocess.Popen([sys.executable, str(script), "end" if mc.current() else "menu"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
 
     def set_day(self, d, on):
         days = set(self.app.store["work"]["days"])
@@ -817,6 +832,15 @@ class FocusPage(Gtk.Box):
             self.go.set_label("Resume" if s["left"] is not None else "Pause")
             self.skip.set_sensitive(True)
             self.reset.set_sensitive(True)
+        st = mc.current()
+        if st:
+            self.mode_row.set_title(st["name"])
+            self.mode_row.set_subtitle(f"Running for {mc.elapsed(st) // 60} min" + (f" · {Path(st['dir']).name}" if st["dir"] else ""))
+            self.mode_btn.set_label("End")
+        else:
+            self.mode_row.set_title("None running")
+            self.mode_row.set_subtitle("Work, research, writing, relax… your own in Settings")
+            self.mode_btn.set_label("Choose…")
         w = hc.work_state(self.app.store["work"])
         if w["working"]:
             self.work_status.set_subtitle(f"Working · {w['left'] // 60}h {w['left'] % 60:02d}m left")
@@ -1183,6 +1207,8 @@ class Service(Adw.Application):
         self.last_break = 0.0
         self.ringing = []
         for name, fn, param in (("toggle", lambda *_: self.toggle(), None), ("open", lambda _a, p: self.show(p.get_string()), "s"),
+                                ("focus-start", lambda _a, p: self.focus_start(*p.get_string().split("|", 1)), "s"),
+                                ("focus-end", lambda *_: self.focus_reset(), None),
                                 ("quit", lambda *_: self.quit(), None)):
             act = Gio.SimpleAction.new(name, GLib.VariantType(param) if param else None)
             act.connect("activate", fn)
@@ -1358,8 +1384,16 @@ class Service(Adw.Application):
         self.sync_dnd()
         self.changed()
 
-    def start_phase(self, phase, minutes, cycle):
-        self.store["session"] = {"phase": phase, "end": time.time() + minutes * 60, "cycle": cycle, "left": None}
+    def focus_start(self, label_text="", category=""):
+        """Used by modes: begin a focus session labelled with what you are working on."""
+        self.start_phase("focus", self.store["pomodoro"]["focus"], 0, label_text, category)
+        self.changed()
+
+    def start_phase(self, phase, minutes, cycle, label_text=None, category=None):
+        old = self.store["session"]
+        self.store["session"] = {"phase": phase, "end": time.time() + minutes * 60, "cycle": cycle, "left": None,
+                                 "label": old.get("label", "") if label_text is None else label_text,
+                                 "category": old.get("category", "") if category is None else category}
         self.sync_dnd()
 
     def sync_dnd(self):
@@ -1497,6 +1531,11 @@ class Service(Adw.Application):
     # ---- the bit of status the bar shows
     def write_status(self):
         parts, cls = [], ""
+        mode = mc.current()
+        if mode:
+            secs = mc.elapsed(mode)
+            parts.append(f"{mode['name']} {secs // 3600}:{secs % 3600 // 60:02d}")
+            cls = "mode"
         s = self.store["session"]
         if s["phase"] != "idle":
             left = s["left"] if s["left"] is not None else max(0, s["end"] - time.time())

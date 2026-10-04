@@ -69,6 +69,9 @@ python3 scripts/test-hub-core.py >"$work/hub.out" 2>&1 && pass "reminder parsing
 
 python3 scripts/test-hub-service.py >"$work/hubsvc.out" 2>&1 && pass "time hub: reminders, alarms, timers, focus, work day, notes" || { fail "time hub service"; tail -8 "$work/hubsvc.out"; }
 
+echo "modes"
+python3 scripts/test-modes.py >"$work/modes.out" 2>&1 && pass "modes: start sets things up, end puts them back" || { fail "modes"; tail -6 "$work/modes.out"; }
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1

@@ -169,9 +169,22 @@ ACTIONS = [
     ("Focus", "Pomodoro and work hours", "timer", "focus pomodoro work hours", lambda: spawn(str(SCRIPTS / "hub.sh"), "focus")),
     ("New note", "Write something down", "document-edit", "note notes write memo", lambda: spawn(str(SCRIPTS / "hub.sh"), "new-note")),
     ("Activity", "What is running and what it costs", "utilities-system-monitor", "activity monitor processes background task manager cpu memory", lambda: spawn(str(SCRIPTS / "activity.sh"), "toggle")),
+    ("Modes", "Start work, research, writing… or end the running one", "emblem-system", "mode modes start work research session", lambda: spawn(str(SCRIPTS / "mode.sh"), "menu")),
+    ("End mode", "Put power, VPN and do-not-disturb back", "process-stop", "end mode stop session", lambda: spawn(str(SCRIPTS / "mode.sh"), "end")),
     ("Pick a colour", "Copy any colour from the screen", "color-select", "color colour picker eyedropper", lambda: spawn(str(SCRIPTS / "colorpicker.sh"))),
     ("Take screenshot", "Select an area", "applets-screenshooter", "screenshot capture", lambda: spawn(str(SCRIPTS / "screenshot.sh"), "area")),
 ]
+
+
+def mode_actions():
+    """One launcher action per mode you have: 'Start Work mode'."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import modes_core
+        return [(f"Start {m['name']} mode", "Opens its apps, sets power, VPN and do-not-disturb", m.get("icon") or "emblem-system",
+                 f"mode start {m['name']} {m['id']}", lambda i=m["id"]: spawn(str(SCRIPTS / "mode.sh"), "start", i)) for m in modes_core.load_modes()]
+    except Exception:
+        return []
 
 
 class Item:
@@ -287,6 +300,10 @@ class LauncherWindow(Adw.ApplicationWindow):
                 continue
             items.append(Item("app", name, info.get_description() or "", gicon=info.get_icon(),
                               run=lambda i=info: self.launch_app(i), score=score))
+        for m in mode_actions():
+            best = max(fuzzy(q, m[0]), fuzzy(q, m[3]) - 15)
+            if q and best > 0:
+                items.append(Item("action", m[0], m[1], icon=m[2], run=m[4], score=best - 3))
         for title, sub, icon, keywords, fn in ACTIONS:
             best = max(fuzzy(q, title), fuzzy(q, keywords) - 15)
             if q and best > 0:

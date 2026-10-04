@@ -24,6 +24,7 @@ return {
     overview    = "~/.config/hypr/scripts/overview.sh toggle",
     activity    = "~/.config/hypr/scripts/activity.sh toggle",
     hub         = "~/.config/hypr/scripts/hub.sh",
+    mode        = "~/.config/hypr/scripts/mode.sh",
     colorPicker = "~/.config/hypr/scripts/colorpicker.sh",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",

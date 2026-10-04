@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|vpn|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -41,6 +41,7 @@ PAGES = [
     ("displays", "Displays", "preferences-desktop-display-symbolic"),
     ("power", "Power", "battery-symbolic"),
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
+    ("modes", "Modes", "emblem-system-symbolic"),
     ("vpn", "VPN", "network-vpn-symbolic"),
     ("more", "More", "preferences-other-symbolic"),
 ]
@@ -190,6 +191,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "displays": self.build_displays,
             "power": self.build_power,
             "bluetooth": self.build_bluetooth,
+            "modes": self.build_modes,
             "vpn": self.build_vpn,
             "more": self.build_more,
         }
@@ -1018,6 +1020,129 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         import threading
         threading.Thread(target=work, daemon=True).start()
+
+    # ======================================================================= Modes
+    def build_modes(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import modes_core
+        self.mc = modes_core
+        page = Adw.PreferencesPage()
+        self.modes_group = Adw.PreferencesGroup(
+            title="Modes", description="One action sets up apps, VPN, power and do-not-disturb for what you are about to do, "
+                                       "and puts them back when you end it. Start one with Super+Ctrl+W or from the launcher.")
+        page.add(self.modes_group)
+        add = Adw.PreferencesGroup()
+        row = Adw.ActionRow(title="New mode…", subtitle="Research, a client, a course, gaming: whatever you do", activatable=True)
+        row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        row.connect("activated", lambda *_: self.edit_mode(None))
+        add.add(row)
+        page.add(add)
+        self.mode_rows = []
+        self.refresh_modes()
+        return page
+
+    def refresh_modes(self):
+        for r in self.mode_rows:
+            self.modes_group.remove(r)
+        self.mode_rows = []
+        running = self.mc.current()
+        for m in self.mc.load_modes():
+            bits = [f"{len(m.get('apps', []))} app{'s' if len(m.get('apps', [])) != 1 else ''}"]
+            if m.get("vpn"):
+                bits.append("VPN " + m["vpn"])
+            if m.get("power"):
+                bits.append(self.mc.POWER[m["power"]])
+            if m.get("dnd"):
+                bits.append("do not disturb")
+            if m.get("focus"):
+                bits.append("focus session")
+            row = Adw.ActionRow(title=GLib.markup_escape_text(m["name"] + ("  · running" if running and running["id"] == m["id"] else "")),
+                                subtitle=" · ".join(bits))
+            row.add_prefix(Gtk.Image.new_from_icon_name((m.get("icon") or "emblem-system") + "-symbolic"))
+            start = Gtk.Button(label="Start", valign=Gtk.Align.CENTER, css_classes=["pill"])
+            start.connect("clicked", lambda _b, i=m["id"]: spawn(str(Path(__file__).resolve().parent / "mode.sh"), "start", i))
+            edit = Gtk.Button(icon_name="document-edit-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Edit")
+            edit.connect("clicked", lambda _b, mm=m: self.edit_mode(mm))
+            row.add_suffix(start)
+            row.add_suffix(edit)
+            self.modes_group.add(row)
+            self.mode_rows.append(row)
+
+    def edit_mode(self, mode):
+        mc = self.mc
+        new = mode is None
+        mode = dict(mode or {"id": "", "name": "", "icon": "emblem-system", "ask_dir": False, "vpn": "", "power": "", "dnd": False,
+                              "focus": False, "category": "Work", "apps": []})
+        dialog = Adw.Dialog(title="New mode" if new else mode["name"], content_width=520, content_height=620)
+        view = Adw.ToolbarView()
+        header = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
+        cancel = Gtk.Button(label="Cancel")
+        save = Gtk.Button(label="Save", css_classes=["suggested-action"])
+        header.pack_start(cancel)
+        header.pack_end(save)
+        view.add_top_bar(header)
+        page = Adw.PreferencesPage()
+        main = Adw.PreferencesGroup()
+        name = Adw.EntryRow(title="Name", text=mode["name"])
+        main.add(name)
+        ask = Adw.SwitchRow(title="Ask for a folder when it starts", subtitle="Use {dir} in a command, e.g. code {dir}", active=mode["ask_dir"])
+        main.add(ask)
+        page.add(main)
+        sys_group = Adw.PreferencesGroup(title="Settings it changes", description="Put back when you end the mode")
+        vpns = ["None"] + [f[0] for f in map(nm_fields, sh("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show").stdout.splitlines())
+                           if len(f) > 1 and f[1] in ("vpn", "wireguard")]
+        vpn = Adw.ComboRow(title="VPN", model=Gtk.StringList.new(vpns))
+        vpn.set_selected(vpns.index(mode["vpn"]) if mode["vpn"] in vpns else 0)
+        powers = list(mc.POWER)
+        power = Adw.ComboRow(title="Power mode", model=Gtk.StringList.new([mc.POWER[p] for p in powers]))
+        power.set_selected(powers.index(mode["power"]) if mode["power"] in powers else 0)
+        dnd = Adw.SwitchRow(title="Do not disturb", active=mode["dnd"])
+        focus = Adw.SwitchRow(title="Start a focus session", subtitle="Counted in the time report", active=mode["focus"])
+        cats = Adw.ComboRow(title="Counts as", model=Gtk.StringList.new(mc.CATEGORIES))
+        cats.set_selected(mc.CATEGORIES.index(mode["category"]) if mode["category"] in mc.CATEGORIES else 0)
+        for w in (vpn, power, dnd, focus, cats):
+            sys_group.add(w)
+        page.add(sys_group)
+        apps_group = Adw.PreferencesGroup(title="Apps it opens", description="One per line: workspace | command | window class (so it is not opened twice)")
+        text = Gtk.TextView(wrap_mode=Gtk.WrapMode.NONE, monospace=True, top_margin=8, bottom_margin=8, left_margin=10, right_margin=10,
+                            css_classes=["card"])
+        text.get_buffer().set_text(mc.apps_to_text(mode["apps"]))
+        apps_group.add(Gtk.ScrolledWindow(child=text, min_content_height=120, max_content_height=180))
+        page.add(apps_group)
+        if not new:
+            gone = Adw.PreferencesGroup()
+            drop = Gtk.Button(label="Delete this mode", css_classes=["destructive-action", "pill"], halign=Gtk.Align.CENTER)
+            gone.add(drop)
+            page.add(gone)
+
+            def delete(*_):
+                mc.save_modes([m for m in mc.load_modes() if m["id"] != mode["id"]])
+                dialog.close()
+                self.refresh_modes()
+
+            drop.connect("clicked", delete)
+
+        def do_save(*_):
+            modes = mc.load_modes()
+            buf = text.get_buffer()
+            mode.update(name=name.get_text().strip() or "Mode", ask_dir=ask.get_active(), vpn="" if vpn.get_selected() == 0 else vpns[vpn.get_selected()],
+                        power=powers[power.get_selected()], dnd=dnd.get_active(), focus=focus.get_active(),
+                        category=mc.CATEGORIES[cats.get_selected()],
+                        apps=mc.text_to_apps(buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)))
+            if new:
+                mode["id"] = mc.slug(mode["name"], {m["id"] for m in modes})
+                modes.append(mode)
+            else:
+                modes = [mode if m["id"] == mode["id"] else m for m in modes]
+            mc.save_modes(modes)
+            dialog.close()
+            self.refresh_modes()
+
+        save.connect("clicked", do_save)
+        cancel.connect("clicked", lambda *_: dialog.close())
+        view.set_content(page)
+        dialog.set_child(view)
+        dialog.present(self)
 
     # ======================================================================= VPN
     VPN_TYPES = {"vpn": "OpenVPN", "wireguard": "WireGuard"}

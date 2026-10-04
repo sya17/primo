@@ -131,6 +131,15 @@ hl.window_rule({
     pin = true,
 })
 
+-- Modes: the picker.
+hl.window_rule({
+    name  = "modes-picker",
+    match = { class = "^dev\\.primo\\.Modes$" },
+    float = true,
+    center = true,
+    size  = "440 520",
+})
+
 -- Activity: floating, centred.
 hl.window_rule({
     name  = "activity",
