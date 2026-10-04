@@ -149,6 +149,21 @@ uses (read from `installs.ini`; set `FIREFOX_PROFILE=/path` to pick another) and
 themes: it reads these files at startup. Toolbar, tabs, address bar, menus and the new-tab page
 follow the palette and the theme's corner radius.
 
+## Boot splash (optional)
+
+```bash
+sudo pacman -S plymouth
+python3 scripts/gen-plymouth-theme.py                # gradient ring + pulsing dots from the palette
+sudo scripts/install-boot-splash.sh                  # shows the plan, changes nothing
+sudo scripts/install-boot-splash.sh --apply          # adds the plymouth hook + "quiet splash", rebuilds initramfs
+sudo scripts/install-boot-splash.sh --uninstall      # puts every file back
+```
+
+Every file it touches is backed up first, the *fallback* boot entry is left untouched (pick it from the
+boot menu if anything ever misbehaves), and a failed `mkinitcpio` restores your config. systemd-boot
+has no graphical theme, so only the splash and a quieter boot are changed. Test it once while you have
+a recovery USB at hand; this part cannot be verified from inside the desktop session.
+
 ## Launcher
 
 `SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often

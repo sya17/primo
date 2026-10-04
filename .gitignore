@@ -31,3 +31,6 @@ sddm/primo/background.png
 
 # Generated VS Code theme extension
 vscode/
+
+# Generated Plymouth boot splash
+boot/
