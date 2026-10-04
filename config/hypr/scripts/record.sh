@@ -17,7 +17,7 @@ refresh_bar() { pkill -RTMIN+11 waybar 2>/dev/null || true; }
 status() {
     if recording; then
         local secs=$(( $(date +%s) - $(stat -c %Y "$pidfile") ))
-        printf '{"text":"\\uf111 %02d:%02d","class":"recording","tooltip":"Recording. Click to stop."}\n' $((secs / 60)) $((secs % 60))
+        printf '{"text":"\\uf111   %02d:%02d","class":"recording","tooltip":"Recording. Click to stop."}\n' $((secs / 60)) $((secs % 60))
     else
         printf '{"text":"","class":"idle","tooltip":""}\n'
     fi
@@ -26,11 +26,12 @@ status() {
 start() { # mode audio
     command -v wf-recorder >/dev/null || { notify-send -u critical "Recording" "Install wf-recorder (pacman -S wf-recorder)"; exit 1; }
     mkdir -p "$dir"
-    local file="$dir/$(date +%Y-%m-%d_%H-%M-%S).mp4" args=(-f "$file")
+    local file args region
+    file="$dir/$(date +%Y-%m-%d_%H-%M-%S).mp4"
+    args=(-f "$file")
     if [[ "$1" == area ]]; then
         # shellcheck disable=SC1091
         [[ -f "$here/../theme.env" ]] && source "$here/../theme.env"
-        local region
         region="$(slurp -b "#${P_BASE:-1e1e2e}80" -c "#${P_RED:-ff6b81}ff" -s "#${P_RED:-ff6b81}22" -w 2)" || exit 0
         args+=(-g "$region")
     fi

@@ -104,7 +104,23 @@ class SwitcherWindow(Adw.ApplicationWindow):
         keys.connect("key-released", self.on_key_released)
         self.add_controller(keys)
 
+    IDLE_SECONDS = 4
+
+    def bump_idle(self):
+        """Close without switching after a few quiet seconds, so it can never get stuck open."""
+        if getattr(self, "idle_id", 0):
+            GLib.source_remove(self.idle_id)
+        self.idle_id = GLib.timeout_add_seconds(self.IDLE_SECONDS, self.on_idle)
+
+    def on_idle(self):
+        self.idle_id = 0
+        if not self.committed:
+            self.committed = True
+            self.close()
+        return False
+
     def refresh(self):
+        self.bump_idle()
         for i, t in enumerate(self.tiles):
             (t.add_css_class if i == self.index else t.remove_css_class)("selected")
         self.title.set_label(self.wins[self.index]["title"] or self.wins[self.index]["class"])
