@@ -94,6 +94,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `SHIFT+R` / `CTRL+R` | Record an area / the whole screen with audio; press again to stop (red timer in the bar) |
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
+| `O` | Overview: all workspaces and windows; click to focus, drag to move |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
 | `,` | Settings (Appearance, Wallpaper, Displays) |
 | `D` | Settings > Displays |

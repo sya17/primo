@@ -16,6 +16,7 @@ return {
     settings    = "python3 ~/.config/hypr/scripts/primo-settings.py",
     switcher    = "~/.config/hypr/scripts/switcher.sh",
     record      = "~/.config/hypr/scripts/record.sh",
+    overview    = "~/.config/hypr/scripts/overview.sh toggle",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }

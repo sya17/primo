@@ -51,6 +51,20 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Overview: a transparent frame around the card, like the launcher.
+hl.window_rule({
+    name  = "overview",
+    match = { class = "^dev\\.primo\\.Overview$" },
+    float = true,
+    size  = "1160 700",
+    move  = "monitor_w*0.5-580 monitor_h*0.5-350",
+    stay_focused = true,
+    border_size = 0,
+    no_shadow = true,
+    no_blur = true,
+    rounding = 0,
+})
+
 -- Annotation editor (satty): floating and centred.
 hl.window_rule({
     name  = "annotation-editor",
