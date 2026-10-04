@@ -25,7 +25,7 @@
 
     "custom/launcher": {
         "format": "",
-        "on-click": "pkill wofi || wofi --show drun",
+        "on-click": "~/.config/hypr/scripts/launcher.sh toggle",
         "tooltip": false
     },
 

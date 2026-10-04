@@ -51,3 +51,6 @@
 
 /* Match the theme's shape: crisp themes get tighter corners, pill themes stay soft. */
 button, entry, spinbutton, .card, popover > contents, menu, .osd { border-radius: {{rounding}}px; }
+
+/* Floating cards of the Primo apps (launcher, ...) follow the theme's menu radius. */
+.primo-card { border-radius: {{menu_radius}}px; }

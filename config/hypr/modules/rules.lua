@@ -51,6 +51,21 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Launcher: Spotlight-style, a little above the middle of the screen.
+hl.window_rule({
+    name  = "launcher",
+    match = { class = "^dev\\.primo\\.Launcher$" },
+    float = true,
+    size  = "660 600",
+    move  = "monitor_w*0.5-330 monitor_h*0.14",
+    stay_focused = true,
+    -- the window is only a transparent frame around the card: no border, shadow or rounding of its own
+    border_size = 0,
+    no_shadow = true,
+    no_blur = true,
+    rounding = 0,
+})
+
 -- Clipboard history and Alt+Tab switcher: floating, centred, always on top of the workspace.
 hl.window_rule({
     name  = "clipboard-picker",

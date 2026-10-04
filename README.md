@@ -77,7 +77,7 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `Q` / `Return` | Terminal |
 | `E` | File manager: Nautilus, a Finder-like floating window (Space = Quick Look) |
 | `SHIFT+E` | Dolphin for heavy lifting (split view, bulk rename, ...) |
-| `R` | Launcher |
+| `R` / `SPACE` | Launcher: apps, calculator, actions, files, web search (Spotlight-style) |
 | `C` | Close window; asks first if a terminal still has a program running |
 | `SHIFT+C` | Close immediately, no confirmation |
 | `F` / `V` | Fullscreen / toggle floating |
@@ -113,6 +113,13 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
 written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
 `nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
+
+## Launcher
+
+`SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often
+you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter copies the result), system
+actions (lock, sleep, dark/light mode, night light, settings pages), files under your home folder,
+and a web search fallback. It runs as a small background service so it opens instantly.
 
 ## Settings
 

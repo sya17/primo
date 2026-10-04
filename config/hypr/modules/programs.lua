@@ -3,7 +3,7 @@ return {
     terminal    = "kitty",
     fileManager = "~/.config/hypr/scripts/files.sh",            -- Nautilus, falls back to Dolphin
     powerFiles  = "env QT_QPA_PLATFORMTHEME=kde dolphin",       -- split view, tabs, bulk rename, ...
-    menu        = "pkill wofi || wofi --show drun",
+    menu        = "~/.config/hypr/scripts/launcher.sh toggle", -- Spotlight-style launcher
     clipboard   = "python3 ~/.config/hypr/scripts/clipboard.py",
     lock        = "pidof hyprlock || hyprlock",
     closeWindow = "~/.config/hypr/scripts/close-window.sh",
