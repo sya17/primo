@@ -32,7 +32,10 @@ if is_video "$img" && [[ -f "$img" ]] && command -v mpvpaper >/dev/null 2>&1; th
     pkill -KILL -x mpvpaper 2>/dev/null || true
     sleep 0.2
     # --auto-pause: stops decoding while windows cover the whole screen
-    setsid -f mpvpaper --auto-pause -o "no-audio loop hwdec=auto panscan=1.0" '*' "$img" >/dev/null 2>&1
+    mpv_log="$state/mpvpaper.log"
+    [[ -f "$mpv_log" ]] && (( $(wc -l < "$mpv_log") > 400 )) && sed -i '1,200d' "$mpv_log"
+    printf '%s %s: starting %s\n' "$(date '+%F %T')" "$mode" "$img" >> "$mpv_log"
+    setsid -f mpvpaper --auto-pause -o "no-audio loop hwdec=auto panscan=1.0" '*' "$img" >> "$mpv_log" 2>&1
     sleep 2
     pgrep -x mpvpaper >/dev/null && { log "video $img"; exit 0; }
     log "mpvpaper stopped at once on $img, showing its still instead"

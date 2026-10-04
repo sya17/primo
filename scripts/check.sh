@@ -100,6 +100,19 @@ scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
     && pass "a video is the live wallpaper, static consumers keep a still" || fail "video wallpaper handling"
 scripts/theme-switch --wallpaper reset >/dev/null
 
+echo "video wallpaper recovery"
+video_test="$work/video-recovery"; mkdir -p "$video_test/bin" "$video_test/state/hyprland-dotfiles" "$video_test/run"
+printf 'video' > "$video_test/live.mp4"; printf '%s\n' "$video_test/live.mp4" > "$video_test/state/hyprland-dotfiles/wallpaper-current"
+for cmd in pkill; do printf '#!/bin/sh\nexit 0\n' > "$video_test/bin/$cmd"; chmod +x "$video_test/bin/$cmd"; done
+printf '#!/bin/sh\nexit 1\n' > "$video_test/bin/pgrep"
+printf '#!/bin/sh\nexit 1\n' > "$video_test/bin/sleep"
+printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >> "$VIDEO_TEST_LOG"' 'exit 0' > "$video_test/bin/setsid"
+printf '#!/bin/sh\nexit 0\n' > "$video_test/bin/mpvpaper"
+chmod +x "$video_test/bin/pgrep" "$video_test/bin/sleep" "$video_test/bin/setsid" "$video_test/bin/mpvpaper"
+PATH="$video_test/bin:$PATH" XDG_RUNTIME_DIR="$video_test/run" XDG_STATE_HOME="$video_test/state" VIDEO_TEST_LOG="$video_test/started" \
+    config/hypr/scripts/wallpaper-rotate.sh guard >/dev/null 2>&1
+grep -q 'mpvpaper' "$video_test/started" && pass "a stopped video wallpaper is restarted" || fail "video wallpaper recovery"
+
 echo "lock and login screens"
 cp themes/primo-dawn/wallpaper.png "$work/pic.png"; printf 'GIF89a' > "$work/anim.gif"
 scripts/theme-switch --lock-wallpaper "$work/pic.png" >/dev/null; scripts/theme-switch --login-wallpaper "$work/anim.gif" >/dev/null

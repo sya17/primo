@@ -10,6 +10,8 @@ set -uo pipefail
 state="${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-dotfiles"
 here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
+is_video() { case "${1,,}" in *.mp4|*.webm|*.mkv|*.mov) return 0 ;; esac; return 1; }
+
 next() {
     local dir cur pick
     dir="$(cat "$state/slideshow-dir" 2>/dev/null)"
@@ -31,7 +33,13 @@ flock -n 9 || exit 0   # already running
 
 # A video wallpaper keeps the GPU busy: freeze it on battery (Settings > Wallpaper), thaw it when plugged in.
 guard_video() {
-    local pid; pid="$(pgrep -xo mpvpaper)" || return 0
+    local pid img
+    pid="$(pgrep -xo mpvpaper)" || {
+        img="$(cat "$state/wallpaper-current" 2>/dev/null || true)"
+        is_video "$img" && [[ -f "$img" ]] && command -v mpvpaper >/dev/null 2>&1 || return 0
+        "$here/wallpaper.sh" apply
+        return
+    }
     if [[ ! -e "$state/video-keep-on-battery" ]] && grep -qs Discharging /sys/class/power_supply/BAT*/status; then
         [[ "$(ps -o stat= -p "$pid")" == T* ]] && return 0   # already paused: say it once
         pkill -STOP -x mpvpaper
@@ -41,6 +49,8 @@ guard_video() {
         pkill -CONT -x mpvpaper
     fi
 }
+
+if [[ "${1:-}" == guard ]]; then guard_video; exit; fi
 
 last=$(date +%s)
 while sleep 15; do
