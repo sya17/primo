@@ -158,6 +158,7 @@ ACTIONS = [
     ("Settings", "Appearance, wallpaper, displays", "preferences-system", "settings preferences", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py")),
     ("Wallpaper", "Choose a wallpaper", "preferences-desktop-wallpaper", "wallpaper background", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page wallpaper")),
     ("Displays", "Resolution, scale, arrangement", "preferences-desktop-display", "display monitor resolution", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page displays")),
+    ("VPN", "Connect, disconnect, import a .ovpn profile", "network-vpn", "vpn openvpn connect tunnel", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page vpn")),
     ("Clipboard history", "Search what you copied", "edit-paste", "clipboard history paste", lambda: shell(f"python3 {SCRIPTS}/clipboard.py")),
     ("Activity", "What is running and what it costs", "utilities-system-monitor", "activity monitor processes background task manager cpu memory", lambda: spawn(str(SCRIPTS / "activity.sh"), "toggle")),
     ("Pick a colour", "Copy any colour from the screen", "color-select", "color colour picker eyedropper", lambda: spawn(str(SCRIPTS / "colorpicker.sh"))),

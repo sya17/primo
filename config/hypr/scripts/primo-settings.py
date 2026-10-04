@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -41,6 +41,7 @@ PAGES = [
     ("displays", "Displays", "preferences-desktop-display-symbolic"),
     ("power", "Power", "battery-symbolic"),
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
+    ("vpn", "VPN", "network-vpn-symbolic"),
     ("more", "More", "preferences-other-symbolic"),
 ]
 
@@ -73,6 +74,11 @@ def read_conf(path):
         k, v = line.split("=", 1)
         data[k.strip()] = re.split(r"\s#", v)[0].strip()
     return data
+
+
+def nm_fields(line):
+    """Split one line of `nmcli -t` output (':' separated, '\\:' is a literal colon)."""
+    return [f.replace("\\:", ":").replace("\\\\", "\\") for f in re.split(r"(?<!\\):", line)]
 
 
 def current_theme():
@@ -184,6 +190,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "displays": self.build_displays,
             "power": self.build_power,
             "bluetooth": self.build_bluetooth,
+            "vpn": self.build_vpn,
             "more": self.build_more,
         }
         self.built = set()
@@ -1011,6 +1018,161 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         import threading
         threading.Thread(target=work, daemon=True).start()
+
+    # ======================================================================= VPN
+    VPN_TYPES = {"vpn": "OpenVPN", "wireguard": "WireGuard"}
+
+    def build_vpn(self):
+        page = Adw.PreferencesPage()
+        if sh("sh", "-c", "command -v nmcli").returncode != 0:
+            group = Adw.PreferencesGroup()
+            group.add(Adw.ActionRow(title="NetworkManager is not installed", subtitle="sudo pacman -S networkmanager"))
+            page.add(group)
+            return page
+
+        if sh("pacman", "-Q", "networkmanager-openvpn").returncode != 0:
+            need = Adw.PreferencesGroup(title="OpenVPN is not installed")
+            cmd = "sudo pacman -S openvpn networkmanager-openvpn && sudo systemctl restart NetworkManager"
+            row = Adw.ActionRow(title="Install it first", subtitle=cmd)
+            copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Copy the command")
+            copy.connect("clicked", lambda *_: (spawn("wl-copy", cmd), self.toast("Command copied")))
+            row.add_suffix(copy)
+            need.add(row)
+            page.add(need)
+
+        self.vpn_status = Adw.ActionRow(title="Status", subtitle="Checking…")
+        top = Adw.PreferencesGroup()
+        top.add(self.vpn_status)
+        page.add(top)
+
+        self.vpn_group = Adw.PreferencesGroup(title="Connections",
+                                              description="Passwords are asked by the network applet when needed")
+        page.add(self.vpn_group)
+
+        more = Adw.PreferencesGroup()
+        imp = Adw.ActionRow(title="Import a .ovpn file…", subtitle="An OpenVPN profile from your provider or company", activatable=True)
+        imp.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        imp.connect("activated", self.on_vpn_import)
+        edit = Adw.ActionRow(title="Edit connections…", subtitle="Opens the network connection editor", activatable=True)
+        edit.add_prefix(Gtk.Image.new_from_icon_name("document-edit-symbolic"))
+        edit.connect("activated", lambda *_: spawn("nm-connection-editor"))
+        more.add(imp)
+        more.add(edit)
+        page.add(more)
+        self.vpn_rows = []
+        self.vpn_busy = False
+        self.refresh_vpn()
+        GLib.timeout_add_seconds(4, self.vpn_tick)
+        return page
+
+    def vpn_tick(self):
+        if not self.vpn_group.get_mapped() and getattr(self, "_vpn_seen", False):
+            return True
+        self._vpn_seen = True
+        if not self.vpn_busy:
+            self.refresh_vpn()
+        return True
+
+    def refresh_vpn(self):
+        def work():
+            active = {f[0] for f in map(nm_fields, sh("nmcli", "-t", "-f", "UUID", "connection", "show", "--active").stdout.splitlines())}
+            conns = []
+            for line in sh("nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show").stdout.splitlines():
+                name, uuid, kind = (nm_fields(line) + ["", "", ""])[:3]
+                if kind in self.VPN_TYPES:
+                    conns.append((name, uuid, self.VPN_TYPES[kind], uuid in active))
+            GLib.idle_add(self.apply_vpn, sorted(conns, key=lambda c: (not c[3], c[0].lower())))
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def apply_vpn(self, conns):
+        for r in self.vpn_rows:
+            self.vpn_group.remove(r)
+        self.vpn_rows = []
+        on = [c[0] for c in conns if c[3]]
+        self.vpn_status.set_subtitle(("Connected: " + ", ".join(on)) if on else "Not connected")
+        for name, uuid, kind, active in conns:
+            row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle=kind + (" · connected" if active else ""))
+            row.add_prefix(Gtk.Image.new_from_icon_name("network-vpn-symbolic" if active else "network-vpn-disconnected-symbolic"))
+            switch = Gtk.Switch(active=active, valign=Gtk.Align.CENTER)
+            switch.connect("state-set", lambda sw, state, u=uuid, n=name: self.on_vpn_toggle(sw, state, u, n))
+            drop = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Remove this connection")
+            drop.connect("clicked", lambda _b, u=uuid, n=name: self.on_vpn_remove(u, n))
+            row.add_suffix(switch)
+            row.add_suffix(drop)
+            self.vpn_group.add(row)
+            self.vpn_rows.append(row)
+        if not conns:
+            row = Adw.ActionRow(title="No VPN connections yet", subtitle="Import a .ovpn file below")
+            self.vpn_group.add(row)
+            self.vpn_rows.append(row)
+        return False
+
+    def on_vpn_toggle(self, switch, state, uuid, name):
+        if self.vpn_busy:
+            return True
+        self.vpn_busy = True
+        self.toast(("Connecting to " if state else "Disconnecting from ") + name + "…")
+
+        def work():
+            r = sh("nmcli", "--wait", "60", "connection", "up" if state else "down", "uuid", uuid)
+            msg = ""
+            if r.returncode != 0:
+                msg = (r.stderr.strip().splitlines() or ["failed"])[-1].removeprefix("Error: ")
+            GLib.idle_add(self.vpn_done, msg or ("Connected to " + name if state else "Disconnected"))
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+        return False
+
+    def vpn_done(self, msg):
+        self.vpn_busy = False
+        sh("pkill", "-RTMIN+13", "waybar")
+        self.toast(msg)
+        self.refresh_vpn()
+        return False
+
+    def on_vpn_remove(self, uuid, name):
+        dialog = Adw.AlertDialog(heading=f"Remove {name}?", body="The connection and its saved settings are deleted. Your VPN provider is not affected.")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("remove", "Remove")
+        dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def answered(_d, response):
+            if response == "remove":
+                sh("nmcli", "connection", "delete", "uuid", uuid)
+                self.toast("Removed " + name)
+                self.refresh_vpn()
+
+        dialog.connect("response", answered)
+        dialog.present(self)
+
+    def on_vpn_import(self, *_):
+        dialog = Gtk.FileDialog(title="Choose an OpenVPN profile")
+        flt = Gtk.FileFilter(name="OpenVPN profiles (.ovpn)")
+        flt.add_pattern("*.ovpn")
+        store = Gio.ListStore.new(Gtk.FileFilter)
+        store.append(flt)
+        dialog.set_filters(store)
+
+        def done(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            if not f:
+                return
+            r = sh("nmcli", "connection", "import", "type", "openvpn", "file", f.get_path())
+            if r.returncode == 0:
+                self.toast("Imported " + Path(f.get_path()).stem)
+            else:
+                self.toast((r.stderr.strip().splitlines() or ["Could not import"])[-1].removeprefix("Error: "))
+            self.refresh_vpn()
+
+        dialog.open(self, None, done)
 
     # ======================================================================= More
     def build_more(self):

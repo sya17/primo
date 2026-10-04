@@ -28,7 +28,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 }
 
 #custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
-#bluetooth, #custom-activity, #custom-powerprofile, #custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
+#bluetooth, #custom-vpn, #custom-activity, #custom-powerprofile, #custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
     color: @text;
@@ -82,6 +82,8 @@ tooltip label { color: @text; padding: 2px 4px; }
 #bluetooth { color: @accent; }
 #bluetooth.off, #bluetooth.disabled { color: @overlay; }
 #bluetooth.connected { color: @accent2; }
+#custom-vpn.on { color: @green; }
+#custom-vpn.idle { padding: 0; margin: 0; }
 #custom-activity { color: @subtext; font-size: 17px; }
 #custom-activity.busy { color: @orange; }
 #custom-powerprofile.power-saver { color: @green; }

@@ -14,6 +14,7 @@ First public release.
   by process tree (a command-line tool's helper servers show up under it); badges for microphone, camera and screen
   sharing; quit / force quit / freeze with confirmation (the session itself is protected); user and system services
   and timers; Waybar tooltip with the three busiest apps; optional warning about an app that keeps the CPU busy on battery.
+- VPN: Settings page (connect, disconnect, import a .ovpn, remove) over NetworkManager, a shield in the bar while connected.
 - Wallpaper slideshow from a folder; live wallpapers (GIF through awww, video through mpvpaper, paused on battery).
 - Screenshots with annotation, screen recording with a bar timer, night light, OSD, power menu.
 - Tooling: `install.sh`, `check.sh` (+ CI), `setup-shell.sh`, VS Code theme generator.

@@ -18,6 +18,7 @@
         "group/sys",
         "custom/activity",
         "bluetooth",
+        "custom/vpn",
         "network",
         "pulseaudio",
         "custom/powerprofile",
@@ -142,6 +143,16 @@
     },
 
     // Red timer while a screen recording is running; hidden otherwise. Click to stop.
+    // A shield while a VPN is connected; hidden otherwise. Click: Settings > VPN.
+    "custom/vpn": {
+        "exec": "~/.config/hypr/scripts/vpn.sh status",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 13,
+        "hide-empty-text": true,
+        "on-click": "python3 ~/.config/hypr/scripts/primo-settings.py --page vpn"
+    },
+
     "custom/recorder": {
         "exec": "~/.config/hypr/scripts/record.sh status",
         "return-type": "json",
