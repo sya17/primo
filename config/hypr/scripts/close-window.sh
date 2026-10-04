@@ -53,7 +53,8 @@ text="Still running in this terminal: ${busy}.
 Closing it will stop these programs and may lose unsaved work."
 
 confirmed() {
-    local confirm="$(dirname "$0")/confirm.py"
+    local confirm
+    confirm="$(dirname "$0")/confirm.py"
     if [[ -x "$confirm" ]] && python3 -c 'import gi' 2>/dev/null; then
         "$confirm" --title "Close terminal?" --text "$text" --confirm "Close anyway" --danger
     elif command -v hyprland-dialog >/dev/null; then

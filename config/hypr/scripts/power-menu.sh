@@ -7,7 +7,8 @@ set -uo pipefail
 style="$HOME/.config/wofi/menu.css"
 
 confirm() { # "Question" "Button" ["Details"]
-    local ui="$(dirname "$0")/confirm.py"
+    local ui
+    ui="$(dirname "$0")/confirm.py"
     if [[ -x "$ui" ]] && python3 -c 'import gi' 2>/dev/null; then
         "$ui" --title "$1" --text "${3:-}" --confirm "$2" --danger
     elif command -v hyprland-dialog >/dev/null; then

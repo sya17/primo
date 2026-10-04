@@ -11,7 +11,7 @@ src="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 cp -r "$src" "$work/repo" && rm -rf "$work/repo/.git"
-cd "$work/repo"
+cd "$work/repo" || exit 1
 
 export HOME="$work/home" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_STATE_HOME="$work/state"
 export PYTHONPYCACHEPREFIX="$work/pyc"
@@ -74,7 +74,9 @@ PY
 echo "time hub"
 python3 scripts/test-hub-core.py >"$work/hub.out" 2>&1 && pass "reminder parsing, alarms, work hours, pomodoro, storage" || { fail "time hub core"; head -8 "$work/hub.out"; }
 
-python3 scripts/test-hub-service.py >"$work/hubsvc.out" 2>&1 && pass "time hub: reminders, alarms, timers, focus, work day, notes" || { fail "time hub service"; tail -8 "$work/hubsvc.out"; }
+if python3 scripts/test-hub-service.py >"$work/hubsvc.out" 2>&1; then
+    if grep -q '^skip' "$work/hubsvc.out"; then skip "time hub service (needs a display)"; else pass "time hub: reminders, alarms, timers, focus, work day, notes"; fi
+else fail "time hub service"; tail -8 "$work/hubsvc.out"; fi
 
 echo "modes"
 python3 scripts/test-modes.py >"$work/modes.out" 2>&1 && pass "modes: start sets things up, end puts them back" || { fail "modes"; tail -6 "$work/modes.out"; }

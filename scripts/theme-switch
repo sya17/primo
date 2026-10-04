@@ -92,7 +92,7 @@ fi
 
 # Toolkit theme names. Prefer adw-gtk3 / Papirus when installed, fall back to what ships everywhere.
 if [[ "${v[mode]}" == dark ]]; then v[prefer_dark]=1 gtk_variant=-dark papirus=Papirus-Dark breeze=breeze-dark
-else v[prefer_dark]=0 gtk_variant= papirus=Papirus breeze=breeze; fi
+else v[prefer_dark]=0 gtk_variant='' papirus=Papirus breeze=breeze; fi
 if [[ -d /usr/share/themes/adw-gtk3 ]]; then v[gtk_theme]="adw-gtk3${gtk_variant}"; else v[gtk_theme]="Adwaita"; fi
 if   [[ -d /usr/share/icons/Papirus ]]; then v[icon_theme]="$papirus"
 elif [[ -d /usr/share/icons/breeze ]];  then v[icon_theme]="$breeze"

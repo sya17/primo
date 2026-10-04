@@ -12,6 +12,9 @@ work = tempfile.mkdtemp()
 os.environ["XDG_STATE_HOME"] = os.path.join(work, "state")
 os.environ["PRIMO_NOTES_DIR"] = os.path.join(work, "notes")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "hypr", "scripts"))
+if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+    print("skip: no display")      # GTK aborts (not just fails) without one, so look before touching it
+    sys.exit(0)
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk

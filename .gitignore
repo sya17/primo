@@ -39,3 +39,7 @@ boot/
 
 # Written by Primo Settings (Workflow > Apps on workspaces)
 config/hypr/apprules.lua
+
+# Python bytecode
+__pycache__/
+*.pyc
