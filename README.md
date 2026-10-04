@@ -91,7 +91,8 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `SHIFT+S`, `Print` | Screenshot area to clipboard + `~/Pictures/Screenshots` |
 | `SHIFT+Print` | Screenshot full screen |
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
-| `SHIFT+V` | Clipboard history (cliphist + wofi) |
+| `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
+| `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
 | `,` | Settings (Appearance, Wallpaper, Displays) |
 | `D` | Settings > Displays |
 | `W` | Settings > Wallpaper |

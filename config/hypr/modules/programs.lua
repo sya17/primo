@@ -4,7 +4,7 @@ return {
     fileManager = "~/.config/hypr/scripts/files.sh",            -- Nautilus, falls back to Dolphin
     powerFiles  = "env QT_QPA_PLATFORMTHEME=kde dolphin",       -- split view, tabs, bulk rename, ...
     menu        = "pkill wofi || wofi --show drun",
-    clipboard   = "cliphist list | wofi --dmenu -p Clipboard | cliphist decode | wl-copy",
+    clipboard   = "python3 ~/.config/hypr/scripts/clipboard.py",
     lock        = "pidof hyprlock || hyprlock",
     closeWindow = "~/.config/hypr/scripts/close-window.sh",
     osd         = "~/.config/hypr/scripts/osd.sh",
@@ -14,6 +14,7 @@ return {
     themeMenu   = "~/.config/hypr/scripts/theme-menu.sh",
     layoutCycle = "~/.config/hypr/scripts/layout-cycle.sh",
     settings    = "python3 ~/.config/hypr/scripts/primo-settings.py",
+    switcher    = "~/.config/hypr/scripts/switcher.sh",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }

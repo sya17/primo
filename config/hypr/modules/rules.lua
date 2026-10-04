@@ -51,6 +51,24 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Clipboard history and Alt+Tab switcher: floating, centred, always on top of the workspace.
+hl.window_rule({
+    name  = "clipboard-picker",
+    match = { class = "^dev\\.primo\\.Clipboard$" },
+    float = true,
+    size  = "620 560",
+    move  = "monitor_w*0.5-310 monitor_h*0.5-280",
+    stay_focused = true,
+})
+hl.window_rule({
+    name  = "app-switcher",
+    match = { class = "^dev\\.primo\\.Switcher$" },
+    float = true,
+    center = true,
+    stay_focused = true,
+    no_anim = true,
+})
+
 -- Settings window: centred, roomy.
 hl.window_rule({
     name  = "settings-window",

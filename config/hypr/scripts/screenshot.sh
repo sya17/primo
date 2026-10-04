@@ -15,7 +15,10 @@ mkdir -p "$dir"
 case "$mode" in
     area)
         command -v slurp >/dev/null || { notify-send -u critical "Screenshot" "Missing dependency: slurp"; exit 1; }
-        region="$(slurp)" || exit 0   # cancelled with Esc
+        # shellcheck disable=SC1091
+        [[ -f "$(dirname "$0")/../theme.env" ]] && source "$(dirname "$0")/../theme.env"
+        # Dim the screen with the theme colour and outline the selection in the accent colour.
+        region="$(slurp -b "#${P_BASE:-1e1e2e}80" -c "#${P_ACCENT:-8da2ff}ff" -s "#${P_ACCENT:-8da2ff}22" -B "#${P_BASE:-1e1e2e}80" -w 2)" || exit 0   # cancelled with Esc
         grim -g "$region" "$file"
         ;;
     full) grim "$file" ;;

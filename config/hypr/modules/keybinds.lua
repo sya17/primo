@@ -21,6 +21,10 @@ hl.bind(mod .. " + X", hl.dsp.exec_cmd(programs.powerMenu))
 hl.bind(mod .. " + M", hl.dsp.exec_cmd(programs.powerMenu .. " logout"))
 hl.bind(mod .. " + N", hl.dsp.exec_cmd(programs.nightlight))
 
+-- App switcher: hold ALT and tap TAB to cycle, release ALT to switch; a quick tap = previous window
+hl.bind("ALT + Tab",         hl.dsp.exec_cmd(programs.switcher .. " next"))
+hl.bind("ALT + SHIFT + Tab", hl.dsp.exec_cmd(programs.switcher .. " prev"))
+
 -- Window management
 -- Confirms first when a terminal still has a program running; SHIFT forces an immediate close.
 hl.bind(mod .. " + C",         hl.dsp.exec_cmd(programs.closeWindow))
