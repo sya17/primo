@@ -172,6 +172,18 @@ render_external "$tpl_dir/btop/primo.theme.tpl"        "$config_home/btop/themes
 render_external "$tpl_dir/fastfetch/config.jsonc.tpl"  "$config_home/fastfetch/config.jsonc"
 render_external "$tpl_dir/satty/config.toml.tpl"       "$config_home/satty/config.toml"
 
+# Firefox: userChrome/userContent in the profile this install actually uses (applied on restart)
+ff_base="$config_home/mozilla/firefox"; [[ -d "$ff_base" ]] || ff_base="$HOME/.mozilla/firefox"
+ff_rel="$(awk -F= '/^Default=/ {print $2; exit}' "$ff_base/installs.ini" 2>/dev/null || true)"   # installs.ini: [<hash>] Default=<profile>
+ff_profile="${FIREFOX_PROFILE:-}"   # set FIREFOX_PROFILE to use a different profile directory
+[[ -z "$ff_profile" && -n "$ff_rel" && -d "$ff_base/$ff_rel" ]] && ff_profile="$ff_base/$ff_rel"
+if [[ -n "$ff_profile" && -d "$ff_profile" ]]; then
+    render_external "$tpl_dir/firefox/userChrome.css.tpl"   "$ff_profile/chrome/userChrome.css"
+    render_external "$tpl_dir/firefox/userContent.css.tpl"  "$ff_profile/chrome/userContent.css"
+    grep -qs 'toolkit.legacyUserProfileCustomizations.stylesheets' "$ff_profile/user.js" \
+        || printf '// Added by the Primo dotfiles: lets userChrome.css / userContent.css load\nuser_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);\n' >> "$ff_profile/user.js"
+fi
+
 # Cursor for X11/Wayland apps that do not read GTK/KDE settings, plus KDE and the login screen.
 mkdir -p "$data_home/icons/default"
 printf '[Icon Theme]\nName=Default\nInherits=%s\n' "${v[cursor_theme]}" > "$data_home/icons/default/index.theme"

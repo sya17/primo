@@ -140,6 +140,14 @@ in `~/Videos/Recordings`; a red timer appears in the bar and clicking it stops t
 a starter one that follows the desktop's dark/light mode (`window.autoDetectColorScheme`).
 `install.sh` runs it when `code` is installed.
 
+## Firefox
+
+`theme-switch` writes `userChrome.css` / `userContent.css` into the profile your Firefox install
+uses (read from `installs.ini`; set `FIREFOX_PROFILE=/path` to pick another) and enables
+`toolkit.legacyUserProfileCustomizations.stylesheets` in `user.js`. **Restart Firefox** after switching
+themes: it reads these files at startup. Toolbar, tabs, address bar, menus and the new-tab page
+follow the palette and the theme's corner radius.
+
 ## Launcher
 
 `SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often
