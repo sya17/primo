@@ -60,4 +60,5 @@ backed up once as `*.bak-primo` the first time they are touched. Each optional s
 | Boot splash | `sudo scripts/install-boot-splash.sh` | Shows the plan; `--apply` changes the initramfs. Keep a recovery USB at hand: this part cannot be verified from inside a session. |
 | Lock and Caps Lock indicator | `sudo scripts/enable-lock-osd.sh` | Adds an on-screen indicator. |
 | Firefox styling | `scripts/firefox-theme.sh off\|on` | Compare with stock Firefox. |
+| VS Code profiles | [docs/vscode-profiles/README.md](vscode-profiles/README.md) | Eight import files (Spring Boot, Flutter, Nuxt, Next.js, Python, Rust, Go, General) with the Primo look. |
 | Wallpapers that move | `yay -S mpvpaper` | GIFs work with `awww`; videos need `mpvpaper`. |

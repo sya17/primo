@@ -1,79 +1,84 @@
-# Profiles VS Code untuk Primo
+# VS Code profiles for Primo
 
-Delapan profil lokal: General, Spring Boot, Flutter, Nuxt, Next.js, Python, Rust,
-dan Go. Tema/font diambil dari pengaturan tampilan saat profil dibuat. Profil
-memisahkan ekstensi bahasa; tidak memasukkan akun maupun kredensial.
+Eight ready-to-import profiles: General, Spring Boot, Flutter, Nuxt, Next.js, Python, Rust and Go. Each one has the Primo look (theme, fonts,
+icons) plus only the extensions that language needs, so the editor stays quiet in projects that do not use them. The profiles hold no
+account, credential or workspace data.
 
-## Pasang
+The look is copied from your current VS Code appearance settings when the files are generated (nine appearance keys, nothing else), and falls
+back to Primo Dusk and Primo Dawn.
 
-1. Tutup semua jendela VS Code, lalu jalankan di terminal desktop:
+## Set up
 
-   ```bash
-   python3 ~/workspace/hyperland/scripts/setup-vscode-profile-privacy.py
-   ```
+All commands run from the repository folder.
 
-   Pengaturan lama dibackup sebelum diubah. Script membaca JSON biasa; bila
-   settings.json memakai komentar/trailing commas, script berhenti tanpa mengubah
-   file. Atur enam preferensi di dalam script melalui Settings VS Code sebagai gantinya.
-
-2. Buka VS Code. Pilih **File > Preferences > Profiles > Import Profile**,
-   lalu pilih berkas `.code-profile` di folder ini dan klik **Create/Import**.
-   Impor profil yang dibutuhkan; ulangi untuk profil lain.
-3. Tema Primo dibuat lokal dan tidak ada di Marketplace. Untuk setiap profil
-   yang sudah diimpor, pasang tema lokal, misalnya:
+1. Close every VS Code window, then apply the privacy preferences once:
 
    ```bash
-   code --profile "Spring Boot" --install-extension ~/workspace/hyperland/vscode/primo-themes-0.1.0.vsix
+   python3 scripts/setup-vscode-profile-privacy.py
    ```
 
-   Ganti nama dengan Flutter, Nuxt, Next.js, Python, Rust, Go atau General.
-   Tokyo Night dan Material Icon Theme tersedia melalui Marketplace.
-4. Buka folder proyek, lalu pilih **Profiles: Switch Profile** melalui
-   `Ctrl+Shift+P`. VS Code mengingat asosiasi profil untuk folder tersebut.
+   It turns off telemetry (VS Code and Red Hat), experiments, the built-in chat features, extension recommendations and Git auto-fetch. These
+   settings apply to the whole application, and a profile import does not always apply them. Your old `settings.json` is backed up first. The
+   script reads plain JSON: if your `settings.json` has comments or trailing commas it stops without changing anything, and you can set the
+   six preferences listed in the script through VS Code's Settings instead.
+
+2. In VS Code choose **File > Preferences > Profiles > Import Profile**, pick a `.code-profile` file from this folder and click
+   **Create** (or **Import**). Repeat for the profiles you want.
+
+3. The Primo theme is built locally and is not on the Marketplace. Build it once, then install it into each imported profile:
 
    ```bash
-   code --profile "Spring Boot" /path/ke/backend
-   code --profile "Nuxt" /path/ke/frontend
+   python3 scripts/gen-vscode-theme.py
+   code --profile "Spring Boot" --install-extension vscode/primo-themes-*.vsix
    ```
 
-## Isi profil
+   Use the profile's name in place of "Spring Boot" (Flutter, Nuxt, Next.js, Python, Rust, Go or General). Tokyo Night and Material Icon Theme
+   come from the Marketplace when the profile is imported.
 
-| Profil | Tooling |
-|---|---|
-| General | Tema dan ikon, editing biasa |
-| Spring Boot | Java, debugger, test runner, Maven, Gradle, Spring Boot/dashboard/Initializr |
-| Flutter | Dart, Flutter, debugger dan tooling test dari Dart Code |
-| Nuxt | Vue Official, Nuxtr, MDC, ESLint, Prettier |
-| Next.js | JS/TS dan debugger bawaan VS Code, ESLint, Prettier |
-| Python | Python, Pylance, debugpy, Ruff; interpreter `.venv` lokal |
-| Rust | rust-analyzer, CodeLLDB |
-| Go | Ekstensi resmi Go |
+4. Open a project folder and choose **Profiles: Switch Profile** from the command palette (`Ctrl+Shift+P`). VS Code remembers the profile for
+   that folder. From a terminal:
 
-Prettier hanya berjalan jika proyek memiliki konfigurasi Prettier. Tidak ada
-konfigurasi format proyek yang diubah. Next memakai tooling React/TypeScript
-bawaan; plugin Next.js milik framework mengikuti konfigurasi proyek.
+   ```bash
+   code --profile "Spring Boot" ~/path/to/backend
+   code --profile "Nuxt" ~/path/to/frontend
+   ```
 
-## Privasi dan runtime
+## What is in each profile
 
-Telemetry VS Code/Red Hat dan eksperimen dimatikan; fitur AI bawaan serta Git
-autofetch dimatikan. Script diperlukan karena beberapa pengaturan berlaku untuk
-seluruh aplikasi dan tidak selalu diterapkan oleh impor profil. Biarkan Settings
-Sync nonaktif. Profil tidak memindahkan atau menghapus ekstensi Default.
+| Profile | Extensions on top of the look |
+| --- | --- |
+| General | None. Plain editing, format on save off. |
+| Spring Boot | Java, debugger, test runner, Maven, Gradle, Spring Boot tools, dashboard and Initializr. |
+| Flutter | Dart and Flutter. |
+| Nuxt | Vue Official, Nuxtr, MDC, ESLint, Prettier. |
+| Next.js | ESLint, Prettier. JavaScript, TypeScript and debugging come with VS Code. |
+| Python | Python, Pylance, debugpy, Ruff. The interpreter is the project's own `.venv`. |
+| Rust | rust-analyzer, CodeLLDB. |
+| Go | The official Go extension. |
 
-Impor ekstensi mengakses Marketplace; runtime, dependency dan language server
-bisa memerlukan unduhan. Pengaturan ini bukan blokir seluruh koneksi internet,
-dan telemetry ekstensi pihak ketiga perlu diperiksa terpisah.
+Prettier only formats a project that has its own Prettier configuration (`prettier.requireConfig`), and no project's formatting settings are
+changed. The Next.js profile relies on VS Code's built-in React and TypeScript support; the framework's own plugin follows the project's
+configuration.
 
-SDK/runtime tidak dipasang oleh profil: gunakan mise untuk Java/Node/Go, Flutter
-SDK untuk Flutter, uv untuk Python, dan rustup untuk Rust. Untuk Python jalankan
-`uv sync` pada proyek yang sudah memakai uv, atau `uv venv` untuk membuat `.venv`.
-Runtime Java proyek mengikuti Maven/Gradle; jangan hardcode lokasi JDK global.
+## Privacy and network use
 
-Regenerasi berkas profil jika tampilan Default berubah:
+Importing extensions contacts the Marketplace, and language servers and dependencies may download things when you open a project. The
+preferences above are not a network block, and the telemetry of third-party extensions has to be checked separately. Leave Settings Sync off
+if you do not want your settings uploaded. A profile does not move or delete the extensions in your Default profile.
+
+## Runtimes
+
+Profiles do not install SDKs or runtimes. Use `mise` for Java, Node and Go, the Flutter SDK for Flutter, `uv` for Python and `rustup` for Rust.
+For Python, run `uv sync` in a project that already uses uv, or `uv venv` to create the `.venv`. A Java project follows its Maven or Gradle
+configuration, so do not hard-code a global JDK location.
+
+## Regenerate
+
+If your Default appearance changes, write the files again:
 
 ```bash
-python3 ~/workspace/hyperland/scripts/gen-vscode-profiles.py
+python3 scripts/gen-vscode-profiles.py
 ```
 
-Perubahan tema melalui script Hyprland yang hanya menyentuh profil Default belum
-tentu otomatis diterapkan pada profil bahasa yang memiliki pengaturan sendiri.
+A theme change made by the Hyprland scripts only touches the Default profile; a language profile with its own appearance settings does not
+follow it automatically.
