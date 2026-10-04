@@ -48,8 +48,16 @@ The launcher (`launcher.py`), Alt+Tab switcher (`switcher.py`), overview (`overv
 D-Bus (`org.gtk.Actions.Activate`). The windows close themselves safely (focus loss, or an idle timeout). The hub also keeps timers, alarms
 and reminders running while its window is closed; the activity monitor only measures while its window is open.
 
+## Launcher sources and the health model
+
+`launcher_core.py` holds the launcher's logic without GTK: a registry of providers (calculator, applications, windows, actions, workspaces,
+themes, clipboard, files, web) that each answer a query with results, and the command words that route a query to one of them. A provider
+that raises is skipped. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and
+the checks behind `primo doctor` and Settings > Health; both read the system through one small `System` class that tests replace with
+sample data.
+
 ## Checks
 
 `scripts/check.sh` syntax-checks scripts, Python and Lua, runs ShellCheck, renders every theme into a temporary directory, validates the
-generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers and activity monitor. `scripts/check-docs.py` checks
+generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers, launcher, health checks and activity monitor. `scripts/check-docs.py` checks
 that every link and image in the Markdown files exists. CI runs both in an Arch container.

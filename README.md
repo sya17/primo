@@ -78,7 +78,8 @@ focus session) and puts it back when you end it. Work, Research, Writing and Rel
 Also in the box:
 
 - **Settings** with appearance, wallpaper (slideshow, GIF, video), displays with a safe 10-second revert, power, Bluetooth and VPN.
-- **Launcher** for apps, a calculator, your snippets, files and the web, plus a window switcher and a workspace overview.
+- **Launcher** for apps, a calculator, windows, your snippets, files and the web (`ws 4`, `theme dusk`), plus a window switcher and a workspace overview.
+- **Health**: `primo doctor` and Settings > Health show what works on your machine and how to fix what does not.
 - **Clipboard history**, screenshots with annotation, and screen recording with a timer in the bar.
 - **Lock screen, login screen** and an optional **boot splash**, all drawn from the same palette.
 - **Nautilus** as a floating Finder-style window with Quick Look, a notification centre, night light and battery warnings.

@@ -92,6 +92,10 @@ python3 scripts/test-modes.py >"$work/modes.out" 2>&1 && pass "modes: start sets
 echo "workflow"
 python3 scripts/test-workflow.py >"$work/wf.out" 2>&1 && pass "calendar feeds, app workspace rules, snippets, notes backup" || { fail "workflow helpers"; tail -6 "$work/wf.out"; }
 
+echo "launcher and health"
+python3 scripts/test-launcher.py >"$work/launcher.out" 2>&1 && pass "launcher sources: calculator, windows, workspaces, themes, clipboard only on request" || { fail "launcher"; tail -6 "$work/launcher.out"; }
+python3 scripts/test-doctor.py >"$work/doctor.out" 2>&1 && pass "health checks and the primo command" || { fail "doctor"; tail -6 "$work/doctor.out"; }
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
@@ -103,7 +107,7 @@ scripts/theme-switch --wallpaper reset >/dev/null
 echo "video wallpaper recovery"
 video_test="$work/video-recovery"; mkdir -p "$video_test/bin" "$video_test/state/hyprland-dotfiles" "$video_test/run"
 printf 'video' > "$video_test/live.mp4"; printf '%s\n' "$video_test/live.mp4" > "$video_test/state/hyprland-dotfiles/wallpaper-current"
-for cmd in pkill; do printf '#!/bin/sh\nexit 0\n' > "$video_test/bin/$cmd"; chmod +x "$video_test/bin/$cmd"; done
+printf '#!/bin/sh\nexit 0\n' > "$video_test/bin/pkill"; chmod +x "$video_test/bin/pkill"
 printf '#!/bin/sh\nexit 1\n' > "$video_test/bin/pgrep"
 printf '#!/bin/sh\nexit 1\n' > "$video_test/bin/sleep"
 printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >> "$VIDEO_TEST_LOG"' 'exit 0' > "$video_test/bin/setsid"
@@ -158,16 +162,13 @@ if have Hyprland; then
         && pass "Hyprland --verify-config" || skip "Hyprland --verify-config (needs a working Hyprland install)"
 else skip "Hyprland not installed"; fi
 
-echo "launcher logic"
+echo "launcher window"
 if python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null; then
-    python3 - <<'PY' && pass "calculator and fuzzy matching" || fail "calculator and fuzzy matching"
+    python3 - <<'PY' && pass "the launcher window module loads and uses the launcher sources" || fail "launcher window module"
 import importlib.util
 spec = importlib.util.spec_from_file_location("l", "config/hypr/scripts/launcher.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-cases = {"2+2": "4", "12*(3+4)": "84", "sqrt(16)": "4", "2^10": "1024", "15% of 80": "12", "1/0": None,
-         "firefox": None, "__import__('os')": None, "2**99999": None}
-assert all(m.calculate(q) == v for q, v in cases.items())
-assert m.fuzzy("fire", "Firefox") > 0 and m.fuzzy("fire", "File Roller") == 0
+assert m.calculate("12*(3+4)") == "84" and callable(m.collect) and m.KIND_LABEL["window"] == "WINDOWS"
 PY
 else skip "python-gobject not installed"; fi
 

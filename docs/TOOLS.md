@@ -18,6 +18,7 @@ A libadwaita app with these pages:
   `nwg-displays`, which writes hyprlang files the Lua config does not read.
 - **Power**: Power Saver, Balanced or Performance, charge, time left, battery health, and the low-battery behaviour.
 - **Bluetooth**: paired devices with Connect, Disconnect and Forget.
+- **Health**: every feature and whether it works on this machine, plus the checks behind it (see "Health and the `primo` command" below).
 - **Modes**, **Workflow**, **VPN**: described below.
 - **More**: shortcuts to Sound, Network, Notifications, Timeshift, Baobab and KeePassXC (only the ones that are installed).
 
@@ -27,7 +28,18 @@ A libadwaita app with these pages:
 
 One search box for everything: applications ranked by how often you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter
 copies the result), system actions (lock, sleep, dark and light, night light, settings pages, modes, calendar, reminders, notes),
-your snippets, files under your home folder, and a web search fallback.
+your snippets, open windows, files under your home folder, and a web search fallback.
+
+Type a command word and a space to ask one source only:
+
+| Type | Result |
+| --- | --- |
+| `ws 4` | Go to workspace 4. `ws` alone lists the workspaces with what is on them. |
+| `theme dusk` | Switch theme. `theme` alone lists them. |
+| `win firefox` | Find an open window and focus it. Windows also show up in a plain search. |
+| `clip token` | Search the clipboard history; Enter copies the entry again. |
+
+The clipboard history can hold passwords, so it is never mixed into a plain search: it only appears after `clip`, `clipboard` or `cb`.
 
 ## Time hub (click the clock, or `SUPER+CTRL+H`)
 
@@ -78,6 +90,23 @@ holds a port, build tools and runtimes with their folder, and Docker containers 
 - **Snippets**: text you reuse. Type its name in the launcher and it is copied.
 - **Notes backup**: an automatic local history of `~/Notes` (a git repository), pushed only if you add a remote and turn that on.
 - A pull-request indicator in the bar shows reviews waiting for you (needs `gh auth login`).
+
+## Health and the `primo` command
+
+Settings > Health lists every feature (bar, launcher, notifications, lock screen, VPN, …) as working, stopped or unavailable, with the
+reason and the command that fixes it, and the checks behind them: the session, resident services, packages, configuration, theme and
+system. From a terminal:
+
+```bash
+primo status                 # version, theme, mode, services, health, on one screen
+primo doctor                 # every check; problems first (-v lists the passing ones, --category services)
+primo features               # what Primo offers and whether each feature works here
+primo doctor --json | jq '.checks[] | select(.status != "pass")'
+```
+
+Nothing here changes the system: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
+failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into
+`~/.local/bin`.
 
 ## Laptop
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `primo` command (`status`, `doctor`, `features`, all with `--json`) and Settings > Health: every feature and check, whether it
+  works on this machine, and the command that fixes what does not. Read-only.
+- Launcher: sources are separate providers. New: open windows, `ws 4` (workspace), `theme dusk`, `win name`, `clip text`
+  (clipboard history, only when asked for).
+
 ## 0.1.0
 
 First public release.

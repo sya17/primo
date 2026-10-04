@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|workflow|vpn|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|workflow|health|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -43,6 +43,7 @@ PAGES = [
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
     ("modes", "Modes", "emblem-system-symbolic"),
     ("workflow", "Workflow", "view-list-symbolic"),
+    ("health", "Health", "emblem-default-symbolic"),
     ("vpn", "VPN", "network-vpn-symbolic"),
     ("more", "More", "preferences-other-symbolic"),
 ]
@@ -194,6 +195,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "bluetooth": self.build_bluetooth,
             "modes": self.build_modes,
             "workflow": self.build_workflow,
+            "health": self.build_health,
             "vpn": self.build_vpn,
             "more": self.build_more,
         }
@@ -1444,6 +1446,126 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.refresh_workflow()
 
         self.wf_dialog("Snippet", box, save, ok="Save")
+
+    # ======================================================================= Health
+    HEALTH_ICON = {"pass": "emblem-ok-symbolic", "warning": "dialog-warning-symbolic", "fail": "dialog-error-symbolic", "skipped": "view-more-horizontal-symbolic"}
+    HEALTH_CSS = {"pass": "success", "warning": "warning", "fail": "error", "skipped": "dim-label"}
+    FEATURE_LABEL = {"working": ("Working", "success"), "stopped": ("Stopped", "warning"), "unavailable": ("Unavailable", "error")}
+
+    def build_health(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import doctor_core
+        self.dc = doctor_core
+        page = Adw.PreferencesPage()
+
+        top = Adw.PreferencesGroup()
+        self.health_row = Adw.ActionRow(title="Checking…", subtitle="Reading the state of the desktop")
+        self.health_icon = Gtk.Image(icon_name="content-loading-symbolic", pixel_size=32)
+        self.health_row.add_prefix(self.health_icon)
+        self.health_spinner = Gtk.Spinner(valign=Gtk.Align.CENTER, spinning=True)
+        self.health_again = Gtk.Button(label="Check again", valign=Gtk.Align.CENTER, css_classes=["pill"])
+        self.health_again.connect("clicked", lambda *_: self.refresh_health())
+        self.health_row.add_suffix(self.health_spinner)
+        self.health_row.add_suffix(self.health_again)
+        top.add(self.health_row)
+        page.add(top)
+
+        self.health_problems = Adw.PreferencesGroup(title="Needs attention", description="Each fix is a command to run yourself. Primo changes nothing from here.", visible=False)
+        page.add(self.health_problems)
+        self.health_features = Adw.PreferencesGroup(title="Features", description="What Primo offers and whether it works on this machine")
+        page.add(self.health_features)
+        self.health_checks = Adw.PreferencesGroup(title="All checks", description="The same checks as the terminal command: primo doctor")
+        page.add(self.health_checks)
+        self.health_rows = {"problems": [], "features": [], "checks": []}
+        self.refresh_health()
+        return page
+
+    def refresh_health(self):
+        import threading
+        self.health_spinner.set_visible(True)
+        self.health_spinner.start()
+        self.health_again.set_sensitive(False)
+
+        def work():
+            results = self.dc.run_all()
+            GLib.idle_add(self.apply_health, results)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def health_check_row(self, r, with_title=True):
+        row = Adw.ActionRow(title=GLib.markup_escape_text(r.title), subtitle=GLib.markup_escape_text(r.message))
+        icon = Gtk.Image(icon_name=self.HEALTH_ICON[r.status], css_classes=[self.HEALTH_CSS[r.status]])
+        row.add_prefix(icon)
+        if r.fix:
+            copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Copy the suggested command: " + r.fix)
+            copy.connect("clicked", lambda _b, cmd=r.fix: (spawn("wl-copy", "--", cmd), self.toast("Command copied")))
+            row.add_suffix(copy)
+        return row
+
+    def apply_health(self, results):
+        import time
+        for key, group in (("problems", self.health_problems), ("features", self.health_features), ("checks", self.health_checks)):
+            for r in self.health_rows[key]:
+                group.remove(r)
+            self.health_rows[key] = []
+        self.health_spinner.stop()
+        self.health_spinner.set_visible(False)
+        self.health_again.set_sensitive(True)
+
+        sm = self.dc.summary(results)
+        c = sm["counts"]
+        icon, css, title = {"HEALTHY": ("emblem-ok-symbolic", "success", "Everything works"),
+                            "DEGRADED": ("dialog-warning-symbolic", "warning", "Needs attention"),
+                            "UNHEALTHY": ("dialog-error-symbolic", "error", "Something is broken")}[sm["health"]]
+        self.health_icon.set_from_icon_name(icon)
+        for k in ("success", "warning", "error"):
+            self.health_icon.remove_css_class(k)
+        self.health_icon.add_css_class(css)
+        self.health_row.set_title(title)
+        bits = [f"{c['pass']} checks passed"]
+        if c["warning"]:
+            bits.append(f"{c['warning']} warning{'s' if c['warning'] != 1 else ''}")
+        if c["fail"]:
+            bits.append(f"{c['fail']} failure{'s' if c['fail'] != 1 else ''}")
+        if c["skipped"]:
+            bits.append(f"{c['skipped']} skipped")
+        self.health_row.set_subtitle(" · ".join(bits) + f" · checked {time.strftime('%H:%M')}")
+
+        problems = [r for r in results if r.status in ("fail", "warning")]
+        problems.sort(key=lambda r: (r.status != "fail", r.category))
+        self.health_problems.set_visible(bool(problems))
+        for r in problems:
+            row = self.health_check_row(r)
+            self.health_problems.add(row)
+            self.health_rows["problems"].append(row)
+
+        for f in self.dc.feature_states(results):
+            label, css = self.FEATURE_LABEL[f["state"]]
+            sub = f["summary"] + (("\n" + " · ".join(f["notes"])) if f["notes"] else "")
+            row = Adw.ActionRow(title=GLib.markup_escape_text(f["name"]), subtitle=GLib.markup_escape_text(sub), subtitle_lines=3)
+            if f["keybind"]:
+                row.add_suffix(Gtk.Label(label=f["keybind"], css_classes=["dim-label", "caption"], valign=Gtk.Align.CENTER))
+            row.add_suffix(Gtk.Label(label=label, css_classes=[css, "heading"], valign=Gtk.Align.CENTER, width_chars=11, xalign=1))
+            if f["page"]:
+                row.set_activatable(True)
+                row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+                row.connect("activated", lambda _r, pid=f["page"]: self.select_page(pid))
+            self.health_features.add(row)
+            self.health_rows["features"].append(row)
+
+        for cat in self.dc.CATEGORIES:
+            rows = [r for r in results if r.category == cat]
+            if not rows:
+                continue
+            bad = [r for r in rows if r.status in ("fail", "warning")]
+            exp = Adw.ExpanderRow(title=cat, subtitle=f"{sum(1 for r in rows if r.status == 'pass')} ok" + (f" · {len(bad)} to look at" if bad else ""), expanded=bool(bad))
+            exp.add_prefix(Gtk.Image(icon_name=self.HEALTH_ICON["fail" if any(r.status == "fail" for r in bad) else "warning" if bad else "pass"],
+                                     css_classes=[self.HEALTH_CSS["fail" if any(r.status == "fail" for r in bad) else "warning" if bad else "pass"]]))
+            for r in rows:
+                exp.add_row(self.health_check_row(r))
+            self.health_checks.add(exp)
+            self.health_rows["checks"].append(exp)
+        return False
 
     # ======================================================================= VPN
     VPN_TYPES = {"vpn": "OpenVPN", "wireguard": "WireGuard"}

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Primo Launcher: a Spotlight-style search box.
 
-One field for everything: applications (ranked by how often you open them), a calculator,
-system actions (lock, sleep, dark mode, ...), files under your home folder and web search.
+One field for everything: applications (ranked by how often you open them), a calculator, open windows,
+system actions (lock, sleep, dark mode, ...), files under your home folder and web search. Type a command
+word and a space to ask one source only:
+
+    ws 4          go to workspace 4 (just "ws" lists them)
+    theme dusk    switch theme
+    win firefox   find an open window
+    clip token    search your clipboard history (never shown unless you ask for it)
 
     launcher.py --daemon         start the resident service (autostart does this)
     launcher.sh toggle           what the keybinds call (talks to the service over D-Bus)
 
-Up/Down move, Enter opens, Esc closes. Calculator results are copied with Enter.
+Up/Down move, Enter opens, Esc closes. Calculator results are copied with Enter. The sources live in launcher_core.py.
 """
-import ast
-import json
-import math
-import operator
 import os
-import re
 import subprocess
 import sys
 import threading
@@ -28,14 +29,13 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from launcher_core import KIND_LABEL, Context, Facts, bump_history, calculate, collect, load_history, route  # noqa: E402
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 APP_ID = "dev.primo.Launcher"
-SCRIPTS = Path(__file__).resolve().parent
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
-HISTORY = STATE_DIR / "launcher-history.json"
 USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"
-MAX_RESULTS = 9
 
 CSS = """
 window.primo-launcher, window.primo-launcher.background { background: transparent; box-shadow: none; }
@@ -50,165 +50,6 @@ window.primo-launcher, window.primo-launcher.background { background: transparen
 .ln-calc { font-size: 22px; font-weight: 300; }
 .ln-hint { opacity: 0.5; font-size: 11px; margin: 6px 16px 10px 16px; }
 """
-
-KIND_LABEL = {"calc": "CALCULATOR", "app": "APPLICATIONS", "action": "ACTIONS", "file": "FILES", "web": "WEB"}
-KIND_ORDER = ["calc", "app", "action", "file", "web"]
-
-
-# --------------------------------------------------------------------------- calculator
-_OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
-        ast.Pow: operator.pow, ast.Mod: operator.mod, ast.FloorDiv: operator.floordiv}
-_FUNCS = {"sqrt": math.sqrt, "sin": math.sin, "cos": math.cos, "tan": math.tan, "log": math.log10,
-          "ln": math.log, "abs": abs, "round": round, "floor": math.floor, "ceil": math.ceil}
-_NAMES = {"pi": math.pi, "e": math.e}
-
-
-def _eval(node):
-    if isinstance(node, ast.Expression):
-        return _eval(node.body)
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-        return node.value
-    if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        left, right = _eval(node.left), _eval(node.right)
-        if isinstance(node.op, ast.Pow) and abs(right) > 1000:
-            raise ValueError("exponent too large")
-        return _OPS[type(node.op)](left, right)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-        v = _eval(node.operand)
-        return -v if isinstance(node.op, ast.USub) else v
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS and not node.keywords:
-        return _FUNCS[node.func.id](*[_eval(a) for a in node.args])
-    if isinstance(node, ast.Name) and node.id in _NAMES:
-        return _NAMES[node.id]
-    raise ValueError("unsupported")
-
-
-def calculate(query):
-    """Return a formatted result for math-looking input, otherwise None."""
-    q = query.strip().lstrip("=").strip()
-    if not q or not re.search(r"[\d)]", q) or not re.search(r"[-+*/%^(]|\b(sqrt|sin|cos|tan|log|ln|abs|round|floor|ceil)\b", q):
-        return None
-    q = q.replace("^", "**").replace("×", "*").replace("÷", "/").replace(",", ".")
-    q = re.sub(r"(\d+(?:\.\d+)?)\s*%\s*(?:of)\s*(\d+(?:\.\d+)?)", r"(\1/100*\2)", q)
-    try:
-        value = _eval(ast.parse(q, mode="eval"))
-    except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, TypeError):
-        return None
-    if isinstance(value, float):
-        if math.isnan(value) or math.isinf(value):
-            return None
-        text = f"{value:.10g}"
-    else:
-        text = str(value)
-    return text
-
-
-# --------------------------------------------------------------------------- data
-def load_history():
-    try:
-        return json.loads(HISTORY.read_text())
-    except (OSError, ValueError):
-        return {}
-
-
-def bump_history(key):
-    data = load_history()
-    data[key] = data.get(key, 0) + 1
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY.write_text(json.dumps(data))
-
-
-def fuzzy(query, text):
-    """0 = no match, higher is better. Substrings and word-initial acronyms only."""
-    q, t = query.lower(), text.lower()
-    if not q:
-        return 1
-    if t == q:
-        return 100
-    if t.startswith(q):
-        return 90
-    if re.search(r"\b" + re.escape(q), t):
-        return 75
-    if q in t:
-        return 55
-    # Acronym of the word starts ("vsc" -> Visual Studio Code); scattered letters do not count.
-    initials = "".join(w[0] for w in re.split(r"[\s\-_.]+", t) if w)
-    if len(q) >= 2 and initials.startswith(q):
-        return 60
-    return 0
-
-
-def spawn(*cmd):
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-
-
-def shell(cmd):
-    spawn("sh", "-c", cmd)
-
-
-ACTIONS = [
-    ("Lock screen", "Lock the session", "system-lock-screen", "lock screen", lambda: shell("pidof hyprlock || hyprlock")),
-    ("Sleep", "Suspend the computer", "weather-clear-night", "sleep suspend", lambda: shell("systemctl suspend")),
-    ("Log out", "Asks for confirmation", "system-log-out", "log out logout exit", lambda: spawn(str(SCRIPTS / "power-menu.sh"), "logout")),
-    ("Restart", "Open the power menu", "system-reboot", "restart reboot", lambda: spawn(str(SCRIPTS / "power-menu.sh"))),
-    ("Shut down", "Open the power menu", "system-shutdown", "shut down poweroff shutdown", lambda: spawn(str(SCRIPTS / "power-menu.sh"))),
-    ("Dark mode", "Switch to the dark theme", "weather-clear-night", "dark mode theme", lambda: shell("hypr-theme dark")),
-    ("Light mode", "Switch to the light theme", "weather-clear", "light mode theme", lambda: shell("hypr-theme light")),
-    ("Toggle night light", "Warm the screen colours", "preferences-system-brightness", "night light", lambda: spawn(str(SCRIPTS / "nightlight.sh"), "toggle")),
-    ("Settings", "Appearance, wallpaper, displays", "primo", "settings preferences", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py")),
-    ("Wallpaper", "Choose a wallpaper", "preferences-desktop-wallpaper", "wallpaper background", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page wallpaper")),
-    ("Displays", "Resolution, scale, arrangement", "preferences-desktop-display", "display monitor resolution", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page displays")),
-    ("VPN", "Connect, disconnect, import a .ovpn profile", "network-vpn", "vpn openvpn connect tunnel", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page vpn")),
-    ("Clipboard history", "Search what you copied", "edit-paste", "clipboard history paste", lambda: shell(f"python3 {SCRIPTS}/clipboard.py")),
-    ("Calendar", "Month view and your plans", "x-office-calendar", "calendar date month", lambda: spawn(str(SCRIPTS / "hub.sh"), "calendar")),
-    ("Reminders", "Things to do and when", "appointment-soon", "reminders todo tasks remind", lambda: spawn(str(SCRIPTS / "hub.sh"), "reminders")),
-    ("Timer", "Count down, keeps running when closed", "timer", "timer countdown", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-timer")),
-    ("Alarm", "Wake up, repeat on days", "alarm", "alarm wake clock", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-alarm")),
-    ("Stopwatch", "Laps", "stopwatch", "stopwatch lap", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-watch")),
-    ("World clock", "Time in other cities", "preferences-system-time", "world clock timezone", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-world")),
-    ("Standup note", "Today's daily note: what you did, what is next", "document-edit", "standup daily note report", lambda: spawn(str(SCRIPTS / "hub.sh"), "standup")),
-    ("Time report", "Where your focus time went", "office-chart-bar", "time report hours tracking", lambda: spawn(str(SCRIPTS / "hub.sh"), "report")),
-    ("Focus", "Pomodoro and work hours", "timer", "focus pomodoro work hours", lambda: spawn(str(SCRIPTS / "hub.sh"), "focus")),
-    ("New note", "Write something down", "document-edit", "note notes write memo", lambda: spawn(str(SCRIPTS / "hub.sh"), "new-note")),
-    ("Activity", "What is running and what it costs", "utilities-system-monitor", "activity monitor processes background task manager cpu memory", lambda: spawn(str(SCRIPTS / "activity.sh"), "toggle")),
-    ("Modes", "Start work, research, writing… or end the running one", "emblem-system", "mode modes start work research session", lambda: spawn(str(SCRIPTS / "mode.sh"), "menu")),
-    ("End mode", "Put power, VPN and do-not-disturb back", "process-stop", "end mode stop session", lambda: spawn(str(SCRIPTS / "mode.sh"), "end")),
-    ("Pick a colour", "Copy any colour from the screen", "color-select", "color colour picker eyedropper", lambda: spawn(str(SCRIPTS / "colorpicker.sh"))),
-    ("Take screenshot", "Select an area", "applets-screenshooter", "screenshot capture", lambda: spawn(str(SCRIPTS / "screenshot.sh"), "area")),
-]
-
-
-def snippet_actions():
-    """Your snippets: pick one and its text is copied."""
-    try:
-        sys.path.insert(0, str(SCRIPTS))
-        import workflow_core
-        out = []
-        for sn in workflow_core.load()["snippets"]:
-            def copy(sn=sn):
-                subprocess.Popen(["wl-copy", "--", sn["text"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                spawn("notify-send", "-a", "Snippets", "-t", "2500", "-i", "edit-copy", f"Copied: {sn['name']}")
-            out.append((sn["name"], sn["text"].replace("\n", " ")[:80], "edit-paste", f"snippet {sn.get('tags', '')}", copy))
-        return out
-    except Exception:
-        return []
-
-
-def mode_actions():
-    """One launcher action per mode you have: 'Start Work mode'."""
-    try:
-        sys.path.insert(0, str(SCRIPTS))
-        import modes_core
-        return [(f"Start {m['name']} mode", "Opens its apps, sets power, VPN and do-not-disturb", m.get("icon") or "emblem-system",
-                 f"mode start {m['name']} {m['id']}", lambda i=m["id"]: spawn(str(SCRIPTS / "mode.sh"), "start", i)) for m in modes_core.load_modes()]
-    except Exception:
-        return []
-
-
-class Item:
-    def __init__(self, kind, title, subtitle="", icon=None, gicon=None, run=None, score=0, big=False):
-        self.kind, self.title, self.subtitle, self.icon, self.gicon = kind, title, subtitle, icon, gicon
-        self.run, self.score, self.big = run, score, big
 
 
 class LauncherWindow(Adw.ApplicationWindow):
@@ -237,7 +78,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.scroller = Gtk.ScrolledWindow(child=self.listbox, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                            propagate_natural_height=True, max_content_height=430)
         root.append(self.scroller)
-        root.append(Gtk.Label(label="↵ Open     ↑↓ Move     Esc Close", xalign=0, css_classes=["ln-hint"]))
+        root.append(Gtk.Label(label="↵ Open     ↑↓ Move     Esc Close     ws  theme  win  clip", xalign=0, css_classes=["ln-hint"]))
         outer = Gtk.Box()
         outer.append(root)
         outer.set_hexpand(True)
@@ -270,7 +111,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.query_token += 1
         token = self.query_token
         self.file_hits = []
-        if len(text.strip()) >= 3 and not calculate(text):
+        if len(text.strip()) >= 3 and not calculate(text) and route(text.lstrip())[0] is None:
             GLib.timeout_add(260, self.start_file_search, text.strip(), token)
 
     def start_file_search(self, text, token):
@@ -299,53 +140,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         return False
 
     def collect(self, text):
-        q = text.strip()
-        items = []
-        result = calculate(q)
-        if result is not None:
-            items.append(Item("calc", f"= {result}", "Press Enter to copy", icon="accessories-calculator",
-                              run=lambda r=result: subprocess.run(["wl-copy", "--", r]), score=1000, big=True))
-        history = load_history()
-        for info in self.app.apps:
-            name = info.get_display_name() or ""
-            best = max(fuzzy(q, name), fuzzy(q, info.get_generic_name() or "") - 10,
-                       fuzzy(q, " ".join(getattr(info, "get_keywords", lambda: [])() or [])) - 25)
-            if q and best <= 0:
-                continue
-            boost = min(history.get(info.get_id() or name, 0), 20)
-            score = (best + boost) if q else boost
-            if not q and boost == 0:
-                continue
-            items.append(Item("app", name, info.get_description() or "", gicon=info.get_icon(),
-                              run=lambda i=info: self.launch_app(i), score=score))
-        for m in snippet_actions():
-            best = max(fuzzy(q, m[0]), fuzzy(q, m[3]) - 15)
-            if q and best > 0:
-                items.append(Item("action", m[0], m[1], icon=m[2], run=m[4], score=best - 4))
-        for m in mode_actions():
-            best = max(fuzzy(q, m[0]), fuzzy(q, m[3]) - 15)
-            if q and best > 0:
-                items.append(Item("action", m[0], m[1], icon=m[2], run=m[4], score=best - 3))
-        for title, sub, icon, keywords, fn in ACTIONS:
-            best = max(fuzzy(q, title), fuzzy(q, keywords) - 15)
-            if q and best > 0:
-                items.append(Item("action", title, sub, icon=icon, run=fn, score=best - 5))
-        for path in self.file_hits:
-            p = Path(path)
-            items.append(Item("file", p.name, str(p.parent).replace(str(Path.home()), "~"),
-                              icon="folder" if p.is_dir() else "text-x-generic",
-                              run=lambda x=path: spawn("xdg-open", x), score=20))
-        if len(q) >= 2 and result is None:
-            items.append(Item("web", f"Search the web for “{q}”", "DuckDuckGo", icon="web-browser",
-                              run=lambda s=q: spawn("xdg-open", "https://duckduckgo.com/?q=" + GLib.Uri.escape_string(s, None, False)),
-                              score=1))
-        items.sort(key=lambda i: (KIND_ORDER.index(i.kind), -i.score))
-        limited, counts = [], {}
-        for it in items:
-            counts[it.kind] = counts.get(it.kind, 0) + 1
-            if counts[it.kind] <= (6 if it.kind == "app" else 4):
-                limited.append(it)
-        return limited[:MAX_RESULTS + 3]
+        ctx = Context(apps=self.app.apps, file_hits=self.file_hits, history=load_history(), facts=self.app.facts, launch_app=self.launch_app)
+        return collect(text, ctx)
 
     def rebuild(self, text, keep_selection=False):
         previous = None
@@ -451,6 +247,7 @@ class Service(Adw.Application):
         self.window = None
         self.css = None
         self.apps = []
+        self.facts = Facts()
         act = Gio.SimpleAction.new("toggle", None)
         act.connect("activate", lambda *_: self.toggle())
         self.add_action(act)

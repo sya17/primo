@@ -22,7 +22,7 @@
 
 | Keys | Action |
 | --- | --- |
-| `SUPER+R` / `SUPER+Space` | Launcher: apps, calculator, actions, files, snippets, web search |
+| `SUPER+R` / `SUPER+Space` | Launcher: apps, calculator, actions, windows, files, snippets, web search. `ws 4`, `theme dusk`, `win name`, `clip text` ask one source |
 | `SUPER+,` | Settings. `SUPER+D` opens Displays, `SUPER+W` opens Wallpaper |
 | `SUPER+E` | File manager: Nautilus as a floating, Finder-like window (Space = Quick Look) |
 | `SUPER+SHIFT+E` | Dolphin for heavy lifting (split view, bulk rename) |

@@ -78,7 +78,9 @@ fi
 run mkdir -p "$bin_dir"
 run ln -sf "$root/scripts/theme-switch" "$bin_dir/hypr-theme"
 echo "link: $bin_dir/hypr-theme"
-case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "note: add $bin_dir to PATH to use 'hypr-theme'" ;; esac
+run ln -sf "$root/scripts/primo" "$bin_dir/primo"
+echo "link: $bin_dir/primo"
+case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "note: add $bin_dir to PATH to use 'hypr-theme' and 'primo'" ;; esac
 
 "$root/scripts/configure-apps.sh" >/dev/null 2>&1 || true   # file manager prefs, defaults (safe to re-run)
 command -v code >/dev/null && python3 "$root/scripts/gen-vscode-theme.py" --install >/dev/null 2>&1 && echo "VS Code: Primo themes installed" || true

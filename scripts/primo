@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""primo: look at the state of the Primo desktop from a terminal (and from scripts: every command has --json).
+
+    primo status              one screen: version, theme, mode, resident services, health
+    primo doctor              every check, grouped; problems first (--verbose lists the passing ones too)
+    primo features            what Primo offers and whether each feature works on this machine
+
+Nothing here changes the system: a fix is only ever printed as a command for you to run.
+Exit codes: 0 healthy, 1 warnings, 2 at least one failure, 64 usage error.
+Colours are off when NO_COLOR is set, when the output is not a terminal, or with --no-color.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
+import doctor_core as dc  # noqa: E402
+
+MARK = {dc.PASS: "ok", dc.WARNING: "!!", dc.FAIL: "XX", dc.SKIPPED: "--"}
+COLOUR = {dc.PASS: "32", dc.WARNING: "33", dc.FAIL: "31", dc.SKIPPED: "2"}
+
+
+def version():
+    try:
+        m = re.search(r"^##\s+(\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(), re.M)
+        return m.group(1) if m else "unknown"
+    except OSError:
+        return "unknown"
+
+
+class Out:
+    def __init__(self, colour):
+        self.colour = colour
+
+    def c(self, code, text):
+        return f"\033[{code}m{text}\033[0m" if self.colour else text
+
+    def mark(self, status):
+        return self.c(COLOUR[status], MARK[status])
+
+
+def make_out(args):
+    colour = not (args.no_color or os.environ.get("NO_COLOR") or not sys.stdout.isatty() or os.environ.get("TERM") == "dumb")
+    return Out(colour)
+
+
+def state_value(name, default=""):
+    try:
+        return (Path.home() / ".local/state/hyprland-dotfiles" / name).read_text().strip() or default
+    except OSError:
+        return default
+
+
+def cmd_doctor(args):
+    results = dc.run_all()
+    if args.category:
+        wanted = args.category.lower()
+        results = [r for r in results if r.category.lower() == wanted]
+        if not results:
+            print(f"primo: no category '{args.category}'. Categories: {', '.join(dc.CATEGORIES)}", file=sys.stderr)
+            return 64
+    sm = dc.summary(results)
+    if args.json:
+        print(json.dumps({"version": 1, "health": sm["health"], "counts": sm["counts"], "checks": dc.to_dicts(results), "features": dc.feature_states(results)}, indent=2))
+        return sm["exit_code"]
+    out = make_out(args)
+    print(out.c("1", "Primo Doctor"))
+    for cat in dc.CATEGORIES:
+        rows = [r for r in results if r.category == cat]
+        if not rows:
+            continue
+        problems = [r for r in rows if r.status in (dc.WARNING, dc.FAIL)]
+        shown = rows if args.verbose else problems
+        passed = sum(1 for r in rows if r.status == dc.PASS)
+        print(f"\n{out.c('1', cat)}  {out.c('2', f'{passed} ok' + (f', {len(problems)} to look at' if problems else ''))}")
+        for r in shown:
+            print(f"  {out.mark(r.status)}  {r.title}: {r.message}")
+            if r.fix and r.status in (dc.WARNING, dc.FAIL):
+                print(f"       try: {r.fix}")
+    c = sm["counts"]
+    print(f"\nHealth: {out.c(COLOUR[dc.PASS] if sm['health'] == 'HEALTHY' else COLOUR[dc.WARNING] if sm['health'] == 'DEGRADED' else COLOUR[dc.FAIL], sm['health'])}"
+          f"  ({c[dc.PASS]} ok, {c[dc.WARNING]} warnings, {c[dc.FAIL]} failures, {c[dc.SKIPPED]} skipped)")
+    return sm["exit_code"]
+
+
+def cmd_status(args):
+    results = dc.run_all()
+    sm = dc.summary(results)
+    theme = state_value("current", "none")
+    mode_name = "none"
+    try:
+        import modes_core
+        st = modes_core.current()
+        if st:
+            mode_name = f"{st['name']}, {modes_core.elapsed(st) // 60} min"
+    except Exception:
+        pass
+    resident = [r for r in results if r.id in {f"service.{f}" for f in ("launcher", "switcher", "overview", "hub", "activity")}]
+    running = sum(1 for r in resident if r.status == dc.PASS)
+    hypr = next((r.message for r in results if r.id == "session.hyprland"), "")
+    data = {"version": version(), "theme": theme, "mode": mode_name, "hyprland": hypr, "resident_services": {"running": running, "total": len(resident)},
+            "health": sm["health"], "counts": sm["counts"]}
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return sm["exit_code"]
+    out = make_out(args)
+    print(f"{out.c('1', 'Primo ' + data['version'])}   {out.c(COLOUR[dc.PASS] if sm['health'] == 'HEALTHY' else COLOUR[dc.WARNING] if sm['health'] == 'DEGRADED' else COLOUR[dc.FAIL], sm['health'])}")
+    for key, value in (("Theme", theme), ("Mode", mode_name), ("Hyprland", hypr or "not detected"), ("Services", f"{running} of {len(resident)} resident services running")):
+        print(f"  {key:<10}{value}")
+    c = sm["counts"]
+    if c[dc.WARNING] or c[dc.FAIL]:
+        print(f"  {'Attention':<10}{c[dc.WARNING]} warning{'s' if c[dc.WARNING] != 1 else ''}, {c[dc.FAIL]} failure{'s' if c[dc.FAIL] != 1 else ''}. Run: primo doctor")
+    return sm["exit_code"]
+
+
+def cmd_features(args):
+    results = dc.run_all()
+    feats = dc.feature_states(results)
+    if args.json:
+        print(json.dumps({"version": 1, "features": feats}, indent=2))
+        return 0
+    out = make_out(args)
+    colour = {"working": COLOUR[dc.PASS], "stopped": COLOUR[dc.WARNING], "unavailable": COLOUR[dc.FAIL]}
+    for f in feats:
+        print(f"  {out.c(colour[f['state']], f['state']):<{11 + (9 if out.colour else 0)}} {f['name']:<26} {f['summary']}")
+        for n in f["notes"]:
+            print(f"  {'':<11} {out.c('2', n)}")
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="primo", description="Look at the state of the Primo desktop. Nothing here changes the system.",
+                                epilog="Examples:\n  primo status\n  primo doctor --category services\n  primo doctor --json | jq '.checks[] | select(.status != \"pass\")'",
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version=f"primo {version()}")
+    sub = p.add_subparsers(dest="cmd", metavar="command")
+    for name, fn, helptext in (("status", cmd_status, "version, theme, mode, services and health in one screen"),
+                               ("doctor", cmd_doctor, "run every check (read-only) and suggest fixes"),
+                               ("features", cmd_features, "list Primo's features and whether each works here")):
+        sp = sub.add_parser(name, help=helptext, description=helptext)
+        sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+        sp.add_argument("--no-color", action="store_true", help="never use colours")
+        if name == "doctor":
+            sp.add_argument("--category", help="only one of: " + ", ".join(dc.CATEGORIES))
+            sp.add_argument("-v", "--verbose", action="store_true", help="also list the checks that pass")
+        sp.set_defaults(fn=fn)
+    args = p.parse_args(argv)
+    if not getattr(args, "fn", None):
+        p.print_help(sys.stderr)
+        return 64
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
