@@ -36,5 +36,6 @@ if (( dry )); then
 else
     printf '[Theme]\nCurrent=primo\nCursorTheme=%s\nCursorSize=24\n' "$cursor" > "$conf"
 fi
-echo "Installed. Preview without logging out:  sddm-greeter-qt6 --test-mode --theme $dest"
+echo "Installed. Preview without logging out (use the Qt5 greeter: it is the one SDDM really runs):"
+echo "  sddm-greeter --test-mode --theme $dest"
 echo "Undo:  sudo $0 --uninstall"

@@ -12,4 +12,8 @@ accent=#{{accent}}
 accent2=#{{accent2}}
 red=#{{red}}
 tint=#59{{base}}
+# Pre-multiplied colours (#AARRGGBB) so the QML needs no colour maths
+surfaceA=#bf{{surface0}}
+surfaceB=#8c{{surface0}}
+edge=#24ffffff
 radius={{rounding}}

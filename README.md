@@ -127,7 +127,7 @@ Without swaync installed, dunst is used and the bell just toggles do-not-disturb
 
 ```bash
 sudo scripts/install-sddm-theme.sh        # copies the Primo theme + the active palette and wallpaper
-sddm-greeter-qt6 --test-mode --theme /usr/share/sddm/themes/primo   # preview in a window
+sddm-greeter --test-mode --theme /usr/share/sddm/themes/primo   # preview in a window (Qt5, what SDDM really runs)
 sudo scripts/install-sddm-theme.sh --uninstall                       # undo
 ```
 
