@@ -14,6 +14,11 @@ First public release.
   by process tree (a command-line tool's helper servers show up under it); badges for microphone, camera and screen
   sharing; quit / force quit / freeze with confirmation (the session itself is protected); user and system services
   and timers; Waybar tooltip with the three busiest apps; optional warning about an app that keeps the CPU busy on battery.
+- Time hub (click the bar clock, `SUPER+CTRL+H`): a dropdown with Calendar (month view, plans per day), Reminders (type
+  natural text in English or Indonesian, repeats, snooze), Clock (world clocks, alarms, stopwatch, timers), Focus
+  (pomodoro, work hours, end-of-day and break reminders, do-not-disturb while focusing) and Notes (Markdown files in
+  `~/Notes`, autosaved, pin to keep it open). A background service keeps timers, alarms and reminders running while
+  the window is closed; a running timer or focus session shows next to the bar clock.
 - VPN: Settings page (connect, disconnect, import a .ovpn, remove) over NetworkManager, a shield in the bar while connected.
 - Wallpaper slideshow from a folder; live wallpapers (GIF through awww, video through mpvpaper, paused on battery).
 - Screenshots with annotation, screen recording with a bar timer, night light, OSD, power menu.

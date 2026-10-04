@@ -36,6 +36,11 @@ hl.bind("ALT + SHIFT + Tab", hl.dsp.exec_cmd(programs.switcher .. " prev"))
 -- Overview: every workspace and its windows (click to focus, drag to move)
 hl.bind(mod .. " + O", hl.dsp.exec_cmd(programs.overview))
 
+-- Time hub: calendar, reminders, clock, focus, notes (also: click the clock in the bar)
+hl.bind(mod .. " + CTRL + H", hl.dsp.exec_cmd(programs.hub .. " toggle"))
+hl.bind(mod .. " + CTRL + N", hl.dsp.exec_cmd(programs.hub .. " new-note"))
+hl.bind(mod .. " + CTRL + T", hl.dsp.exec_cmd(programs.hub .. " reminders"))
+
 -- Activity: what is running in the background and what it costs
 hl.bind(mod .. " + SHIFT + Escape", hl.dsp.exec_cmd(programs.activity))
 

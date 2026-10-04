@@ -64,6 +64,11 @@ assert groups["kitty"].kind == "app" and groups["waybar"].kind == "bg"
 assert ac.signal_group(ac.Group(key="x", name="Hyprland", kind="bg", leaders=[10], protected=True), 0) == 0
 PY
 
+echo "time hub"
+python3 scripts/test-hub-core.py >"$work/hub.out" 2>&1 && pass "reminder parsing, alarms, work hours, pomodoro, storage" || { fail "time hub core"; head -8 "$work/hub.out"; }
+
+python3 scripts/test-hub-service.py >"$work/hubsvc.out" 2>&1 && pass "time hub: reminders, alarms, timers, focus, work day, notes" || { fail "time hub service"; tail -8 "$work/hubsvc.out"; }
+
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
 scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1

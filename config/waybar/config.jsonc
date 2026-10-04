@@ -11,7 +11,7 @@
     "spacing": 0,
 
     "modules-left": ["custom/launcher", "hyprland/workspaces", "custom/layout"],
-    "modules-center": ["clock"],
+    "modules-center": ["clock", "custom/hubstatus"],
     "modules-right": [
         "custom/recorder",
         "tray",
@@ -53,10 +53,21 @@
         "on-click": "~/.config/hypr/scripts/layout-cycle.sh"
     },
 
+    // Click: the time hub (calendar, reminders, clock, focus, notes). Right-click: new note.
     "clock": {
         "format": "{:%a %d %b  %H:%M}",
-        "tooltip-format": "<tt><small>{calendar}</small></tt>",
-        "calendar": { "format": { "today": "<span color='#ffffff'><b>{}</b></span>" } }
+        "tooltip": false,
+        "on-click": "~/.config/hypr/scripts/hub.sh toggle",
+        "on-click-right": "~/.config/hypr/scripts/hub.sh new-note"
+    },
+
+    // A running timer or focus session, next to the clock; hidden when there is none.
+    "custom/hubstatus": {
+        "exec": "~/.config/hypr/scripts/hub.sh status",
+        "return-type": "json",
+        "interval": 1,
+        "hide-empty-text": true,
+        "on-click": "~/.config/hypr/scripts/hub.sh clock"
     },
 
     // CPU / memory live in a drawer: hover the chip icon to reveal them.

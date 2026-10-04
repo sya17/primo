@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Checks for the time hub service: what fires and when (reminders, alarms, timers, focus, work day), and the notes editor.
+
+Needs GTK; skipped when there is no display (CI)."""
+import os
+import sys
+import tempfile
+import time
+from datetime import datetime, timedelta
+
+work = tempfile.mkdtemp()
+os.environ["XDG_STATE_HOME"] = os.path.join(work, "state")
+os.environ["PRIMO_NOTES_DIR"] = os.path.join(work, "notes")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "hypr", "scripts"))
+import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk
+if not Gtk.init_check():
+    print("skip: no display")
+    sys.exit(0)
+import hub
+import hub_core as hc
+
+sent, rang = [], []
+hub.notify = lambda title, body, **kw: sent.append(title)
+hub.sound = lambda *a, **k: None
+hub.set_dnd = lambda on: None
+hub.dnd_is_on = lambda: False
+app = hub.Service(False)
+app.store = hc.Store(os.path.join(work, "hub.json"))
+app.ring_alarm = lambda a: rang.append(a["time"])
+app.write_status = lambda: None
+now = datetime(2026, 10, 5, 9, 0)           # a Monday
+
+def due(minutes): return (now + timedelta(minutes=minutes)).isoformat(timespec="minutes")
+R = app.store["reminders"]
+R += [{"id": "a", "title": "due now", "due": due(-1), "repeat": None, "done": False, "fired": False},
+      {"id": "b", "title": "later", "due": due(30), "repeat": None, "done": False, "fired": False},
+      {"id": "c", "title": "daily", "due": due(-2), "repeat": "daily", "done": False, "fired": False},
+      {"id": "d", "title": "missed", "due": due(-600), "repeat": None, "done": False, "fired": False},
+      {"id": "e", "title": "done one", "due": due(-1), "repeat": None, "done": True, "fired": False}]
+app.check_due(now)
+assert sent.count("due now") == 1 and "later" not in sent and "done one" not in sent, sent
+assert "Missed: missed" in sent, sent                        # a reminder that came due while the service was off
+assert [r for r in R if r["id"] == "c"][0]["due"] == (now + timedelta(days=1, minutes=-2)).isoformat(timespec="minutes")
+sent.clear(); app.check_due(now)
+assert sent == [], "must not fire twice"
+app.reminder_action("a", "snooze")
+assert [r for r in R if r["id"] == "a"][0]["fired"] is False and not [r for r in R if r["id"] == "a"][0]["done"]
+
+app.store["alarms"].append({"id": "x", "time": "09:05", "days": [], "label": "", "on": True})
+app.check_due(now)                                           # arms it
+assert not rang
+app.check_due(now + timedelta(minutes=5, seconds=1))
+assert rang == ["09:05"] and app.store["alarms"][0]["on"] is False   # a one-off alarm switches itself off
+rang.clear(); app.store["alarms"][0].update(on=True, days=[0], next=None)
+app.check_due(now + timedelta(minutes=6)); app.check_due(now + timedelta(days=7, minutes=6))
+assert rang == ["09:05"], rang                               # a repeating alarm rings on its day
+
+sent.clear()
+app.store["timers"].append({"id": "t", "total": 60, "end": time.time() - 1, "left": None})
+app.store["timers"].append({"id": "p", "total": 60, "end": 0, "left": 30.0})   # paused: must not fire
+app.check_due(datetime.now())
+assert "Timer done" in sent and [t["id"] for t in app.store["timers"]] == ["p"]
+
+sent.clear(); app.focus_toggle()
+s = app.store["session"]; assert s["phase"] == "focus" and abs(s["end"] - time.time() - 1500) < 3
+s["end"] = time.time() - 1; app.check_due(datetime.now())
+assert app.store["session"]["phase"] == "short" and "Take a short break" in sent
+app.focus_toggle(); assert app.store["session"]["left"] is not None            # pause
+app.focus_reset(); assert app.store["session"]["phase"] == "idle"
+
+sent.clear(); app.store["work"].update(days=[0], start="09:00", end="17:00", end_notice=10)
+app.check_work(datetime(2026, 10, 5, 16, 49)); assert sent == [], sent
+app.check_work(datetime(2026, 10, 5, 16, 52)); app.check_work(datetime(2026, 10, 5, 16, 55))
+assert sent == ["The work day ends soon"], sent              # once, not at every tick
+
+# notes: typing is saved, an empty note is not kept
+page = hub.NotesPage(app)
+page.new_note(); page.buf.set_text("Title line\nbody text"); page.flush()
+assert page.path.read_text() == "Title line\nbody text"
+kept = page.path
+page.close_note()
+assert [n["title"] for n in hc.list_notes()] == ["Title line"] and kept.exists()
+page.new_note(); empty = page.path; page.close_note()
+assert not empty.exists()
+assert hub.parse_duration("1h30") == 5400 and hub.parse_duration("90s") == 90 and hub.parse_duration("25:00") == 1500 and hub.parse_duration("5") == 300
+print("hub service checks passed")

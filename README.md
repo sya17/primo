@@ -95,6 +95,8 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
 | `O` | Overview: all workspaces and windows; click to focus, drag to move |
+| `CTRL + H` | Time hub under the bar clock (click the clock): calendar, reminders, clock (world, alarm, stopwatch, timer), focus, notes |
+| `CTRL + N` / `CTRL + T` | New note / reminders (type `besok jam 9 rapat #kerja` or `call the bank tomorrow 14:00`) |
 | `SHIFT + Esc` | Activity: what runs in the background and what it costs (CPU, memory, GPU, connections); quit, force quit or freeze an app; services and timers; type to search (`Ctrl+F`); also the pulse icon in the bar |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
 | `,` | Settings (Appearance, Wallpaper, Displays) |

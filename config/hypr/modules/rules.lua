@@ -109,6 +109,28 @@ hl.window_rule({
     no_anim = true,
 })
 
+-- Time hub: a dropdown under the bar clock (the window is a transparent frame around the card).
+hl.window_rule({
+    name  = "time-hub",
+    match = { class = "^dev\\.primo\\.Hub$", title = "^Hub$" },
+    float = true,
+    size  = "460 700",
+    move  = "monitor_w*0.5-230 40",
+    border_size = 0,
+    no_shadow = true,
+    no_blur = true,
+    rounding = 0,
+})
+-- The alarm that rings: centred, on top.
+hl.window_rule({
+    name  = "alarm-ring",
+    match = { class = "^dev\\.primo\\.Hub$", title = "^Alarm$" },
+    float = true,
+    center = true,
+    stay_focused = true,
+    pin = true,
+})
+
 -- Activity: floating, centred.
 hl.window_rule({
     name  = "activity",
