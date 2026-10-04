@@ -1,6 +1,11 @@
 -- Default applications, shared by keybinds and rules.
 return {
     terminal    = "kitty",
+    editor      = "code",
+    notes       = "obsidian",
+    passwords   = "keepassxc",
+    monitor     = "kitty -e btop",
+    flameshot   = 'mkdir -p "$HOME/Pictures/Screenshots" && flameshot gui --path "$HOME/Pictures/Screenshots" --clipboard',
     fileManager = "~/.config/hypr/scripts/files.sh",            -- Nautilus, falls back to Dolphin
     powerFiles  = "env QT_QPA_PLATFORMTHEME=kde dolphin",       -- split view, tabs, bulk rename, ...
     menu        = "~/.config/hypr/scripts/launcher.sh toggle", -- Spotlight-style launcher

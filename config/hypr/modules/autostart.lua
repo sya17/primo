@@ -1,6 +1,7 @@
 -- https://wiki.hypr.land/Configuring/Basics/Autostart/
 hl.on("hyprland.start", function()
     hl.exec_cmd("~/.config/hypr/scripts/wallpaper.sh restore") -- awww if installed, hyprpaper otherwise
+    hl.exec_cmd("~/.config/hypr/scripts/wallpaper-rotate.sh") -- slideshow loop, idle unless enabled in Settings
     hl.exec_cmd("waybar")
     -- Notification daemon: swaync (with control center) when installed, dunst otherwise.
     hl.exec_cmd("sh -c 'command -v swaync >/dev/null && exec swaync || exec dunst'")

@@ -167,6 +167,15 @@ a recovery USB at hand; this part cannot be verified from inside the desktop ses
 
 ## Launcher
 
+Work application shortcuts (SUPER is the Windows key):
+
+- `SUPER+CTRL+E`: VS Code.
+- `SUPER+CTRL+O`: Obsidian.
+- `SUPER+CTRL+K`: KeePassXC.
+- `SUPER+CTRL+B`: btop in Kitty.
+- `SUPER+CTRL+A`: Flameshot annotation, with final actions limited to saving locally
+  in `~/Pictures/Screenshots` and copying to the clipboard.
+
 `SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often
 you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter copies the result), system
 actions (lock, sleep, dark/light mode, night light, settings pages), files under your home folder,

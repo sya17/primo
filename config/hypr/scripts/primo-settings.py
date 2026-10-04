@@ -338,6 +338,8 @@ class SettingsWindow(Adw.ApplicationWindow):
             tgroup.add(trow)
             page.add(tgroup)
 
+        page.add(self.build_slideshow())
+
         self.wp_group = Adw.PreferencesGroup(title="Pictures", description="Theme art and images from ~/Pictures")
         self.wp_flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                    min_children_per_line=2, max_children_per_line=4,
@@ -350,6 +352,69 @@ class SettingsWindow(Adw.ApplicationWindow):
         GLib.idle_add(self.load_next_thumb)
         self.refresh_wallpaper_state()
         return page
+
+    def build_slideshow(self):
+        group = Adw.PreferencesGroup(title="Slideshow", description="Change the wallpaper by itself, using a folder of pictures")
+
+        def read(name, default=""):
+            try:
+                return (STATE_DIR / name).read_text().strip() or default
+            except OSError:
+                return default
+
+        folder = Adw.ActionRow(title="Folder", subtitle=read("slideshow-dir", "Not chosen yet"), activatable=True)
+        folder.add_prefix(Gtk.Image.new_from_icon_name("folder-symbolic"))
+        on = Adw.SwitchRow(title="Rotate automatically", active=(STATE_DIR / "slideshow-on").exists())
+        steps = [("Every minute", 1), ("Every 5 minutes", 5), ("Every 15 minutes", 15), ("Every 30 minutes", 30),
+                 ("Every hour", 60), ("Every 3 hours", 180)]
+        every = Adw.ComboRow(title="Interval", model=Gtk.StringList.new([n for n, _ in steps]))
+        every.set_selected(next((i for i, (_n, m) in enumerate(steps) if str(m) == read("slideshow-interval", "30")), 3))
+        now = Adw.ActionRow(title="Next wallpaper now", activatable=True)
+        now.add_prefix(Gtk.Image.new_from_icon_name("media-skip-forward-symbolic"))
+
+        def save(name, value):
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (STATE_DIR / name).write_text(value)
+
+        def sync():
+            ready = (STATE_DIR / "slideshow-dir").exists()
+            every.set_sensitive(ready)
+            now.set_sensitive(ready)
+            on.set_sensitive(ready)
+
+        def on_toggle(row, _p):
+            if row.get_active():
+                save("slideshow-on", "")
+            else:
+                (STATE_DIR / "slideshow-on").unlink(missing_ok=True)
+
+        def on_folder(*_):
+            def done(d, res):
+                try:
+                    f = d.select_folder_finish(res)
+                except GLib.Error:
+                    return
+                if f:
+                    save("slideshow-dir", f.get_path())
+                    folder.set_subtitle(f.get_path())
+                    sync()
+                    on.set_active(True)
+
+            Gtk.FileDialog(title="Choose a folder of wallpapers").select_folder(self, None, done)
+
+        def on_now(*_):
+            Gio.Subprocess.new([str(HYPR_DIR / "scripts" / "wallpaper-rotate.sh"), "next"],
+                               Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+            GLib.timeout_add(1500, lambda: (self.refresh_wallpaper_state(), False)[1])
+
+        folder.connect("activated", on_folder)
+        on.connect("notify::active", on_toggle)
+        every.connect("notify::selected", lambda r, _p: save("slideshow-interval", str(steps[r.get_selected()][1])))
+        now.connect("activated", on_now)
+        for row in (folder, on, every, now):
+            group.add(row)
+        sync()
+        return group
 
     @staticmethod
     def find_wallpapers():
@@ -392,6 +457,10 @@ class SettingsWindow(Adw.ApplicationWindow):
         return True
 
     def current_wallpaper(self):
+        try:
+            return (STATE_DIR / "wallpaper-current").read_text().strip()
+        except OSError:
+            pass
         try:
             for line in (HYPR_DIR / "hyprpaper.conf").read_text().splitlines():
                 m = re.match(r"\s*path\s*=\s*(.+)", line)

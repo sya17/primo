@@ -85,7 +85,7 @@
 
     "network": {
         "format-wifi": "{icon}",
-        "format-ethernet": "",
+        "format-ethernet": "󰈀",
         "format-disconnected": "",
         "format-icons": [""],
         "tooltip-format-wifi": "{essid}  ({signalStrength}%)\n{ipaddr}",
@@ -96,7 +96,7 @@
 
     "pulseaudio": {
         "format": "{icon}",
-        "format-muted": "",
+        "format-muted": "󰖁",
         "format-icons": { "default": ["", "", ""] },
         "tooltip-format": "Volume {volume}%",
         "scroll-step": 5,

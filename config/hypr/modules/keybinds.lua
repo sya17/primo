@@ -17,6 +17,13 @@ hl.bind(mod .. " + W",      hl.dsp.exec_cmd(programs.settings .. " --page wallpa
 hl.bind(mod .. " + T",      hl.dsp.exec_cmd(programs.themeMenu))
 hl.bind(mod .. " + SHIFT + T", hl.dsp.exec_cmd(programs.toggleTheme)) -- dark <-> light
 
+-- Work apps; CTRL combinations leave the desktop shortcuts available.
+hl.bind(mod .. " + CTRL + E", hl.dsp.exec_cmd(programs.editor))
+hl.bind(mod .. " + CTRL + O", hl.dsp.exec_cmd(programs.notes))
+hl.bind(mod .. " + CTRL + K", hl.dsp.exec_cmd(programs.passwords))
+hl.bind(mod .. " + CTRL + B", hl.dsp.exec_cmd(programs.monitor))
+hl.bind(mod .. " + CTRL + A", hl.dsp.exec_cmd(programs.flameshot), { release = true })
+
 -- Session: SUPER+X power menu, SUPER+M logs out (after confirmation)
 hl.bind(mod .. " + X", hl.dsp.exec_cmd(programs.powerMenu))
 hl.bind(mod .. " + M", hl.dsp.exec_cmd(programs.powerMenu .. " logout"))
