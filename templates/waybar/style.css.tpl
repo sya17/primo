@@ -28,7 +28,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 }
 
 #custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
-#custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
+#custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
     color: @text;
@@ -90,5 +90,8 @@ tooltip label { color: @text; padding: 2px 4px; }
 #custom-power:hover { color: @red; }
 #custom-launcher:hover, #network:hover, #pulseaudio:hover,
 #custom-notifications:hover, #custom-nightlight:hover { color: @accent2; }
+
+#custom-recorder.recording { color: @red; animation: pulse 1s ease-in-out infinite alternate; }
+#custom-recorder.idle { padding: 0; margin: 0; }
 
 @keyframes pulse { to { opacity: 0.45; } }

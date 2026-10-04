@@ -13,6 +13,7 @@
     "modules-left": ["custom/launcher", "hyprland/workspaces", "custom/layout"],
     "modules-center": ["clock"],
     "modules-right": [
+        "custom/recorder",
         "tray",
         "group/sys",
         "network",
@@ -114,6 +115,16 @@
         "on-click": "~/.config/hypr/scripts/notifications.sh panel",
         "on-click-right": "~/.config/hypr/scripts/notifications.sh dnd",
         "escape": true
+    },
+
+    // Red timer while a screen recording is running; hidden otherwise. Click to stop.
+    "custom/recorder": {
+        "exec": "~/.config/hypr/scripts/record.sh status",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 11,
+        "hide-empty-text": true,
+        "on-click": "~/.config/hypr/scripts/record.sh stop"
     },
 
     "custom/nightlight": {

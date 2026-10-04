@@ -11,7 +11,7 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 
 ```bash
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
-               brightnessctl playerctl swayosd hyprsunset swaync pavucontrol network-manager-applet polkit-kde-agent \
+               brightnessctl playerctl swayosd hyprsunset swaync starship eza bat fzf btop zoxide fastfetch satty wf-recorder pavucontrol network-manager-applet polkit-kde-agent \
                ttf-jetbrains-mono-nerd inter-font \
                capitaine-cursors noto-fonts-emoji adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
                nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
@@ -88,8 +88,10 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `1-0` / `SHIFT+1-0` | Go to / move window to workspace |
 | `` ` `` (grave) | Drop-down terminal (floating, toggles a hidden workspace) |
 | `S` / `ALT+S` | Toggle scratchpad / move window to it |
-| `SHIFT+S`, `Print` | Screenshot area to clipboard + `~/Pictures/Screenshots` |
+| `SHIFT+S`, `Print` | Screenshot area to clipboard + `~/Pictures/Screenshots` (notification: Annotate / Show in folder) |
+| `SHIFT+A` | Screenshot area, then annotate it (satty) |
 | `SHIFT+Print` | Screenshot full screen |
+| `SHIFT+R` / `CTRL+R` | Record an area / the whole screen with audio; press again to stop (red timer in the bar) |
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history: search, Enter copies, Delete removes, images get thumbnails |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (quick tap = previous window) |
@@ -113,6 +115,23 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
 written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
 `nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
+
+## Terminal
+
+```bash
+scripts/setup-shell.sh            # prompt, fzf, zoxide, eza/bat aliases, btop theme (adds one block to ~/.bashrc)
+scripts/setup-shell.sh --remove   # undo
+```
+
+`starship` prompt, `fzf`, `btop` and `fastfetch` take their colours from the active theme and
+change with it. Nothing else in `~/.bashrc` is touched, and a one-time backup is kept.
+
+## Screenshots and recordings
+
+Screenshots land in `~/Pictures/Screenshots` and on the clipboard; the notification offers
+**Annotate** (satty, palette from the theme) and **Show in folder**. Recordings (`wf-recorder`) land
+in `~/Videos/Recordings`; a red timer appears in the bar and clicking it stops the recording.
+`sudo scripts/enable-lock-osd.sh` adds an on-screen indicator for Caps Lock / Num Lock.
 
 ## Launcher
 

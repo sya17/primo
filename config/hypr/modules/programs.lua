@@ -15,6 +15,7 @@ return {
     layoutCycle = "~/.config/hypr/scripts/layout-cycle.sh",
     settings    = "python3 ~/.config/hypr/scripts/primo-settings.py",
     switcher    = "~/.config/hypr/scripts/switcher.sh",
+    record      = "~/.config/hypr/scripts/record.sh",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }

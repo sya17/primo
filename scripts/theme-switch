@@ -106,6 +106,7 @@ for c in "${candidates[@]}"; do cursor_has "$c" && { v[cursor_theme]="$c"; break
 for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow view; do
     hex="${v[$key]}"
     v[${key}_rgb]="$((16#${hex:0:2})), $((16#${hex:2:2})), $((16#${hex:4:2}))"
+    v[${key}_sgr]="$((16#${hex:0:2}));$((16#${hex:2:2}));$((16#${hex:4:2}))"
 done
 wp="${v[wallpaper]:-}"
 [[ -n "$wp" && "$wp" != /* ]] && wp="$themes_dir/$theme/$wp"
@@ -163,6 +164,13 @@ render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-4.0/settings.
 sed -i '/gtk-application-prefer-dark-theme/d' "$config_home/gtk-4.0/settings.ini"   # libadwaita warns about it; it follows color-scheme
 render_external "$tpl_dir/qt/Primo.colors.tpl"   "$data_home/color-schemes/Primo.colors"
 sed -i -E '/^[A-Za-z:]+=[0-9]+, /s/, /,/g' "$data_home/color-schemes/Primo.colors"   # KDE expects "r,g,b"
+
+# Terminal tools: prompt, shell snippet, btop, fastfetch, satty (annotation editor)
+render_external "$tpl_dir/starship/starship.toml.tpl"  "$config_home/starship.toml"
+render_external "$tpl_dir/shell/primo.sh.tpl"          "$config_home/primo/shell.sh"
+render_external "$tpl_dir/btop/primo.theme.tpl"        "$config_home/btop/themes/primo.theme"
+render_external "$tpl_dir/fastfetch/config.jsonc.tpl"  "$config_home/fastfetch/config.jsonc"
+render_external "$tpl_dir/satty/config.toml.tpl"       "$config_home/satty/config.toml"
 
 # Cursor for X11/Wayland apps that do not read GTK/KDE settings, plus KDE and the login screen.
 mkdir -p "$data_home/icons/default"

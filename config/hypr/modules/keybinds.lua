@@ -63,8 +63,13 @@ hl.bind(mod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 -- Screenshots (grim + slurp + wl-clipboard)
 hl.bind(mod .. " + SHIFT + S", hl.dsp.exec_cmd(programs.screenshot .. " area"), { release = true })
+hl.bind(mod .. " + SHIFT + A", hl.dsp.exec_cmd(programs.screenshot .. " edit")) -- select, then annotate
 hl.bind("Print",               hl.dsp.exec_cmd(programs.screenshot .. " area"))
 hl.bind("SHIFT + Print",       hl.dsp.exec_cmd(programs.screenshot .. " full"))
+
+-- Screen recording: SUPER+SHIFT+R records an area, SUPER+CTRL+R the whole screen with audio; press again to stop
+hl.bind(mod .. " + SHIFT + R", hl.dsp.exec_cmd(programs.record .. " toggle area"))
+hl.bind(mod .. " + CTRL + R",  hl.dsp.exec_cmd(programs.record .. " toggle full --audio"))
 
 -- Media keys: OSD feedback via osd.sh (swayosd when installed, dunst otherwise)
 local locked  = { locked = true }

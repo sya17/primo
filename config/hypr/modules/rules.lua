@@ -51,6 +51,14 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Annotation editor (satty): floating and centred.
+hl.window_rule({
+    name  = "annotation-editor",
+    match = { class = "^com\\.gabm\\.satty$" },
+    float = true,
+    center = true,
+})
+
 -- Launcher: Spotlight-style, a little above the middle of the screen.
 hl.window_rule({
     name  = "launcher",
