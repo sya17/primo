@@ -507,3 +507,118 @@ def services(user):
     except ValueError:
         timers = []
     return rows, timers
+
+
+# ----------------------------------------------------------------------------- developer view: ports, build tools, containers
+DEV_COMMS = {"java", "mvn", "mvnw", "gradle", "gradlew", "cargo", "rustc", "go", "dotnet", "php", "ruby", "rails", "postgres", "mysqld",
+             "mariadbd", "redis-server", "mongod", "nginx", "docker-proxy", "npm", "npx", "yarn", "pnpm", "bun", "deno"}
+# Interpreters run everything (these very scripts too): they count only when they listen on a port or look like a dev server.
+DEV_INTERPRETERS = {"python", "python3", "node", "uv", "uvicorn", "gunicorn", "flask"}
+DEV_WORDS = re.compile(r"http\.server|uvicorn|gunicorn|flask|django|manage\.py|runserver|vite|next|webpack|nodemon|ts-node|jupyter|streamlit|fastapi")
+
+
+def parse_listening(text, procs=None):
+    """`ss -H -tulnp` output -> [{port, proto, addr, pid, name}], one row per port and process."""
+    rows, seen = [], set()
+    for line in text.splitlines():
+        cols = line.split()
+        if len(cols) < 6 or cols[1] not in ("LISTEN", "UNCONN"):
+            continue
+        local = cols[4]
+        addr, _, port = local.rpartition(":")
+        if not port.isdigit():
+            continue
+        m = re.search(r'\(\("([^"]*)",pid=(\d+)', line)
+        pid = int(m.group(2)) if m else 0
+        name = m.group(1) if m else ""
+        if procs and pid in procs:
+            name = script_name(procs[pid])
+        key = (cols[0], int(port), pid)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({"port": int(port), "proto": cols[0], "addr": addr.strip("[]") or "*", "pid": pid, "name": name or "another user"})
+    return sorted(rows, key=lambda r: (r["pid"] == 0, r["port"]))
+
+
+def listening(procs=None):
+    return parse_listening(run("ss", "-H", "-tulnp"), procs)
+
+
+def cwd_of(pid):
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return ""
+
+
+def dev_processes(procs, port_pids=()):
+    """Top-level build/runtime processes of yours (a `java` under `mvn` is shown once, under `mvn`)."""
+    mine = {pid: p for pid, p in procs.items() if p.uid == ME}
+    out = []
+    for pid, p in mine.items():
+        listens = pid in port_pids
+        if p.comm in DEV_COMMS:
+            pass
+        elif p.comm in DEV_INTERPRETERS and (listens or DEV_WORDS.search(" ".join(p.cmd))):
+            pass
+        else:
+            continue
+        parent = mine.get(p.ppid)
+        if parent and (parent.comm in DEV_COMMS):
+            continue
+        out.append(p)
+    return sorted(out, key=lambda p: -p.pss)
+
+
+def descendants(pid, procs):
+    kids = children_map(procs)
+    out, stack = [], [pid]
+    while stack:
+        cur = stack.pop()
+        for k in kids.get(cur, []):
+            out.append(k)
+            stack.append(k)
+    return out
+
+
+def signal_tree(proc, procs, sig):
+    """Signal a process (and, for SIGKILL, everything under it), after checking it is still the same one."""
+    if proc.comm in PROTECTED or proc.pid == os.getpid():
+        return 0
+    targets = [proc] + ([procs[k] for k in descendants(proc.pid, procs)] if sig == signal.SIGKILL else [])
+    n = 0
+    for p in targets:
+        if verify(p):
+            try:
+                os.kill(p.pid, sig)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
+def parse_containers(text):
+    rows = []
+    for line in text.splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        rows.append({"id": d.get("ID", ""), "name": d.get("Names", ""), "image": d.get("Image", ""), "status": d.get("Status", ""),
+                     "state": d.get("State", ""), "ports": d.get("Ports", "")})
+    return rows
+
+
+def containers():
+    """(rows, problem). problem is '', 'missing' (no docker), 'permission' (not in the docker group) or 'stopped'."""
+    try:
+        r = subprocess.run(["docker", "ps", "-a", "--format", "{{json .}}"], capture_output=True, text=True, timeout=6)
+    except FileNotFoundError:
+        return [], "missing"
+    except (OSError, subprocess.SubprocessError):
+        return [], "stopped"
+    if r.returncode != 0:
+        err = r.stderr.lower()
+        return [], "permission" if "permission denied" in err else "stopped"
+    return parse_containers(r.stdout), ""

@@ -155,7 +155,7 @@ ACTIONS = [
     ("Dark mode", "Switch to the dark theme", "weather-clear-night", "dark mode theme", lambda: shell("hypr-theme dark")),
     ("Light mode", "Switch to the light theme", "weather-clear", "light mode theme", lambda: shell("hypr-theme light")),
     ("Toggle night light", "Warm the screen colours", "preferences-system-brightness", "night light", lambda: spawn(str(SCRIPTS / "nightlight.sh"), "toggle")),
-    ("Settings", "Appearance, wallpaper, displays", "preferences-system", "settings preferences", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py")),
+    ("Settings", "Appearance, wallpaper, displays", "primo", "settings preferences", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py")),
     ("Wallpaper", "Choose a wallpaper", "preferences-desktop-wallpaper", "wallpaper background", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page wallpaper")),
     ("Displays", "Resolution, scale, arrangement", "preferences-desktop-display", "display monitor resolution", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page displays")),
     ("VPN", "Connect, disconnect, import a .ovpn profile", "network-vpn", "vpn openvpn connect tunnel", lambda: shell(f"python3 {SCRIPTS}/primo-settings.py --page vpn")),

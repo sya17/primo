@@ -116,6 +116,18 @@ def ago(us, future=False):
     return "moments" if future else "just now"
 
 
+def clear(box):
+    child = box.get_first_child()
+    while child:
+        nxt = child.get_next_sibling()
+        box.remove(child)
+        child = nxt
+
+
+def label(text, css=None, xalign=0.0, **kw):
+    return Gtk.Label(label=text, xalign=xalign, css_classes=[css] if css else [], **kw)
+
+
 class Apps:
     """Resolves a window class to a display name and an icon."""
 
@@ -258,7 +270,7 @@ class ActivityWindow(Adw.ApplicationWindow):
         view = Adw.ToolbarView()
         header = Adw.HeaderBar()
         tabs = Adw.ToggleGroup()
-        for name, label in (("apps", "Apps"), ("bg", "Background"), ("services", "Services")):
+        for name, label in (("apps", "Apps"), ("bg", "Background"), ("services", "Services"), ("dev", "Dev")):
             tabs.add(Adw.Toggle(name=name, label=label))
         tabs.set_active_name("apps")
         tabs.connect("notify::active-name", lambda g, _p: self.set_tab(g.get_active_name()))
@@ -296,6 +308,9 @@ class ActivityWindow(Adw.ApplicationWindow):
         self.stack.add_named(self.empty, "empty")
         self.stack.set_visible_child_name("empty")
         self.stack.add_named(self.svc_box, "services")
+        self.dev_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.stack.add_named(self.dev_box, "dev")
+        self.dev_data = None
         self.scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.scroll.set_child(self.stack)
         body.append(self.scroll)
@@ -338,6 +353,9 @@ class ActivityWindow(Adw.ApplicationWindow):
         if self.tab == "services":
             if self.svc_data:
                 self.fill_services(*self.svc_data)
+        elif self.tab == "dev":
+            if self.dev_data:
+                self.fill_dev(*self.dev_data)
         else:
             self.refresh_apps(resort=True)
 
@@ -358,6 +376,9 @@ class ActivityWindow(Adw.ApplicationWindow):
         if self.tab == "services":
             if self.tick_n % 3 == 0:   # three systemctl calls: no need to repeat them every 2 s
                 self.refresh_services()
+        elif self.tab == "dev":
+            if self.tick_n % 2 == 0:
+                self.refresh_dev()
         else:
             self.refresh_apps(resort=(self.tick_n % 3 == 1))
         self.refresh_footer()
@@ -366,10 +387,13 @@ class ActivityWindow(Adw.ApplicationWindow):
 
     def set_tab(self, name):
         self.tab = name
-        self.sorter.set_visible(name != "services")
+        self.sorter.set_visible(name not in ("services", "dev"))
         if name == "services":
             self.stack.set_visible_child_name("services")
             self.refresh_services()
+        elif name == "dev":
+            self.stack.set_visible_child_name("dev")
+            self.refresh_dev()
         else:
             self.stack.set_visible_child_name("list")
             for row in list(self.rows.values()):   # the other tab's rows go away; new ones are made on the next refresh
@@ -432,6 +456,134 @@ class ActivityWindow(Adw.ApplicationWindow):
             status, watts = bat
             text += f" · battery {status.lower()}" + (f", drawing {watts:.1f} W" if watts and status == "Discharging" else "")
         self.footer.set_label(text)
+
+    # ---- developer view: ports, build tools and runtimes, containers
+    def refresh_dev(self):
+        procs = self.procs
+
+        def work():
+            ports = ac.listening(procs)
+            conts = ac.containers()
+            GLib.idle_add(self.fill_dev, ports, conts)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def fill_dev(self, ports, conts):
+        if not self.alive or self.tab != "dev":
+            return
+        self.dev_data = (ports, conts)
+        rows, problem = conts
+        keep = self.scroll.get_vadjustment().get_value()
+        clear(self.dev_box)
+        GLib.idle_add(lambda: (self.scroll.get_vadjustment().set_value(keep), False)[1])
+        by_pid = {}
+        for r in ports:
+            by_pid.setdefault(r["pid"], []).append(r["port"])
+        devs = ac.dev_processes(self.procs, set(by_pid))
+        q = self.query
+        shown_ports = [r for r in ports if not q or self.matches(str(r["port"]), r["name"], ac.cwd_of(r["pid"]) if r["pid"] else "", r["addr"])]
+        shown_devs = [p for p in devs if not q or self.matches(ac.script_name(p), " ".join(p.cmd), ac.cwd_of(p.pid), " ".join(map(str, by_pid.get(p.pid, []))))]
+        shown_conts = [c for c in rows if not q or self.matches(c["name"], c["image"], c["ports"], c["status"])]
+        self.headline.set_label(f"{len(shown_ports)} port{'s' if len(shown_ports) != 1 else ''} listening · "
+                                f"{len(shown_devs)} dev process{'es' if len(shown_devs) != 1 else ''} · {len(shown_conts)} container{'s' if len(shown_conts) != 1 else ''}")
+        self.subline.set_label("Type a port number to see what uses it")
+
+        group = Adw.PreferencesGroup(title="Listening ports", description="Who is holding a port (“address already in use”)")
+        for r in shown_ports:
+            proc = self.procs.get(r["pid"]) if r["pid"] else None
+            cwd = ac.cwd_of(r["pid"]).replace(str(Path.home()), "~") if proc else ""
+            row = Adw.ActionRow(title=GLib.markup_escape_text(f":{r['port']}  {r['name']}"),
+                                subtitle=GLib.markup_escape_text(f"{r['proto']} · {'only this computer' if r['addr'] in ('127.0.0.1', '::1') else 'reachable from the network'}"
+                                                                 + (f" · {cwd}" if cwd else "")))
+            if proc and proc.comm not in ac.PROTECTED:
+                self.proc_buttons(row, proc)
+            elif not r["pid"]:
+                row.add_suffix(label("another user", "act-small"))
+            group.add(row)
+        if shown_ports:
+            self.dev_box.append(group)
+        if shown_devs:
+            dg = Adw.PreferencesGroup(title="Dev processes", description="Builds, runtimes and databases you started")
+            for p in shown_devs:
+                cwd = ac.cwd_of(p.pid).replace(str(Path.home()), "~")
+                pts = by_pid.get(p.pid)
+                row = Adw.ActionRow(title=GLib.markup_escape_text(ac.script_name(p) + (f"  ·  {Path(cwd).name}" if cwd and cwd != "~" else "")),
+                                    subtitle=GLib.markup_escape_text((f"port {', '.join(map(str, pts))} · " if pts else "") + (" ".join(p.cmd)[:90] or p.comm)))
+                row.add_suffix(label(ac.fmt_bytes(p.pss), "act-num"))
+                self.proc_buttons(row, p)
+                dg.add(row)
+            self.dev_box.append(dg)
+        cg = Adw.PreferencesGroup(title="Containers")
+        if problem:
+            msgs = {"permission": ("Docker is installed, but your account cannot use it",
+                                   "Members of the docker group can act as root, so this is your decision: sudo usermod -aG docker $USER, then log in again"),
+                    "missing": ("Docker is not installed", "sudo pacman -S docker"),
+                    "stopped": ("Docker is not running", "sudo systemctl enable --now docker")}
+            title, sub = msgs[problem]
+            row = Adw.ActionRow(title=title, subtitle=sub)
+            if problem == "permission":
+                cmd = "sudo usermod -aG docker $USER"
+                copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Copy the command")
+                copy.connect("clicked", lambda *_: self.copy_cmd(cmd))
+                row.add_suffix(copy)
+            cg.add(row)
+            if not q:
+                self.dev_box.append(cg)
+        else:
+            for c in shown_conts:
+                up = c["state"] == "running"
+                row = Adw.ActionRow(title=GLib.markup_escape_text(c["name"]),
+                                    subtitle=GLib.markup_escape_text(f"{c['image']} · {c['status']}" + (f" · {c['ports']}" if c["ports"] else "")))
+                row.add_prefix(Gtk.Image(icon_name="media-playback-start-symbolic" if up else "media-playback-stop-symbolic",
+                                         css_classes=["act-badge"] if up else []))
+                logs = Gtk.Button(icon_name="utilities-terminal-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Follow the log in a terminal")
+                logs.connect("clicked", lambda _b, cid=c["id"], n=c["name"]: subprocess.Popen(
+                    ["kitty", "--title", f"docker logs {n}", "-e", "docker", "logs", "-f", "--tail", "200", cid], start_new_session=True))
+                toggle = Gtk.Button(label="Stop" if up else "Start", valign=Gtk.Align.CENTER, css_classes=["flat"] + (["destructive-action"] if up else []))
+                toggle.connect("clicked", lambda _b, cid=c["id"], n=c["name"], u=up: self.docker_action("stop" if u else "start", cid, n))
+                restart = Gtk.Button(icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Restart")
+                restart.connect("clicked", lambda _b, cid=c["id"], n=c["name"]: self.docker_action("restart", cid, n))
+                for w in (logs, restart, toggle):
+                    row.add_suffix(w)
+                cg.add(row)
+            if shown_conts or not q:
+                if not shown_conts:
+                    cg.add(Adw.ActionRow(title="No containers", subtitle="docker run … or docker compose up"))
+                self.dev_box.append(cg)
+        if not (shown_ports or shown_devs or shown_conts or problem):
+            self.dev_box.append(label(f"No match for “{q}”" if q else "Nothing is listening", "dim-label", xalign=0.5, margin_top=40))
+
+    def proc_buttons(self, row, proc):
+        quit_ = Gtk.Button(label="Quit", valign=Gtk.Align.CENTER, css_classes=["flat"])
+        kill = Gtk.Button(label="Force quit", valign=Gtk.Align.CENTER, css_classes=["flat", "destructive-action"])
+        quit_.connect("clicked", lambda *_: self.proc_action(proc, signal.SIGTERM))
+        kill.connect("clicked", lambda *_: self.proc_action(proc, signal.SIGKILL))
+        row.add_suffix(quit_)
+        row.add_suffix(kill)
+
+    def proc_action(self, proc, sig):
+        name = ac.script_name(proc)
+        forced = sig == signal.SIGKILL
+
+        def go():
+            n = ac.signal_tree(proc, self.procs, sig)
+            self.toast((f"Stopped {name}" if forced else f"Asked {name} to quit") if n else "Could not reach it (already gone?)")
+            GLib.timeout_add(1200, lambda: (self.refresh_dev(), False)[1])
+
+        self.confirm(f"{'Force quit' if forced else 'Quit'} {name}?",
+                     ("Ends it and everything it started, immediately. Unsaved work is lost." if forced else "It is asked to stop normally."),
+                     "Force quit" if forced else "Quit", go)
+
+    def docker_action(self, verb, cid, name):
+        def go():
+            r = subprocess.run(["docker", verb, cid], capture_output=True, text=True)
+            msg = f"{ {'start': 'Started', 'stop': 'Stopped', 'restart': 'Restarted'}[verb] } {name}"
+            GLib.idle_add(lambda: (self.toast(msg if r.returncode == 0 else (r.stderr.strip().splitlines() or ["failed"])[-1]), self.refresh_dev(), False)[2])
+
+        if verb == "stop":
+            self.confirm(f"Stop {name}?", "The container stops. Its data in volumes stays.", "Stop", lambda: threading.Thread(target=go, daemon=True).start())
+        else:
+            threading.Thread(target=go, daemon=True).start()
 
     # ---- services
     def refresh_services(self):

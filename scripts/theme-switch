@@ -72,7 +72,10 @@ required=(name mode shadow lock_brightness lock_tint bar_radius input_rounding b
           gaps_in gaps_out border_size rounding blur_size blur_passes)
 missing=(); for key in "${required[@]}"; do [[ -n "${v[$key]:-}" ]] || missing+=("$key"); done
 (( ${#missing[@]} == 0 )) || die "theme '$theme' is missing: ${missing[*]}"
-for key in shadow base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta; do
+# Logo (Primo mark): accent on dark themes, text colour on light ones; its small tile is accent2. A theme may set logo= / logo_accent=.
+if [[ "${v[mode]}" == dark ]]; then v[logo]="${v[logo]:-${v[accent]}}"; else v[logo]="${v[logo]:-${v[text]}}"; fi
+v[logo_accent]="${v[logo_accent]:-${v[accent2]}}"
+for key in shadow base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta logo logo_accent; do
     [[ "${v[$key]}" =~ ^[0-9a-fA-F]{6}$ ]] || die "theme '$theme': $key must be 6 hex digits without '#', got '${v[$key]}'"
 done
 
@@ -103,7 +106,7 @@ v[cursor_theme]=Adwaita; v[cursor_size]=24
 for c in "${candidates[@]}"; do cursor_has "$c" && { v[cursor_theme]="$c"; break; }; done
 
 # <key>_rgb = "r, g, b" so templates can write rgba({{base_rgb}}, 0.9) (GTK4 has no alpha()).
-for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow view; do
+for key in base mantle crust surface0 surface1 overlay text subtext accent accent2 red orange yellow green cyan blue magenta shadow view logo logo_accent; do
     hex="${v[$key]}"
     v[${key}_rgb]="$((16#${hex:0:2})), $((16#${hex:2:2})), $((16#${hex:4:2}))"
     v[${key}_sgr]="$((16#${hex:0:2}));$((16#${hex:2:2}));$((16#${hex:4:2}))"
@@ -143,6 +146,7 @@ render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.con
 render "$tpl_dir/confirm/confirm.css.tpl"      "$out_dir/hypr/confirm.css"
 render "$tpl_dir/waybar/style.css.tpl"        "$out_dir/waybar/style.css"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
+render "$tpl_dir/logo/bar.svg.tpl"            "$out_dir/waybar/logo.svg"
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
 render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
 render "$tpl_dir/swaync/style.css.tpl"         "$out_dir/swaync/style.css"
@@ -169,6 +173,7 @@ render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-3.0/settings.
 render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-4.0/settings.ini"
 sed -i '/gtk-application-prefer-dark-theme/d' "$config_home/gtk-4.0/settings.ini"   # libadwaita warns about it; it follows color-scheme
 render_external "$tpl_dir/qt/Primo.colors.tpl"   "$data_home/color-schemes/Primo.colors"
+render "$tpl_dir/logo/app.svg.tpl"               "$data_home/icons/hicolor/scalable/apps/primo.svg"   # icon name "primo"
 sed -i -E '/^[A-Za-z:]+=[0-9]+, /s/, /,/g' "$data_home/color-schemes/Primo.colors"   # KDE expects "r,g,b"
 
 # Terminal tools: prompt, shell snippet, btop, fastfetch, satty (annotation editor)

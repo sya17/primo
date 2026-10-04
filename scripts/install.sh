@@ -71,7 +71,7 @@ done
 app_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 run mkdir -p "$app_dir"
 if (( ! dry )); then
-    printf '[Desktop Entry]\nType=Application\nName=Settings\nComment=Appearance, wallpaper and displays\nExec=python3 %s/.config/hypr/scripts/primo-settings.py\nIcon=preferences-system\nCategories=Settings;\nTerminal=false\n' "$HOME" > "$app_dir/primo-settings.desktop"
+    printf '[Desktop Entry]\nType=Application\nName=Settings\nComment=Appearance, wallpaper and displays\nExec=python3 %s/.config/hypr/scripts/primo-settings.py\nIcon=primo\nCategories=Settings;\nTerminal=false\n' "$HOME" > "$app_dir/primo-settings.desktop"
     echo "link: $app_dir/primo-settings.desktop"
 fi
 

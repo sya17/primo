@@ -62,6 +62,13 @@ assert "Dev Tool" in groups and "lang-server" in groups["Dev Tool"].doing, group
 assert 15 in groups["Dev Tool"].pids and 15 not in groups["kitty"].pids
 assert groups["kitty"].kind == "app" and groups["waybar"].kind == "bg"
 assert ac.signal_group(ac.Group(key="x", name="Hyprland", kind="bg", leaders=[10], protected=True), 0) == 0
+rows = ac.parse_listening('tcp LISTEN 0 100 127.0.0.1:8080 0.0.0.0:* users:(("java",pid=42,fd=9))\ntcp LISTEN 0 1 *:5432 *:*\ntcp ESTAB 0 0 1.1.1.1:5 2.2.2.2:6 users:(("x",pid=3,fd=1))')
+assert [(r["port"], r["pid"]) for r in rows] == [(8080, 42), (5432, 0)], rows
+dev = {p.pid: p for p in (P(1, 0, "java"), P(2, 1, "mvn"), P(3, 0, "python3", ["python3", "hub.py"]), P(4, 0, "python3", ["python3", "-m", "http.server"]),
+                          P(5, 0, "node", ["node", "srv.js"]))}
+names = sorted(p.comm + str(p.pid) for p in ac.dev_processes(dev, port_pids={5}))
+assert names == ["java1", "node5", "python34"], names     # a plain script is not a dev process; one on a port or a dev server is; a tool under another tool is shown once
+assert ac.parse_containers('{"ID":"a","Names":"db","Image":"pg","Status":"Up","State":"running","Ports":""}\nnoise')[0]["name"] == "db"
 PY
 
 echo "time hub"
@@ -81,7 +88,7 @@ scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
 scripts/theme-switch --wallpaper reset >/dev/null
 
 echo "generated files are valid"
-python3 - <<PY && pass "TOML / JSON outputs" || fail "TOML / JSON outputs"
+python3 - <<PY && pass "TOML / JSON / SVG outputs" || fail "TOML / JSON / SVG outputs"
 import json, re, tomllib, pathlib, os
 cfg = pathlib.Path(os.environ["XDG_CONFIG_HOME"])
 tomllib.loads((cfg / "starship.toml").read_text())
@@ -90,6 +97,9 @@ strip = lambda s: re.sub(r"^\s*//.*\n", "", s, flags=re.M)
 json.loads(strip(pathlib.Path("config/waybar/config.jsonc").read_text()))
 json.loads(pathlib.Path("config/swaync/config.json").read_text())
 json.loads(strip((cfg / "fastfetch" / "config.jsonc").read_text()))
+import xml.etree.ElementTree as ET
+ET.parse("config/waybar/logo.svg")
+ET.parse(pathlib.Path(os.environ["XDG_DATA_HOME"]) / "icons/hicolor/scalable/apps/primo.svg")
 PY
 
 echo "lua"

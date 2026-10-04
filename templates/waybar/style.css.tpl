@@ -27,7 +27,7 @@ tooltip label { color: @text; padding: 2px 4px; }
     padding: 0 6px;
 }
 
-#custom-launcher, #custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
+#custom-layout, #clock, #network, #pulseaudio, #battery, #tray,
 #bluetooth, #custom-vpn, #custom-activity, #custom-powerprofile, #custom-recorder, #custom-notifications, #custom-nightlight, #custom-power, #custom-sys, #cpu, #memory {
     padding: 0 9px;
     margin: 0;
@@ -36,12 +36,12 @@ tooltip label { color: @text; padding: 2px 4px; }
 }
 
 /* ── Launcher ────────────────────────────────────────── */
-#custom-launcher {
-    font-size: 15px;
-    color: @accent;
+#image.launcher {
     padding-left: 10px;
     padding-right: 8px;
+    transition: opacity 0.25s ease;
 }
+#image.launcher:hover { opacity: 0.75; }
 
 /* ── Workspaces: iOS page dots ───────────────────────── */
 #workspaces { margin: 0 4px 0 0; }
@@ -101,7 +101,7 @@ tooltip label { color: @text; padding: 2px 4px; }
 
 #custom-power { color: @subtext; padding-right: 11px; }
 #custom-power:hover { color: @red; }
-#bluetooth:hover, #custom-activity:hover, #custom-powerprofile:hover, #custom-launcher:hover, #network:hover, #pulseaudio:hover,
+#bluetooth:hover, #custom-activity:hover, #custom-powerprofile:hover, #network:hover, #pulseaudio:hover,
 #custom-notifications:hover, #custom-nightlight:hover { color: @accent2; }
 
 #custom-recorder.recording { color: @red; animation: pulse 1s ease-in-out infinite alternate; }

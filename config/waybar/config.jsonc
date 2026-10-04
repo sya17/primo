@@ -10,7 +10,7 @@
     "margin-right": 8,
     "spacing": 0,
 
-    "modules-left": ["custom/launcher", "hyprland/workspaces", "custom/layout"],
+    "modules-left": ["image#launcher", "hyprland/workspaces", "custom/layout"],
     "modules-center": ["clock", "custom/hubstatus"],
     "modules-right": [
         "custom/recorder",
@@ -28,8 +28,11 @@
         "custom/power"
     ],
 
-    "custom/launcher": {
-        "format": "",
+    // Primo mark, rendered in the theme's colours by theme-switch.
+    "image#launcher": {
+        "exec": "echo ~/.config/waybar/logo.svg",
+        "interval": 86400,
+        "size": 16,
         "on-click": "~/.config/hypr/scripts/launcher.sh toggle",
         "tooltip": false
     },
