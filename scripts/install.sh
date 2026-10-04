@@ -40,6 +40,7 @@ grep -qi "^inter" <<<"$fonts" || echo "note: font 'Inter' not found (pacman -S i
 
 [[ -d /usr/share/themes/adw-gtk3 ]] || echo "note: adw-gtk3 not found (pacman -S adw-gtk-theme); GTK apps fall back to Adwaita"
 [[ -d /usr/share/icons/Papirus ]] || echo "note: Papirus icons not found (pacman -S papirus-icon-theme); using breeze icons"
+python3 -c "import gi; gi.require_version('Adw', '1')" 2>/dev/null || echo "note: Primo Settings needs python-gobject and libadwaita (pacman -S python-gobject libadwaita)"
 pacman -Q plasma-integration breeze >/dev/null 2>&1 || echo "note: Qt apps (Dolphin) need plasma-integration + breeze to follow the theme"
 
 # ---- generate theme first so the symlinked dirs are complete ----
@@ -65,6 +66,14 @@ for app in "${apps[@]}"; do
     run ln -s "$src" "$dst"
     echo "link: $dst -> $src"
 done
+
+# Launcher entry so "Settings" shows up in wofi / app menus
+app_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+run mkdir -p "$app_dir"
+if (( ! dry )); then
+    printf '[Desktop Entry]\nType=Application\nName=Settings\nComment=Appearance, wallpaper and displays\nExec=python3 %s/.config/hypr/scripts/primo-settings.py\nIcon=preferences-system\nCategories=Settings;\nTerminal=false\n' "$HOME" > "$app_dir/primo-settings.desktop"
+    echo "link: $app_dir/primo-settings.desktop"
+fi
 
 run mkdir -p "$bin_dir"
 run ln -sf "$root/scripts/theme-switch" "$bin_dir/hypr-theme"

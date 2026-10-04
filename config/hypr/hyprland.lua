@@ -5,6 +5,7 @@
 -- which is git-ignored and loaded last.
 
 require("modules.monitors")
+pcall(require, "displays") -- written by Primo Settings (git-ignored); overrides the defaults
 require("modules.env")
 require("modules.appearance")
 require("modules.animations")

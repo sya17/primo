@@ -92,7 +92,9 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 | `SHIFT+Print` | Screenshot full screen |
 | `L` | Lock screen (hyprlock; hypridle locks after 5 min) |
 | `SHIFT+V` | Clipboard history (cliphist + wofi) |
-| `D` | nwg-displays |
+| `,` | Settings (Appearance, Wallpaper, Displays) |
+| `D` | Settings > Displays |
+| `W` | Settings > Wallpaper |
 | `X` | Power menu (lock, suspend, log out, restart, shut down) |
 | `M` | Log out (asks first) |
 | `N` | Toggle night light (hyprsunset) |
@@ -110,6 +112,21 @@ hl.monitor({ output = "eDP-1", mode = "1920x1080@60", position = "0x0", scale = 
 These files live in `~/.config` / `~/.local/share`, not in the repo. An existing file that was not
 written by `theme-switch` is backed up once as `*.bak-primo`. Do not change the theme with
 `nwg-look`: pick it with `SUPER+T` instead, otherwise it is overwritten on the next switch.
+
+## Settings
+
+`SUPER+,` opens **Primo Settings**, a libadwaita app styled by the active theme:
+
+- **Appearance**: dark/light switch and theme cards with a live palette preview.
+- **Wallpaper**: gallery of theme art and `~/Pictures`; pick any image. A chosen wallpaper
+  survives theme switches until you press "Use the theme's wallpaper".
+- **Displays**: resolution, refresh rate, scale, rotation and arrangement for each monitor.
+  Changes are applied live and revert by themselves after 10 seconds unless you press Keep.
+  Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored).
+- **More**: shortcuts to Sound, Network, Bluetooth and the notification center.
+
+It replaces `nwg-displays`, which writes hyprlang files the Lua config does not read.
+Needs `python-gobject` and `libadwaita` (both come with Nautilus).
 
 ## Workspaces and layouts
 
@@ -154,8 +171,6 @@ the bottom-right corner. Fullscreen windows inhibit idle/lock. Add more in
 - Clipboard history (`cliphist`) stores everything you copy, including passwords from a
   password manager. Wipe it with `cliphist wipe`, or drop the `wl-paste ... cliphist store`
   lines in `config/hypr/modules/autostart.lua` to disable it.
-- `nwg-displays` writes hyprlang `monitors.conf`, which the Lua config does not read; copy its
-  result into `local.lua`.
 - Hyprland validation: `Hyprland --verify-config -c config/hypr/hyprland.lua`.
 
 ## License

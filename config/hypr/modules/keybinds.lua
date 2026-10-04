@@ -10,7 +10,9 @@ hl.bind(mod .. " + SHIFT + E", hl.dsp.exec_cmd(programs.powerFiles))
 hl.bind(mod .. " + R",      hl.dsp.exec_cmd(programs.menu))
 hl.bind(mod .. " + L",      hl.dsp.exec_cmd(programs.lock))
 hl.bind(mod .. " + SHIFT + V", hl.dsp.exec_cmd(programs.clipboard))
-hl.bind(mod .. " + D",      hl.dsp.exec_cmd("nwg-displays"))
+hl.bind(mod .. " + comma", hl.dsp.exec_cmd(programs.settings))
+hl.bind(mod .. " + D",      hl.dsp.exec_cmd(programs.settings .. " --page displays"))
+hl.bind(mod .. " + W",      hl.dsp.exec_cmd(programs.settings .. " --page wallpaper"))
 hl.bind(mod .. " + T",      hl.dsp.exec_cmd(programs.themeMenu))
 hl.bind(mod .. " + SHIFT + T", hl.dsp.exec_cmd(programs.toggleTheme)) -- dark <-> light
 

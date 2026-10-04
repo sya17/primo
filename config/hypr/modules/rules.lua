@@ -51,6 +51,15 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Settings window: centred, roomy.
+hl.window_rule({
+    name  = "settings-window",
+    match = { class = "^dev\\.primo\\.Settings$" },
+    float = true,
+    size  = "980 660",
+    move  = "monitor_w*0.5-490 monitor_h*0.5-330",
+})
+
 -- Confirmation dialogs (confirm.py): small, centred, above everything.
 hl.window_rule({
     name  = "confirm-dialog",

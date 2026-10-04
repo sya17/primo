@@ -13,6 +13,7 @@ return {
     scratchTerm = "~/.config/hypr/scripts/scratch-terminal.sh",
     themeMenu   = "~/.config/hypr/scripts/theme-menu.sh",
     layoutCycle = "~/.config/hypr/scripts/layout-cycle.sh",
+    settings    = "python3 ~/.config/hypr/scripts/primo-settings.py",
     toggleTheme = "hypr-theme toggle",
     screenshot  = "~/.config/hypr/scripts/screenshot.sh",
 }

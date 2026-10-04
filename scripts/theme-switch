@@ -38,6 +38,12 @@ case "${1:-}" in
     --list)    for t in $(list_themes); do printf '%-20s %s\n' "$t" "$(theme_mode "$t")"; done; exit 0 ;;
     --current) cat "$state_dir/current" 2>/dev/null || echo "(none)"; exit 0 ;;
     --no-reload) reload=0; shift ;;
+    --wallpaper)
+        [[ -n "${2:-}" ]] || die "usage: theme-switch --wallpaper PATH|reset"
+        mkdir -p "$state_dir"
+        if [[ "$2" == reset ]]; then rm -f "$state_dir/wallpaper"
+        else [[ -f "$2" ]] || die "no such file: $2"; readlink -f "$2" > "$state_dir/wallpaper"; fi
+        set -- "$(cat "$state_dir/current" 2>/dev/null || echo primo-dusk)" ;;
     -h|--help|"") sed -n '2,9p' "$self" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
@@ -104,6 +110,9 @@ done
 wp="${v[wallpaper]:-}"
 [[ -n "$wp" && "$wp" != /* ]] && wp="$themes_dir/$theme/$wp"
 [[ -f "$wp" ]] || wp="$HOME/Pictures/wallpaper.jpg"
+# A wallpaper picked in Settings overrides the theme's until it is reset.
+wp_override="$(cat "$state_dir/wallpaper" 2>/dev/null || true)"
+[[ -n "$wp_override" && -f "$wp_override" ]] && wp="$wp_override"
 v[wallpaper_path]="$wp"
 
 # ---- render ----
@@ -150,6 +159,7 @@ gtk4_tpl="$(mktemp)"; cat "$tpl_dir/gtk/gtk.css.tpl" "$tpl_dir/gtk/gtk4-accent.c
 render_external "$gtk4_tpl"                       "$config_home/gtk-4.0/gtk.css"; rm -f "$gtk4_tpl"
 render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-3.0/settings.ini"
 render_external "$tpl_dir/gtk/settings.ini.tpl"  "$config_home/gtk-4.0/settings.ini"
+sed -i '/gtk-application-prefer-dark-theme/d' "$config_home/gtk-4.0/settings.ini"   # libadwaita warns about it; it follows color-scheme
 render_external "$tpl_dir/qt/Primo.colors.tpl"   "$data_home/color-schemes/Primo.colors"
 sed -i -E '/^[A-Za-z:]+=[0-9]+, /s/, /,/g' "$data_home/color-schemes/Primo.colors"   # KDE expects "r,g,b"
 
