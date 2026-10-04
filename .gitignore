@@ -28,3 +28,6 @@ config/hypr/workspaces.conf
 # Generated for the SDDM login theme
 sddm/primo/theme.conf
 sddm/primo/background.png
+
+# Generated VS Code theme extension
+vscode/

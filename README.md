@@ -133,6 +133,13 @@ Screenshots land in `~/Pictures/Screenshots` and on the clipboard; the notificat
 in `~/Videos/Recordings`; a red timer appears in the bar and clicking it stops the recording.
 `sudo scripts/enable-lock-osd.sh` adds an on-screen indicator for Caps Lock / Num Lock.
 
+## Editors
+
+`python3 scripts/gen-vscode-theme.py --install` turns every theme into a **VS Code** colour theme
+(`Primo Dusk`, `Primo Dawn`, `Catppuccin ...`, `Nord`) and, when you have no `settings.json` yet, writes
+a starter one that follows the desktop's dark/light mode (`window.autoDetectColorScheme`).
+`install.sh` runs it when `code` is installed.
+
 ## Launcher
 
 `SUPER+Space` (or `SUPER+R`) opens one search box for everything: applications ranked by how often
