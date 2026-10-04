@@ -46,7 +46,7 @@ else echo "  skip: power-profiles-daemon not installed"; fi
 
 echo "== Mirrors"
 if have reflector; then
-    step "write /etc/xdg/reflector/reflector.conf (https, Indonesia/Singapore/Japan, 20 fastest) and enable reflector.timer"
+    step "write /etc/xdg/reflector/reflector.conf (https, Indonesia/Singapore/Japan, 20 best by score) and enable reflector.timer"
     if (( apply )); then
         mkdir -p /etc/xdg/reflector
         backup /etc/xdg/reflector/reflector.conf
@@ -55,11 +55,12 @@ if have reflector; then
 --protocol https
 --country Indonesia,Singapore,Japan
 --latest 20
---sort rate
+--sort score
 CONF
         systemctl enable --now reflector.timer
         step "rank mirrors now (backup: /etc/pacman.d/mirrorlist.bak-primo)"
         backup /etc/pacman.d/mirrorlist
+        # --sort score ranks by the mirror status data: no big downloads, so it also works on a slow link
         reflector @/etc/xdg/reflector/reflector.conf || echo "  reflector failed; your old mirrorlist is untouched"
     fi
 else echo "  skip: reflector not installed"; fi
