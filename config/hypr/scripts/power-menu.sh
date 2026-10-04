@@ -6,8 +6,11 @@ set -uo pipefail
 
 style="$HOME/.config/wofi/menu.css"
 
-confirm() { # "Question" "Button"
-    if command -v hyprland-dialog >/dev/null; then
+confirm() { # "Question" "Button" ["Details"]
+    local ui="$(dirname "$0")/confirm.py"
+    if [[ -x "$ui" ]] && python3 -c 'import gi' 2>/dev/null; then
+        "$ui" --title "$1" --text "${3:-}" --confirm "$2" --danger
+    elif command -v hyprland-dialog >/dev/null; then
         [[ "$(hyprland-dialog --title "$1" --text "$1" --buttons "$2;Cancel" 2>/dev/null)" == "$2"* ]]
     else
         return 0
@@ -23,9 +26,9 @@ run() {
     case "$1" in
         lock)     pidof hyprlock >/dev/null || hyprlock ;;
         suspend)  systemctl suspend ;;
-        logout)   confirm "Log out of Hyprland?" "Log out" && logout ;;
-        reboot)   confirm "Restart the computer?" "Restart" && systemctl reboot ;;
-        shutdown) confirm "Shut down the computer?" "Shut down" && systemctl poweroff ;;
+        logout)   confirm "Log out?" "Log out" "Open applications will be closed. Unsaved work may be lost." && logout ;;
+        reboot)   confirm "Restart the computer?" "Restart" "Open applications will be closed. Unsaved work may be lost." && systemctl reboot ;;
+        shutdown) confirm "Shut down the computer?" "Shut down" "Open applications will be closed. Unsaved work may be lost." && systemctl poweroff ;;
     esac
 }
 

@@ -52,13 +52,15 @@ text="Still running in this terminal: ${busy}.
 
 Closing it will stop these programs and may lose unsaved work."
 
-if command -v hyprland-dialog >/dev/null; then
-    answer="$(hyprland-dialog --title "Close terminal?" --text "$text" --buttons "Close anyway;Cancel" 2>/dev/null)"
-    [[ "$answer" == "Close anyway"* ]] && close_now
-elif command -v wofi >/dev/null; then
-    answer="$(printf 'Cancel\nClose anyway\n' | wofi --dmenu -p "Running: ${busy}")"
-    [[ "$answer" == "Close anyway" ]] && close_now
-else
-    close_now
-fi
+confirmed() {
+    local confirm="$(dirname "$0")/confirm.py"
+    if [[ -x "$confirm" ]] && python3 -c 'import gi' 2>/dev/null; then
+        "$confirm" --title "Close terminal?" --text "$text" --confirm "Close anyway" --danger
+    elif command -v hyprland-dialog >/dev/null; then
+        [[ "$(hyprland-dialog --title "Close terminal?" --text "$text" --buttons "Close anyway;Cancel" 2>/dev/null)" == "Close anyway"* ]]
+    else
+        return 0
+    fi
+}
+confirmed && close_now
 exit 0

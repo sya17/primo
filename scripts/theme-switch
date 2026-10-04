@@ -123,6 +123,7 @@ render() { # template -> output
 render "$tpl_dir/hypr/theme.lua.tpl"          "$out_dir/hypr/theme.lua"
 render "$tpl_dir/hypr/hyprpaper.conf.tpl"     "$out_dir/hypr/hyprpaper.conf"
 render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.conf"
+render "$tpl_dir/confirm/confirm.css.tpl"      "$out_dir/hypr/confirm.css"
 render "$tpl_dir/waybar/style.css.tpl"        "$out_dir/waybar/style.css"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"

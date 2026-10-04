@@ -51,6 +51,15 @@ hl.window_rule({
     size  = "900 600",
 })
 
+-- Confirmation dialogs (confirm.py): small, centred, above everything.
+hl.window_rule({
+    name  = "confirm-dialog",
+    match = { class = "^dev\\.primo\\.Confirm$" },
+    float = true,
+    center = true,
+    stay_focused = true,
+})
+
 -- Finder-style: the file manager opens as a centred floating window (SUPER+V tiles it).
 hl.window_rule({
     name  = "files-window",
