@@ -46,6 +46,14 @@ for conf in themes/*/theme.conf; do
     else fail "$t: $(head -1 "$work/err")"; fi
 done
 
+echo "live wallpaper"
+: > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
+scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
+[[ "$(cat "$XDG_STATE_HOME/hyprland-dotfiles/wallpaper-current")" == "$work/live.mp4" ]] \
+    && ! grep -q live.mp4 "$XDG_CONFIG_HOME/hypr/hyprpaper.conf" 2>/dev/null \
+    && pass "a video is the live wallpaper, static consumers keep a still" || fail "video wallpaper handling"
+scripts/theme-switch --wallpaper reset >/dev/null
+
 echo "generated files are valid"
 python3 - <<PY && pass "TOML / JSON outputs" || fail "TOML / JSON outputs"
 import json, re, tomllib, pathlib, os

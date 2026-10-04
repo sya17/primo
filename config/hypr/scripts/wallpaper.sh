@@ -4,6 +4,7 @@
 #
 # Usage: wallpaper.sh apply     animate to the current wallpaper (theme or wallpaper changed)
 #        wallpaper.sh restore   no animation (used at login)
+# GIFs go through awww; videos (mp4, webm, mkv, mov) through mpvpaper when installed, otherwise they are skipped.
 # The transition is chosen in Settings > Wallpaper (<state>/wallpaper-transition): grow, fade, wave, wipe, none.
 set -uo pipefail
 
@@ -16,6 +17,20 @@ hyprpaper_fallback() {
     sleep 0.2
     setsid -f hyprpaper >/dev/null 2>&1
 }
+
+is_video() { case "${1,,}" in *.mp4|*.webm|*.mkv|*.mov) return 0 ;; esac; return 1; }
+
+if is_video "$img" && [[ -f "$img" ]] && command -v mpvpaper >/dev/null 2>&1; then
+    pkill -x hyprpaper 2>/dev/null || true
+    pkill -x awww-daemon 2>/dev/null || true   # two wallpaper layers would fight
+    pkill -KILL -x mpvpaper 2>/dev/null || true
+    sleep 0.2
+    # --auto-pause: stops decoding while windows cover the whole screen
+    setsid -f mpvpaper --auto-pause -o "no-audio loop hwdec=auto panscan=1.0" '*' "$img" >/dev/null 2>&1
+    exit 0
+fi
+pkill -KILL -x mpvpaper 2>/dev/null || true
+is_video "$img" && img=""   # no mpvpaper: fall through to the static wallpaper below
 
 if ! command -v awww >/dev/null 2>&1 || [[ -z "$img" || ! -f "$img" ]]; then
     hyprpaper_fallback

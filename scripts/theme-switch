@@ -113,7 +113,13 @@ wp="${v[wallpaper]:-}"
 [[ -f "$wp" ]] || wp="$HOME/Pictures/wallpaper.jpg"
 # A wallpaper picked in Settings overrides the theme's until it is reset.
 wp_override="$(cat "$state_dir/wallpaper" 2>/dev/null || true)"
-[[ -n "$wp_override" && -f "$wp_override" ]] && wp="$wp_override"
+live=""   # a GIF or video is shown by wallpaper.sh; hyprpaper, SDDM and friends need a still, so they keep the theme's
+if [[ -n "$wp_override" && -f "$wp_override" ]]; then
+    case "${wp_override,,}" in
+        *.gif|*.mp4|*.webm|*.mkv|*.mov) live="$wp_override" ;;
+        *) wp="$wp_override" ;;
+    esac
+fi
 v[wallpaper_path]="$wp"
 
 # ---- render ----
@@ -212,7 +218,7 @@ if command -v kwriteconfig6 >/dev/null; then
 fi
 
 mkdir -p "$state_dir"
-echo "${v[wallpaper_path]}" > "$state_dir/wallpaper-current"
+echo "${live:-${v[wallpaper_path]}}" > "$state_dir/wallpaper-current"
 echo "$theme" > "$state_dir/current"
 echo "$theme" > "$state_dir/last-${v[mode]}"
 echo "Applied theme: ${v[name]:-$theme} (${v[mode]})"

@@ -12,6 +12,7 @@ import json
 import os
 import warnings
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -92,6 +93,25 @@ def themes():
 
 def rgb(hexstr):
     return tuple(int(hexstr[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
+
+
+def load_still(path, w, h):
+    """A pixbuf for a picture, GIF or video (first frame via ffmpegthumbnailer); None if it cannot be read."""
+    path = str(path)
+    try:
+        if Path(path).suffix.lower() in VIDEO_EXTS:
+            out = Path(GLib.get_user_cache_dir()) / "primo-video-thumb.png"
+            r = subprocess.run(["ffmpegthumbnailer", "-i", path, "-o", str(out), "-s", "0", "-q", "6"],
+                               capture_output=True, timeout=15)
+            if r.returncode != 0:
+                return None
+            path = str(out)
+        return GdkPixbuf.Pixbuf.new_from_file_at_scale(path, w, h, True)
+    except (GLib.Error, OSError, subprocess.SubprocessError):
+        return None
 
 
 class Swatch(Gtk.Widget):
@@ -308,7 +328,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         page.add(cur_group)
 
         actions = Adw.PreferencesGroup()
-        choose = Adw.ActionRow(title="Choose a picture…", subtitle="Any image on this computer", activatable=True)
+        choose = Adw.ActionRow(title="Choose a picture…", subtitle="A picture, a GIF or a video", activatable=True)
         choose.add_prefix(Gtk.Image.new_from_icon_name("document-open-symbolic"))
         choose.connect("activated", self.on_choose_file)
         self.wp_reset = Adw.ActionRow(title="Use the theme's wallpaper", activatable=True)
@@ -339,6 +359,8 @@ class SettingsWindow(Adw.ApplicationWindow):
             page.add(tgroup)
 
         page.add(self.build_slideshow())
+        if shutil.which("mpvpaper"):
+            page.add(self.build_video_options())
 
         self.wp_group = Adw.PreferencesGroup(title="Pictures", description="Theme art and images from ~/Pictures")
         self.wp_flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
@@ -352,6 +374,22 @@ class SettingsWindow(Adw.ApplicationWindow):
         GLib.idle_add(self.load_next_thumb)
         self.refresh_wallpaper_state()
         return page
+
+    def build_video_options(self):
+        group = Adw.PreferencesGroup(title="Video wallpaper", description="Videos are paused while windows cover the screen")
+        keep = STATE_DIR / "video-keep-on-battery"
+        row = Adw.SwitchRow(title="Pause on battery", subtitle="A moving wallpaper drains the battery", active=not keep.exists())
+
+        def on_toggle(r, _p):
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            if r.get_active():
+                keep.unlink(missing_ok=True)
+            else:
+                keep.write_text("")
+
+        row.connect("notify::active", on_toggle)
+        group.add(row)
+        return group
 
     def build_slideshow(self):
         group = Adw.PreferencesGroup(title="Slideshow", description="Change the wallpaper by itself, using a folder of pictures")
@@ -419,7 +457,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     @staticmethod
     def find_wallpapers():
         seen = set()
-        exts = {".png", ".jpg", ".jpeg", ".webp"}
+        exts = {".png", ".jpg", ".jpeg", ".webp", ".gif"} | (VIDEO_EXTS if shutil.which("mpvpaper") else set())
         dirs = [Path.home() / "Pictures" / "Wallpapers", Path.home() / "Pictures"]
         for t in themes():
             p = THEMES_DIR / t["_id"] / "wallpaper.png"
@@ -437,9 +475,8 @@ class SettingsWindow(Adw.ApplicationWindow):
         if not self.wp_queue:
             return False
         path, label = self.wp_queue.pop(0)
-        try:
-            pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), 420, 250, True)
-        except GLib.Error:
+        pix = load_still(path, 420, 250)
+        if pix is None:
             return True
         pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pix))
         pic.set_content_fit(Gtk.ContentFit.COVER)
@@ -473,11 +510,9 @@ class SettingsWindow(Adw.ApplicationWindow):
     def refresh_wallpaper_state(self):
         path = self.current_wallpaper()
         if path and Path(path).exists():
-            try:
-                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 900, 520, True)
+            pix = load_still(path, 900, 520)
+            if pix is not None:
                 self.wp_preview.set_paintable(Gdk.Texture.new_for_pixbuf(pix))
-            except GLib.Error:
-                pass
         self.wp_reset.set_visible((STATE_DIR / "wallpaper").exists())
         self.mark_active_wallpaper()
 
@@ -502,11 +537,15 @@ class SettingsWindow(Adw.ApplicationWindow):
         proc.wait_async(None, finished)
 
     def on_choose_file(self, *_):
-        dialog = Gtk.FileDialog(title="Choose a wallpaper")
+        dialog = Gtk.FileDialog(title="Choose a wallpaper")  # videos need mpvpaper
         flt = Gtk.FileFilter(name="Images")
         flt.add_mime_type("image/png")
         flt.add_mime_type("image/jpeg")
         flt.add_mime_type("image/webp")
+        flt.add_mime_type("image/gif")
+        for m in ("video/mp4", "video/webm", "video/x-matroska", "video/quicktime"):
+            flt.add_mime_type(m)
+        flt.set_name("Pictures, GIFs and videos")
         store = Gio.ListStore.new(Gtk.FileFilter)
         store.append(flt)
         dialog.set_filters(store)
