@@ -38,6 +38,8 @@ PAGES = [
     ("appearance", "Appearance", "preferences-desktop-theme-symbolic"),
     ("wallpaper", "Wallpaper", "preferences-desktop-wallpaper-symbolic"),
     ("displays", "Displays", "preferences-desktop-display-symbolic"),
+    ("power", "Power", "battery-symbolic"),
+    ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
     ("more", "More", "preferences-other-symbolic"),
 ]
 
@@ -160,6 +162,8 @@ class SettingsWindow(Adw.ApplicationWindow):
             "appearance": self.build_appearance,
             "wallpaper": self.build_wallpaper,
             "displays": self.build_displays,
+            "power": self.build_power,
+            "bluetooth": self.build_bluetooth,
             "more": self.build_more,
         }
         self.built = set()
@@ -313,6 +317,26 @@ class SettingsWindow(Adw.ApplicationWindow):
         actions.add(choose)
         actions.add(self.wp_reset)
         page.add(actions)
+
+        if sh("sh", "-c", "command -v awww").returncode == 0:
+            transitions = [("Grow from the cursor", "grow"), ("Fade", "fade"), ("Wave", "wave"),
+                           ("Wipe", "wipe"), ("None", "none")]
+            tgroup = Adw.PreferencesGroup(title="Transition", description="How the new wallpaper appears")
+            trow = Adw.ComboRow(title="Animation", model=Gtk.StringList.new([n for n, _ in transitions]))
+            try:
+                current = (STATE_DIR / "wallpaper-transition").read_text().strip()
+            except OSError:
+                current = "grow"
+            trow.set_selected(next((i for i, (_n, v) in enumerate(transitions) if v == current), 0))
+
+            def on_transition(row, _p):
+                STATE_DIR.mkdir(parents=True, exist_ok=True)
+                (STATE_DIR / "wallpaper-transition").write_text(transitions[row.get_selected()][1])
+                self.toast("Applies to the next wallpaper change")
+
+            trow.connect("notify::selected", on_transition)
+            tgroup.add(trow)
+            page.add(tgroup)
 
         self.wp_group = Adw.PreferencesGroup(title="Pictures", description="Theme art and images from ~/Pictures")
         self.wp_flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
@@ -665,6 +689,202 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.toast("Defaults restored")
         GLib.timeout_add(1200, lambda: (self.load_monitors(), False)[1])
 
+
+    # ======================================================================= Power
+    PROFILES = [("power-saver", "Power Saver"), ("balanced", "Balanced"), ("performance", "Performance")]
+
+    @staticmethod
+    def battery_dir():
+        for d in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+            return d
+        return None
+
+    @staticmethod
+    def read_num(path):
+        try:
+            return float(Path(path).read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    def build_power(self):
+        page = Adw.PreferencesPage()
+
+        mode = Adw.PreferencesGroup(title="Power mode",
+                                    description="Power Saver stretches the battery, Performance trades it for speed.")
+        if sh("sh", "-c", "command -v powerprofilesctl").returncode != 0:
+            row = Adw.ActionRow(title="power-profiles-daemon is not installed",
+                                subtitle="sudo pacman -S power-profiles-daemon, then sudo scripts/setup-system.sh --apply")
+            mode.add(row)
+        else:
+            listing = sh("powerprofilesctl", "list").stdout
+            available = [n for n, _l in self.PROFILES if re.search(rf"^\s*\*?\s*{n}:", listing, re.M)] or ["balanced"]
+            current = sh("powerprofilesctl", "get").stdout.strip() or "balanced"
+            row = Adw.ActionRow(title="Mode", subtitle="Applies to the whole system")
+            group = Adw.ToggleGroup(valign=Gtk.Align.CENTER)
+            for name, label in self.PROFILES:
+                if name in available:
+                    group.add(Adw.Toggle(name=name, label=label))
+            group.set_active_name(current)
+            group.connect("notify::active-name", lambda g, _p: self.set_profile(g.get_active_name()))
+            row.add_suffix(group)
+            mode.add(row)
+        page.add(mode)
+
+        bat = self.battery_dir()
+        battery = Adw.PreferencesGroup(title="Battery")
+        if bat is None:
+            battery.add(Adw.ActionRow(title="No battery detected"))
+        else:
+            self.bat_row = Adw.ActionRow(title="Charge")
+            self.bat_level = Gtk.LevelBar(min_value=0, max_value=100, value=0, valign=Gtk.Align.CENTER, width_request=170)
+            self.bat_pct = Gtk.Label(label="", css_classes=["title-3"], width_chars=5)
+            self.bat_row.add_suffix(self.bat_level)
+            self.bat_row.add_suffix(self.bat_pct)
+            battery.add(self.bat_row)
+            self.bat_health = Adw.ActionRow(title="Battery health")
+            battery.add(self.bat_health)
+            self.update_battery()
+            GLib.timeout_add_seconds(5, self.update_battery)
+        page.add(battery)
+
+        warn = Adw.PreferencesGroup(title="Low battery",
+                                    description="Warnings appear at 20%, 10% and 4% (it suspends at 4% unless you plug in).")
+        saver = Adw.SwitchRow(title="Switch to Power Saver at 20%", subtitle="Back to your previous mode when you plug in")
+        try:
+            saver.set_active((STATE_DIR / "battery-autosaver").read_text().strip() != "off")
+        except OSError:
+            saver.set_active(True)
+
+        def on_saver(row, _p):
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (STATE_DIR / "battery-autosaver").write_text("on" if row.get_active() else "off")
+
+        saver.connect("notify::active", on_saver)
+        warn.add(saver)
+        page.add(warn)
+        return page
+
+    def set_profile(self, name):
+        if name:
+            sh("powerprofilesctl", "set", name)
+            sh("pkill", "-RTMIN+12", "waybar")
+            self.toast(dict(self.PROFILES).get(name, name))
+
+    def update_battery(self):
+        bat = self.battery_dir()
+        if bat is None or not self.bat_row.get_mapped() and getattr(self, "_bat_seen", False):
+            return bat is not None
+        self._bat_seen = True
+        cap = self.read_num(bat / "capacity") or 0
+        try:
+            status = (bat / "status").read_text().strip()
+        except OSError:
+            status = "Unknown"
+        now = self.read_num(bat / "energy_now") or self.read_num(bat / "charge_now")
+        full = self.read_num(bat / "energy_full") or self.read_num(bat / "charge_full")
+        design = self.read_num(bat / "energy_full_design") or self.read_num(bat / "charge_full_design")
+        rate = self.read_num(bat / "power_now") or self.read_num(bat / "current_now")
+        left = ""
+        if rate and rate > 0 and now is not None and full is not None:
+            hours = (now / rate) if status == "Discharging" else ((full - now) / rate if status == "Charging" else 0)
+            if hours > 0:
+                left = f" · about {int(hours)} h {int((hours % 1) * 60):02d} min {'left' if status == 'Discharging' else 'to full'}"
+        self.bat_row.set_subtitle(status + left)
+        self.bat_level.set_value(cap)
+        self.bat_pct.set_label(f"{int(cap)}%")
+        if full and design:
+            self.bat_health.set_subtitle(f"{full / design * 100:.0f}% of its original capacity")
+        else:
+            self.bat_health.set_subtitle("Not reported by this battery")
+        return True
+
+    # ======================================================================= Bluetooth
+    def build_bluetooth(self):
+        page = Adw.PreferencesPage()
+        if sh("sh", "-c", "command -v bluetoothctl").returncode != 0:
+            group = Adw.PreferencesGroup()
+            group.add(Adw.ActionRow(title="Bluetooth is not installed",
+                                    subtitle="sudo pacman -S bluez bluez-utils blueman, then sudo scripts/setup-system.sh --apply"))
+            page.add(group)
+            return page
+
+        top = Adw.PreferencesGroup()
+        self.bt_switch = Adw.SwitchRow(title="Bluetooth", subtitle="Checking…")
+        self.bt_switch_handler = self.bt_switch.connect("notify::active", self.on_bt_power)
+        top.add(self.bt_switch)
+        page.add(top)
+
+        self.bt_devices = Adw.PreferencesGroup(title="Devices")
+        page.add(self.bt_devices)
+
+        pair = Adw.PreferencesGroup()
+        row = Adw.ActionRow(title="Pair a new device…", subtitle="Opens the Bluetooth manager", activatable=True)
+        row.add_prefix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        row.connect("activated", lambda *_: spawn("blueman-manager"))
+        pair.add(row)
+        page.add(pair)
+        self.bt_rows = []
+        self.refresh_bluetooth()
+        return page
+
+    def refresh_bluetooth(self):
+        def work():
+            show = sh("bluetoothctl", "show").stdout
+            powered = "Powered: yes" in show
+            has_adapter = bool(show.strip()) and "No default controller" not in show
+            devices = []
+            if has_adapter:
+                for line in sh("bluetoothctl", "devices", "Paired").stdout.splitlines():
+                    parts = line.split(" ", 2)
+                    if len(parts) == 3 and parts[0] == "Device":
+                        info = sh("bluetoothctl", "info", parts[1]).stdout
+                        devices.append((parts[1], parts[2], "Connected: yes" in info))
+            GLib.idle_add(self.apply_bluetooth, has_adapter, powered, devices)
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def apply_bluetooth(self, has_adapter, powered, devices):
+        self.bt_switch.handler_block(self.bt_switch_handler)
+        self.bt_switch.set_sensitive(has_adapter)
+        self.bt_switch.set_active(powered)
+        self.bt_switch.set_subtitle("On" if powered else ("Off" if has_adapter else "No Bluetooth adapter found"))
+        self.bt_switch.handler_unblock(self.bt_switch_handler)
+        for r in self.bt_rows:
+            self.bt_devices.remove(r)
+        self.bt_rows = []
+        for mac, name, connected in devices:
+            row = Adw.ActionRow(title=name, subtitle="Connected" if connected else "Not connected")
+            row.add_prefix(Gtk.Image.new_from_icon_name("bluetooth-symbolic"))
+            toggle = Gtk.Button(label="Disconnect" if connected else "Connect", valign=Gtk.Align.CENTER)
+            toggle.connect("clicked", lambda _b, m=mac, c=connected: self.bt_action("disconnect" if c else "connect", m))
+            forget = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, tooltip_text="Forget this device",
+                                css_classes=["flat"])
+            forget.connect("clicked", lambda _b, m=mac: self.bt_action("remove", m))
+            row.add_suffix(toggle)
+            row.add_suffix(forget)
+            self.bt_devices.add(row)
+            self.bt_rows.append(row)
+        if not devices:
+            row = Adw.ActionRow(title="No paired devices" if has_adapter else "No adapter")
+            self.bt_devices.add(row)
+            self.bt_rows.append(row)
+        return False
+
+    def on_bt_power(self, row, _p):
+        sh("bluetoothctl", "power", "on" if row.get_active() else "off")
+        GLib.timeout_add(600, lambda: (self.refresh_bluetooth(), False)[1])
+
+    def bt_action(self, action, mac):
+        self.toast("Working…")
+
+        def work():
+            sh("bluetoothctl", action, mac)
+            GLib.idle_add(self.refresh_bluetooth)
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
     # ======================================================================= More
     def build_more(self):
         page = Adw.PreferencesPage()
@@ -675,6 +895,9 @@ class SettingsWindow(Adw.ApplicationWindow):
             ("Bluetooth", "Devices and pairing", "bluetooth-symbolic", ["blueman-manager"]),
             ("Notifications", "Open the notification center", "preferences-system-notifications-symbolic",
              ["swaync-client", "-t", "-sw"]),
+            ("Backups", "System snapshots with Timeshift", "document-save-symbolic", ["timeshift-launcher"]),
+            ("Disk usage", "See what takes up space", "drive-harddisk-symbolic", ["baobab"]),
+            ("Passwords", "KeePassXC vault", "dialog-password-symbolic", ["keepassxc"]),
         ]:
             if sh("sh", "-c", f"command -v {cmd[0]}").returncode != 0:
                 continue

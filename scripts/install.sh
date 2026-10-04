@@ -26,7 +26,7 @@ run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 
 # ---- dependencies ----
 required=(Hyprland hyprpaper hyprlock hypridle cliphist wl-paste waybar wofi dunst kitty grim slurp wl-copy notify-send)
-optional=(starship eza bat fzf btop zoxide fastfetch satty wf-recorder nautilus kwriteconfig6 swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
+optional=(awww hyprpicker power-profiles-daemon bluetoothctl blueman-manager starship eza bat fzf btop zoxide fastfetch satty wf-recorder nautilus kwriteconfig6 swayosd-server hyprsunset brightnessctl playerctl wpctl nm-applet pavucontrol dolphin nwg-displays nwg-look)
 missing=(); for c in "${required[@]}"; do command -v "$c" >/dev/null || missing+=("$c"); done
 if (( ${#missing[@]} )); then
     echo "Missing required commands: ${missing[*]}"

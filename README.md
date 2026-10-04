@@ -11,7 +11,7 @@ Colours, fonts, gaps and rounding come from one theme file and are rendered into
 
 ```bash
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
-               brightnessctl playerctl swayosd hyprsunset swaync starship eza bat fzf btop zoxide fastfetch satty wf-recorder pavucontrol network-manager-applet polkit-kde-agent \
+               brightnessctl playerctl swayosd hyprsunset swaync starship eza bat fzf btop zoxide fastfetch satty wf-recorder power-profiles-daemon bluez bluez-utils blueman reflector pacman-contrib ufw timeshift keepassxc telegram-desktop qbittorrent baobab noto-fonts-cjk awww hyprpicker jq pavucontrol network-manager-applet polkit-kde-agent \
                ttf-jetbrains-mono-nerd inter-font \
                capitaine-cursors noto-fonts-emoji adw-gtk-theme papirus-icon-theme breeze plasma-integration kde-cli-tools \
                nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
@@ -171,6 +171,19 @@ a recovery USB at hand; this part cannot be verified from inside the desktop ses
 you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter copies the result), system
 actions (lock, sleep, dark/light mode, night light, settings pages), files under your home folder,
 and a web search fallback. It runs as a small background service so it opens instantly.
+
+## Laptop: power, Bluetooth, system setup
+
+- **Power mode** (`power-profiles-daemon`): an icon in the bar cycles Power Saver / Balanced / Performance;
+  Settings > Power shows charge, time left, battery health and the low-battery options.
+- **Battery watch** warns at 20% (and switches to Power Saver until you plug in), 10%, and suspends at 4%.
+- **Bluetooth** (`bluez`, `blueman`): bar icon with the number of connected devices; Settings > Bluetooth lists
+  paired devices with Connect / Disconnect / Forget.
+- `sudo scripts/setup-system.sh` shows the plan; `--apply` enables bluetooth, power-profiles-daemon, fast
+  mirrors (`reflector`), `paccache` and a `ufw` firewall (deny incoming). Each edited file is backed up.
+- `SUPER+CTRL+P` picks a colour from the screen (`hyprpicker`) and copies the hex value.
+- With `awww` installed, wallpaper changes animate (Settings > Wallpaper > Transition); without it
+  `hyprpaper` is used.
 
 ## Settings
 

@@ -209,6 +209,7 @@ if command -v kwriteconfig6 >/dev/null; then
 fi
 
 mkdir -p "$state_dir"
+echo "${v[wallpaper_path]}" > "$state_dir/wallpaper-current"
 echo "$theme" > "$state_dir/current"
 echo "$theme" > "$state_dir/last-${v[mode]}"
 echo "Applied theme: ${v[name]:-$theme} (${v[mode]})"
@@ -230,11 +231,7 @@ running() { pgrep -x "$1" >/dev/null; }
 if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
     hyprctl reload >/dev/null
     hyprctl setcursor "${v[cursor_theme]}" "${v[cursor_size]}" >/dev/null 2>&1
-    if running hyprpaper; then
-        pkill -x hyprpaper
-        sleep 0.2
-    fi
-    setsid -f hyprpaper >/dev/null 2>&1
+    "$out_dir/hypr/scripts/wallpaper.sh" apply   # awww transition when installed, hyprpaper otherwise
 fi
 running waybar && pkill -SIGUSR2 -x waybar
 running dunst  && dunstctl reload

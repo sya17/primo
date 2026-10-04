@@ -1,6 +1,6 @@
 -- https://wiki.hypr.land/Configuring/Basics/Autostart/
 hl.on("hyprland.start", function()
-    hl.exec_cmd("hyprpaper")
+    hl.exec_cmd("~/.config/hypr/scripts/wallpaper.sh restore") -- awww if installed, hyprpaper otherwise
     hl.exec_cmd("waybar")
     -- Notification daemon: swaync (with control center) when installed, dunst otherwise.
     hl.exec_cmd("sh -c 'command -v swaync >/dev/null && exec swaync || exec dunst'")
@@ -12,5 +12,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
     hl.exec_cmd("nm-applet --indicator")
+    hl.exec_cmd("sh -c 'command -v blueman-applet >/dev/null && exec blueman-applet'") -- Bluetooth pairing agent
+    hl.exec_cmd("~/.config/hypr/scripts/battery-watch.sh") -- low-battery warnings, auto Power Saver
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
 end)

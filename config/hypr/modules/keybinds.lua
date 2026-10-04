@@ -70,6 +70,9 @@ hl.bind(mod .. " + SHIFT + A", hl.dsp.exec_cmd(programs.screenshot .. " edit")) 
 hl.bind("Print",               hl.dsp.exec_cmd(programs.screenshot .. " area"))
 hl.bind("SHIFT + Print",       hl.dsp.exec_cmd(programs.screenshot .. " full"))
 
+-- Colour picker: SUPER+CTRL+P, then click any pixel (hex is copied)
+hl.bind(mod .. " + CTRL + P", hl.dsp.exec_cmd(programs.colorPicker))
+
 -- Screen recording: SUPER+SHIFT+R records an area, SUPER+CTRL+R the whole screen with audio; press again to stop
 hl.bind(mod .. " + SHIFT + R", hl.dsp.exec_cmd(programs.record .. " toggle area"))
 hl.bind(mod .. " + CTRL + R",  hl.dsp.exec_cmd(programs.record .. " toggle full --audio"))

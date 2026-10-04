@@ -40,6 +40,9 @@ utility("nm-editor",     "^nm-connection-editor$",       "640 480")
 utility("nwg-look",      "^nwg-look$",                    "900 640")
 utility("nwg-displays",  "^nwg-displays$",                "1000 660")
 utility("blueman",       "^blueman-manager$",             "640 480")
+utility("blueman-adapters", "^blueman-adapters$", "520 520")
+utility("blueman-services", "^blueman-services$", "560 460")
+utility("timeshift",        "^timeshift-gtk$",    "900 640")
 utility("polkit-agent",  "^org\\.kde\\.polkit-kde-authentication-agent-1$", "460 240")
 
 -- File pickers from any app (GTK/Qt portals): float, centred, roomy.

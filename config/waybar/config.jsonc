@@ -16,8 +16,10 @@
         "custom/recorder",
         "tray",
         "group/sys",
+        "bluetooth",
         "network",
         "pulseaudio",
+        "custom/powerprofile",
         "battery",
         "custom/notifications",
         "custom/nightlight",
@@ -68,6 +70,18 @@
     "custom/sys": { "format": "", "tooltip": false },
     "cpu": { "format": "{usage}%", "tooltip": false },
     "memory": { "format": "{}%", "tooltip-format": "{used:0.1f} / {total:0.1f} GiB" },
+
+    // Native Bluetooth module: hidden when there is no adapter. Click opens the manager.
+    "bluetooth": {
+        "format": "\uf293",
+        "format-off": "\uf293",
+        "format-disabled": "\uf293",
+        "format-connected": "\uf293 {num_connections}",
+        "tooltip-format": "{controller_alias}  {status}",
+        "tooltip-format-connected": "{controller_alias}\n\n{device_enumerate}",
+        "tooltip-format-enumerate-connected": "{device_alias}   {device_battery_percentage}%",
+        "on-click": "blueman-manager"
+    },
 
     "network": {
         "format-wifi": "{icon}",
@@ -125,6 +139,18 @@
         "signal": 11,
         "hide-empty-text": true,
         "on-click": "~/.config/hypr/scripts/record.sh stop"
+    },
+
+    // Power mode (power-profiles-daemon). Click to cycle Power Saver > Balanced > Performance.
+    "custom/powerprofile": {
+        "exec": "~/.config/hypr/scripts/powerprofile.sh status",
+        "exec-if": "command -v powerprofilesctl",
+        "return-type": "json",
+        "interval": 10,
+        "signal": 12,
+        "format": "{icon}",
+        "format-icons": { "power-saver": "\uf06c", "balanced": "\uf24e", "performance": "\uf0e4" },
+        "on-click": "~/.config/hypr/scripts/powerprofile.sh cycle"
     },
 
     "custom/nightlight": {
