@@ -522,6 +522,9 @@ class SettingsWindow(Adw.ApplicationWindow):
             (btn.add_css_class if p == cur else btn.remove_css_class)("active")
 
     def set_wallpaper(self, path):
+        if Path(path).suffix.lower() in VIDEO_EXTS and not shutil.which("mpvpaper"):
+            self.toast("Video wallpapers need mpvpaper: yay -S mpvpaper")
+            return
         self.toast("Applying…")
         proc = Gio.Subprocess.new([str(THEME_SWITCH), "--wallpaper", path],
                                   Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
