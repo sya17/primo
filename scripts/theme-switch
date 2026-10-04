@@ -184,6 +184,9 @@ if [[ -n "$ff_profile" && -d "$ff_profile" ]]; then
         || printf '// Added by the Primo dotfiles: lets userChrome.css / userContent.css load\nuser_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);\n' >> "$ff_profile/user.js"
 fi
 
+# KeePassXC is a Qt5 app (the KDE platform theme we set is Qt6), so it follows the dark/light mode via its own setting
+command -v kwriteconfig6 >/dev/null && kwriteconfig6 --file keepassxc/keepassxc.ini --group GUI --key ApplicationTheme "${v[mode]}"
+
 # Cursor for X11/Wayland apps that do not read GTK/KDE settings, plus KDE and the login screen.
 mkdir -p "$data_home/icons/default"
 printf '[Icon Theme]\nName=Default\nInherits=%s\n' "${v[cursor_theme]}" > "$data_home/icons/default/index.theme"
