@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: pacman -Syu --noconfirm python python-gobject libadwaita gtk4 shellcheck lua git
+      - name: Static checks
+        run: scripts/check.sh
+      - name: Hyprland config (best effort)
+        continue-on-error: true
+        run: |
+          pacman -S --noconfirm hyprland
+          scripts/check.sh

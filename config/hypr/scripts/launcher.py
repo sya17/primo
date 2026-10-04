@@ -212,6 +212,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.connect("notify::is-active", self.on_active_changed)
         self.rebuild("")
         self.entry.grab_focus()
+        preset = os.environ.get("PRIMO_LAUNCHER_QUERY")  # used to take documentation screenshots
+        if preset:
+            self.entry.set_text(preset)
 
     @staticmethod
     def card_contains(card, x, y):
