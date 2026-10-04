@@ -75,6 +75,25 @@ app.check_work(datetime(2026, 10, 5, 16, 49)); assert sent == [], sent
 app.check_work(datetime(2026, 10, 5, 16, 52)); app.check_work(datetime(2026, 10, 5, 16, 55))
 assert sent == ["The work day ends soon"], sent              # once, not at every tick
 
+# time tracking: pauses are not counted, short and break sessions are not logged
+clock = [1_000_000.0]; real_time = time.time; time.time = lambda: clock[0]
+app.store["log"].clear(); app.store["focus"] = {"label": "API work", "category": "Work"}
+app.focus_toggle(); assert app.store["session"]["label"] == "API work"
+clock[0] += 600; app.focus_toggle()                      # pause after 10 min
+clock[0] += 300; app.focus_toggle()                      # resume 5 min later
+clock[0] += 300; app.focus_skip()                        # 5 more minutes, then skip
+assert len(app.store["log"]) == 1 and app.store["log"][0]["min"] == 15.0 and app.store["log"][0]["label"] == "API work", app.store["log"]
+clock[0] += 400; app.focus_skip()                        # the break is not logged
+assert len(app.store["log"]) == 1 and app.store["session"]["phase"] == "focus"
+clock[0] += 30; app.focus_reset(); assert len(app.store["log"]) == 1            # 30 s of focus is not a session
+app.focus_toggle(); s = app.store["session"]; clock[0] = s["end"] + 5
+app.check_due(datetime.fromtimestamp(clock[0]))          # the block runs out by itself
+assert len(app.store["log"]) == 2 and app.store["log"][1]["min"] == 25.0, app.store["log"]
+app.focus_reset(); time.time = real_time
+app.add_reminder("finish", None, None, None); rid = app.store["reminders"][-1]["id"]
+app.complete_reminder(rid, True); assert app.store["reminders"][-1]["done_at"]
+app.complete_reminder(rid, False); assert "done_at" not in app.store["reminders"][-1]
+
 # notes: typing is saved, an empty note is not kept
 page = hub.NotesPage(app)
 page.new_note(); page.buf.set_text("Title line\nbody text"); page.flush()

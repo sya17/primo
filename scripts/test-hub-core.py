@@ -36,6 +36,24 @@ assert c.next_phase("focus", 0, cfg) == ("short", 5, 1) and c.next_phase("focus"
 assert c.advance(datetime(2026, 1, 31, 9), "monthly") == datetime(2026, 2, 28, 9) and c.advance(datetime(2026, 10, 9, 9), "weekdays") == datetime(2026, 10, 12, 9)
 assert c.fmt_clock(65) == "01:05" and c.fmt_clock(3725) == "1:02:05"
 assert c.human_due(datetime(2026, 10, 5, 9), now) == "Tomorrow 09:00"
+from datetime import date
+ts = lambda y, m, d, h, mi: datetime(y, m, d, h, mi).timestamp()
+log = [{"start": ts(2026, 10, 2, 9, 0), "end": ts(2026, 10, 2, 10, 30), "min": 90, "label": "API", "cat": "Work"},
+       {"start": ts(2026, 10, 2, 13, 0), "end": ts(2026, 10, 2, 13, 25), "min": 25, "label": "Read, \"papers\"", "cat": "Research"},
+       {"start": ts(2026, 10, 5, 9, 0), "end": ts(2026, 10, 5, 9, 25), "min": 25, "label": "API", "cat": "Work"}]
+r = c.report(log, date(2026, 10, 1), date(2026, 10, 7))
+assert r["total"] == 140 and r["by_cat"] == {"Work": 115.0, "Research": 25.0} and r["by_label"]["API"] == 115.0
+assert c.report(log, date(2026, 10, 5), date(2026, 10, 5))["total"] == 25
+assert c.range_for("week", date(2026, 10, 7)) == (date(2026, 10, 5), date(2026, 10, 11)) and c.range_for("month", date(2026, 10, 7))[1] == date(2026, 10, 31)
+assert c.fmt_minutes(125) == "2h 05m" and c.fmt_minutes(7) == "7m"
+assert '"Read, ""papers"""' in c.csv_text(log, date(2026, 10, 1), date(2026, 10, 7))     # commas and quotes in a label stay one column
+data = {"work": {"days": [0, 1, 2, 3, 4]}, "log": log, "reminders": [
+    {"title": "Send invoice", "done": True, "done_at": datetime(2026, 10, 2, 16, 0).isoformat()},
+    {"title": "Review PR", "done": False, "due": datetime(2026, 10, 5, 14, 0).isoformat()}]}
+note = c.standup_text(data, datetime(2026, 10, 5, 8, 30))                      # Monday: "yesterday" is Friday
+assert "## Friday (last work day)" in note and "- Done: Send invoice" in note and "- API: 1h 30m" in note and "- [ ] 14:00 Review PR" in note
+assert c.previous_work_day({"days": [0, 1, 2, 3, 4]}, date(2026, 10, 6)) == date(2026, 10, 5)
+
 import tempfile, os
 d = tempfile.mkdtemp(); s = c.Store(os.path.join(d, "h.json")); s["reminders"].append({"id": "1"}); s.save(); assert c.Store(os.path.join(d, "h.json"))["reminders"] == [{"id": "1"}] and c.Store(os.path.join(d, "h.json"))["work"]["start"] == "09:00"
 print("FAILURES:", bad)

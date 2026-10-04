@@ -166,6 +166,8 @@ ACTIONS = [
     ("Alarm", "Wake up, repeat on days", "alarm", "alarm wake clock", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-alarm")),
     ("Stopwatch", "Laps", "stopwatch", "stopwatch lap", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-watch")),
     ("World clock", "Time in other cities", "preferences-system-time", "world clock timezone", lambda: spawn(str(SCRIPTS / "hub.sh"), "clock-world")),
+    ("Standup note", "Today's daily note: what you did, what is next", "document-edit", "standup daily note report", lambda: spawn(str(SCRIPTS / "hub.sh"), "standup")),
+    ("Time report", "Where your focus time went", "office-chart-bar", "time report hours tracking", lambda: spawn(str(SCRIPTS / "hub.sh"), "report")),
     ("Focus", "Pomodoro and work hours", "timer", "focus pomodoro work hours", lambda: spawn(str(SCRIPTS / "hub.sh"), "focus")),
     ("New note", "Write something down", "document-edit", "note notes write memo", lambda: spawn(str(SCRIPTS / "hub.sh"), "new-note")),
     ("Activity", "What is running and what it costs", "utilities-system-monitor", "activity monitor processes background task manager cpu memory", lambda: spawn(str(SCRIPTS / "activity.sh"), "toggle")),

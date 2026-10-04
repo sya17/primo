@@ -37,7 +37,8 @@ USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"
 SOUNDS = Path("/usr/share/sounds/freedesktop/stereo")
 STATUS = hc.STATE_DIR / "status.json"
 TABS = [("calendar", "x-office-calendar-symbolic", "Calendar"), ("reminders", "emblem-ok-symbolic", "Reminders"),
-        ("clock", "alarm-symbolic", "Clock"), ("focus", "timer-symbolic", "Focus"), ("notes", "document-edit-symbolic", "Notes")]
+        ("clock", "alarm-symbolic", "Clock"), ("focus", "timer-symbolic", "Focus"), ("report", "office-chart-bar-symbolic", "Report"),
+        ("notes", "document-edit-symbolic", "Notes")]
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 CSS = """
@@ -727,8 +728,18 @@ class FocusPage(Gtk.Box):
         for b in (self.reset, self.go, self.skip):
             row.append(b)
         left.append(row)
+        what = Gtk.Box(spacing=6, margin_top=4)
+        self.what = Gtk.Entry(placeholder_text="What are you working on?", hexpand=True, primary_icon_name="document-edit-symbolic")
+        self.cat = Gtk.DropDown.new_from_strings(hc.CATEGORIES)
+        self.what.connect("changed", lambda *_: self.on_what())
+        self.cat.connect("notify::selected", lambda *_: self.on_what())
+        what.append(self.what)
+        what.append(self.cat)
+        left.append(what)
         self.append(left)
         self.append(Gtk.Separator(css_classes=["hub-sep"]))
+        self.syncing = False
+        self.sync_what()
 
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         scroll = scrolled(body, 360)
@@ -787,6 +798,28 @@ class FocusPage(Gtk.Box):
         body.append(pg)
         self.tick()
 
+    def sync_what(self):
+        """Show the label of the running session (a mode may have set it), else the one for the next session."""
+        s = self.app.store["session"]
+        src = s if s["phase"] != "idle" and s.get("label") else self.app.store["focus"]
+        self.syncing = True
+        if not self.what.has_focus() and self.what.get_text() != (src.get("label") or ""):
+            self.what.set_text(src.get("label") or "")
+        cat = src.get("category") or "Work"
+        if cat in hc.CATEGORIES:
+            self.cat.set_selected(hc.CATEGORIES.index(cat))
+        self.syncing = False
+
+    def on_what(self):
+        if self.syncing:
+            return
+        label_text, cat = self.what.get_text(), hc.CATEGORIES[self.cat.get_selected()]
+        self.app.store["focus"] = {"label": label_text, "category": cat}
+        s = self.app.store["session"]
+        if s["phase"] != "idle":
+            s["label"], s["category"] = label_text, cat
+        self.app.save()
+
     def mode_click(self):
         script = HERE / "modes.py"
         subprocess.Popen([sys.executable, str(script), "end" if mc.current() else "menu"], stdout=subprocess.DEVNULL,
@@ -819,6 +852,7 @@ class FocusPage(Gtk.Box):
     def tick(self):
         s = self.app.store["session"]
         cfg = self.app.store["pomodoro"]
+        self.sync_what()
         if s["phase"] == "idle":
             self.ring.set(0, f"{cfg['focus']:02d}:00", "Ready to focus")
             self.go.set_label("Start")
@@ -849,6 +883,105 @@ class FocusPage(Gtk.Box):
             nxt = w["next"].strftime("%a %H:%M") if w["next"] else "no work days set"
             self.work_status.set_subtitle(f"Off the clock · next start {nxt}")
             self.work_bar.set_fraction(0)
+
+
+class ReportPage(Gtk.Box):
+    """Where the focus time went: today, this week, this month. Export it or turn it into a daily note."""
+
+    def __init__(self, app):
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        self.app = app
+        self.range = "week"
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, width_request=280, hexpand=False)
+        self.tabs = Adw.ToggleGroup(halign=Gtk.Align.START)
+        for name, text in (("today", "Today"), ("week", "Week"), ("month", "Month")):
+            self.tabs.add(Adw.Toggle(name=name, label=text))
+        self.tabs.set_active_name("week")
+        self.tabs.connect("notify::active-name", lambda g, _p: self.set_range(g.get_active_name()))
+        left.append(self.tabs)
+        self.total = label("", "hub-time")
+        self.span = label("", "hub-small")
+        left.append(self.total)
+        left.append(self.span)
+        self.cats = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=6)
+        left.append(self.cats)
+        self.append(left)
+        self.append(Gtk.Separator(css_classes=["hub-sep"]))
+
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True)
+        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        sc = scrolled(self.body, 300)
+        sc.set_vexpand(True)
+        sc.set_propagate_natural_height(False)
+        right.append(sc)
+        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        for text, icon, fn in (("Copy", "edit-copy-symbolic", self.copy), ("CSV", "document-save-symbolic", self.export),
+                               ("Standup", "document-edit-symbolic", lambda *_: app.standup())):
+            b = Gtk.Button(child=Adw.ButtonContent(label=text, icon_name=icon), css_classes=["flat"],
+                           tooltip_text={"Copy": "Copy a Markdown summary", "CSV": "Save a CSV in Documents", "Standup": "Create today's daily note"}[text])
+            b.connect("clicked", lambda _b, f=fn: f())
+            actions.append(b)
+        right.append(actions)
+        self.append(right)
+        self.refresh()
+
+    def bounds(self):
+        return hc.range_for(self.range, date.today())
+
+    def set_range(self, name):
+        self.range = name
+        self.refresh()
+
+    def bar(self, name, minutes, total, parent):
+        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        head = Gtk.Box()
+        head.append(label(name, hexpand=True, ellipsize=Pango.EllipsizeMode.END, max_width_chars=26))
+        head.append(label(hc.fmt_minutes(minutes), "hub-small"))
+        bar = Gtk.ProgressBar(fraction=minutes / max(total, 1), css_classes=["hub-bar"])
+        row.append(head)
+        row.append(bar)
+        parent.append(row)
+
+    def refresh(self):
+        since, until = self.bounds()
+        r = hc.report(self.app.store["log"], since, until)
+        self.total.set_label(hc.fmt_minutes(r["total"]) if r["total"] else "0m")
+        self.span.set_label(f"{since:%d %b}" + ("" if since == until else f" to {until:%d %b}") + " · focus time")
+        clear(self.cats)
+        clear(self.body)
+        for cat, mins in sorted(r["by_cat"].items(), key=lambda x: -x[1]):
+            self.bar(cat, mins, r["total"], self.cats)
+        if not r["total"]:
+            self.cats.append(label("No focus time yet. Start a session from the Focus tab or a mode and it is counted here.", "hub-small", wrap=True))
+            return
+        if self.range != "today":
+            self.body.append(label("BY DAY", "hub-h"))
+            peak = max(r["by_day"].values())
+            d = since
+            while d <= min(until, date.today()):
+                self.bar(d.strftime("%a %d"), r["by_day"].get(d, 0), peak, self.body)
+                d += timedelta(days=1)
+        self.body.append(label("BY LABEL", "hub-h", margin_top=8))
+        for lab, mins in sorted(r["by_label"].items(), key=lambda x: -x[1])[:10]:
+            self.bar(lab, mins, r["total"], self.body)
+
+    def copy(self):
+        since, until = self.bounds()
+        subprocess.Popen(["wl-copy", hc.markdown_summary(self.app.store["log"], since, until)])
+        self.app.toast("Summary copied (Markdown)")
+
+    def export(self):
+        since, until = self.bounds()
+        out = Path.home() / "Documents" / f"time-report-{since:%Y%m%d}-{until:%Y%m%d}.csv"
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(hc.csv_text(self.app.store["log"], since, until))
+            self.app.toast(f"Saved {out.name} in Documents")
+        except OSError as exc:
+            self.app.toast(f"Could not save: {exc.strerror}")
+
+    def tick(self):
+        pass
 
 
 class NotesPage(Gtk.Box):
@@ -1086,7 +1219,8 @@ class HubWindow(Adw.ApplicationWindow):
 
     def page(self, name):
         if name not in self.pages:
-            cls = {"calendar": CalendarPage, "reminders": RemindersPage, "clock": ClockPage, "focus": FocusPage, "notes": NotesPage}[name]
+            cls = {"calendar": CalendarPage, "reminders": RemindersPage, "clock": ClockPage, "focus": FocusPage, "report": ReportPage,
+                   "notes": NotesPage}[name]
             self.pages[name] = cls(self.app)
             self.stack.add_named(self.pages[name], name)
         return self.pages[name]
@@ -1115,7 +1249,7 @@ class HubWindow(Adw.ApplicationWindow):
         if keyval == Gdk.KEY_Escape:
             self.close()
             return True
-        if ctrl and Gdk.KEY_1 <= keyval <= Gdk.KEY_5:
+        if ctrl and Gdk.KEY_1 <= keyval <= Gdk.KEY_6:
             self.picker.set_active_name(TABS[keyval - Gdk.KEY_1][0])
             return True
         if ctrl and keyval == Gdk.KEY_n:
@@ -1209,6 +1343,7 @@ class Service(Adw.Application):
         for name, fn, param in (("toggle", lambda *_: self.toggle(), None), ("open", lambda _a, p: self.show(p.get_string()), "s"),
                                 ("focus-start", lambda _a, p: self.focus_start(*p.get_string().split("|", 1)), "s"),
                                 ("focus-end", lambda *_: self.focus_reset(), None),
+                                ("standup", lambda *_: self.standup(), None),
                                 ("quit", lambda *_: self.quit(), None)):
             act = Gio.SimpleAction.new(name, GLib.VariantType(param) if param else None)
             act.connect("activate", fn)
@@ -1272,6 +1407,18 @@ class Service(Adw.Application):
         if self.window is not None:
             self.window.hold_open(on)
 
+    def toast(self, text):
+        subprocess.Popen(["notify-send", "-a", "Hub", "-t", "3000", "-i", "emblem-ok", text])
+
+    def standup(self):
+        """Create today's daily note (once) and open it in Notes."""
+        path = hc.NOTES_DIR / f"{datetime.now():%Y-%m-%d}-daily.md"
+        if not path.exists():
+            hc.NOTES_DIR.mkdir(parents=True, exist_ok=True)
+            path.write_text(hc.standup_text(self.store.data, datetime.now()))
+        self.show("notes")
+        self.window.page("notes").open_note(path)
+
     def save(self):
         self.store.save()
 
@@ -1291,6 +1438,10 @@ class Service(Adw.Application):
         for r in self.store["reminders"]:
             if r["id"] == rid:
                 r["done"] = done
+                if done:
+                    r["done_at"] = datetime.now().isoformat(timespec="minutes")
+                else:
+                    r.pop("done_at", None)
         self.changed()
 
     def delete_reminder(self, rid):
@@ -1366,23 +1517,40 @@ class Service(Adw.Application):
         s = self.store["session"]
         now = time.time()
         if s["phase"] == "idle":
-            self.start_phase("focus", self.store["pomodoro"]["focus"], 0)
+            f = self.store["focus"]
+            self.start_phase("focus", self.store["pomodoro"]["focus"], 0, f["label"], f["category"])
         elif s["left"] is None:
             s["left"] = max(0, s["end"] - now)
+            s["worked"] = s.get("worked", 0.0) + (now - s["seg"] if s.get("seg") else 0.0)
+            s["seg"] = None
         else:
-            s["end"], s["left"] = now + s["left"], None
+            s["end"], s["left"], s["seg"] = now + s["left"], None, now
         self.changed()
 
     def focus_skip(self):
         s = self.store["session"]
+        self.log_session()
         phase, mins, cycle = hc.next_phase(s["phase"], s["cycle"], self.store["pomodoro"])
         self.start_phase(phase, mins, cycle)
         self.changed()
 
     def focus_reset(self):
-        self.store["session"] = {"phase": "idle", "end": 0.0, "cycle": 0, "left": None}
+        self.log_session()
+        self.store["session"] = {"phase": "idle", "end": 0.0, "cycle": 0, "left": None, "label": "", "category": "", "seg": None, "worked": 0.0}
         self.sync_dnd()
         self.changed()
+
+    def log_session(self, end_ts=None):
+        """Add the focus time of the session that is ending to the log (breaks and tiny sessions are not counted)."""
+        s = self.store["session"]
+        if s["phase"] != "focus":
+            return
+        end_ts = end_ts or time.time()
+        total = s.get("worked", 0.0) + (end_ts - s["seg"] if s.get("seg") else 0.0)
+        if total >= 60:
+            self.store["log"].append({"start": end_ts - total, "end": end_ts, "min": round(total / 60, 1),
+                                      "label": s.get("label", ""), "cat": s.get("category") or "Other"})
+            self.store["log"] = self.store["log"][-3000:]
 
     def focus_start(self, label_text="", category=""):
         """Used by modes: begin a focus session labelled with what you are working on."""
@@ -1393,7 +1561,8 @@ class Service(Adw.Application):
         old = self.store["session"]
         self.store["session"] = {"phase": phase, "end": time.time() + minutes * 60, "cycle": cycle, "left": None,
                                  "label": old.get("label", "") if label_text is None else label_text,
-                                 "category": old.get("category", "") if category is None else category}
+                                 "category": old.get("category", "") if category is None else category,
+                                 "seg": time.time(), "worked": 0.0}
         self.sync_dnd()
 
     def sync_dnd(self):
@@ -1463,6 +1632,7 @@ class Service(Adw.Application):
                 changed = True
         s = self.store["session"]
         if s["phase"] != "idle" and s["left"] is None and s["end"] <= ts:
+            self.log_session(end_ts=min(ts, s["end"]))
             phase, mins, cycle = hc.next_phase(s["phase"], s["cycle"], self.store["pomodoro"])
             msg = {"focus": "Time to focus", "short": "Take a short break", "long": "Take a long break"}[phase]
             sound("complete.oga")

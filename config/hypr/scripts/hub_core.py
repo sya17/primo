@@ -24,8 +24,10 @@ DEFAULTS = {
     "work": {"days": [0, 1, 2, 3, 4], "start": "09:00", "end": "17:00", "end_on": True, "end_notice": 10,
              "break_on": False, "break_every": 50, "dnd_focus": True},
     "pomodoro": {"focus": 25, "short": 5, "long": 15, "cycles": 4},
-    "session": {"phase": "idle", "end": 0.0, "cycle": 0, "left": None},
+    "session": {"phase": "idle", "end": 0.0, "cycle": 0, "left": None, "label": "", "category": "", "seg": None, "worked": 0.0},
     "stopwatch": {"running": False, "start": 0.0, "elapsed": 0.0, "laps": []},
+    "focus": {"label": "", "category": "Work"},
+    "log": [],
     "last_tab": "calendar",
     "fired": {},
 }
@@ -262,3 +264,81 @@ def list_notes(keep=None):
 def new_note_path():
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     return NOTES_DIR / f"{datetime.now():%Y-%m-%d-%H%M%S}.md"
+
+
+# ----------------------------------------------------------------------------- time report
+CATEGORIES = ["Work", "Research", "Learning", "Personal", "Other"]
+
+
+def fmt_minutes(m):
+    m = int(round(m))
+    h, mi = divmod(m, 60)
+    return f"{h}h {mi:02d}m" if h else f"{mi}m"
+
+
+def report(log, since, until):
+    """Totals (minutes) of the focus log between two dates, inclusive: by category, label and day."""
+    out = {"total": 0.0, "by_cat": {}, "by_label": {}, "by_day": {}}
+    for e in log:
+        d = datetime.fromtimestamp(e["start"]).date()
+        if since <= d <= until:
+            out["total"] += e["min"]
+            cat, lab = e.get("cat") or "Other", e.get("label") or "(no label)"
+            out["by_cat"][cat] = out["by_cat"].get(cat, 0.0) + e["min"]
+            out["by_label"][lab] = out["by_label"].get(lab, 0.0) + e["min"]
+            out["by_day"][d] = out["by_day"].get(d, 0.0) + e["min"]
+    return out
+
+
+def range_for(name, today):
+    if name == "today":
+        return today, today
+    if name == "week":
+        start = today - timedelta(days=today.weekday())
+        return start, start + timedelta(days=6)
+    return today.replace(day=1), today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+
+def csv_text(log, since, until):
+    lines = ["date,start,end,minutes,category,label"]
+    for e in sorted(log, key=lambda e: e["start"]):
+        s = datetime.fromtimestamp(e["start"])
+        if since <= s.date() <= until:
+            label = '"' + (e.get("label") or "").replace('"', '""') + '"'
+            lines.append(f"{s:%Y-%m-%d},{s:%H:%M},{datetime.fromtimestamp(e['end']):%H:%M},{e['min']:.0f},{e.get('cat', '')},{label}")
+    return "\n".join(lines) + "\n"
+
+
+def markdown_summary(log, since, until):
+    r = report(log, since, until)
+    lines = [f"# Time {since:%d %b} to {until:%d %b %Y}: {fmt_minutes(r['total'])}", ""]
+    lines += [f"- {c}: {fmt_minutes(m)}" for c, m in sorted(r["by_cat"].items(), key=lambda x: -x[1])]
+    lines += ["", "## By label"] + [f"- {l}: {fmt_minutes(m)}" for l, m in sorted(r["by_label"].items(), key=lambda x: -x[1])]
+    return "\n".join(lines) + "\n"
+
+
+def previous_work_day(cfg, today):
+    """The last day you were meant to work before `today` (Friday for a Monday)."""
+    for back in range(1, 8):
+        d = today - timedelta(days=back)
+        if d.weekday() in cfg["days"]:
+            return d
+    return today - timedelta(days=1)
+
+
+def standup_text(data, now):
+    """A daily note: what was done on the last work day, what is on today."""
+    today = now.date()
+    prev = previous_work_day(data["work"], today)
+    lines = [f"# Daily note {today:%Y-%m-%d} ({today:%A})", "", f"## {prev:%A} " + ("(yesterday)" if prev == today - timedelta(days=1) else "(last work day)")]
+    done = [r for r in data["reminders"] if r.get("done") and r.get("done_at") and datetime.fromisoformat(r["done_at"]).date() == prev]
+    lines += [f"- Done: {r['title']}" for r in done] or ["- (nothing marked done)"]
+    rep = report(data["log"], prev, prev)
+    if rep["total"]:
+        lines += ["", f"Focus time: {fmt_minutes(rep['total'])}"] + [f"- {l}: {fmt_minutes(m)}" for l, m in sorted(rep["by_label"].items(), key=lambda x: -x[1])]
+    lines += ["", "## Today"]
+    todo = sorted((r for r in data["reminders"] if not r.get("done") and r.get("due") and datetime.fromisoformat(r["due"]).date() <= today),
+                  key=lambda r: r["due"])
+    lines += [f"- [ ] {datetime.fromisoformat(r['due']):%H:%M} {r['title']}" for r in todo] or ["- [ ] "]
+    lines += ["", "## Blockers", "- ", "", "## Notes", ""]
+    return "\n".join(lines)

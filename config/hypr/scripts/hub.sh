@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Entry point for the time hub: talks to the service (starting it if needed).
-# Usage: hub.sh toggle | calendar | reminders | clock | focus | notes | new-note
+# Usage: hub.sh toggle | calendar | reminders | clock | focus | report | notes | new-note | standup
 #        hub.sh status          JSON for the bar: a running timer or focus session (empty otherwise)
 set -uo pipefail
 dir="$(cd "$(dirname "$0")" && pwd)"
@@ -22,6 +22,6 @@ if ! running; then
     for _ in $(seq 1 60); do running && break; sleep 0.05; done
 fi
 case "${1:-toggle}" in
-    toggle) gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate toggle "[]" "{}" >/dev/null ;;
+    toggle|standup) gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate "$1" "[]" "{}" >/dev/null ;;
     *)      gdbus call --session --dest "$dest" --object-path /dev/primo/Hub --method org.gtk.Actions.Activate open "[<'$1'>]" "{}" >/dev/null ;;
 esac
