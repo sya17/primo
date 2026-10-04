@@ -14,9 +14,15 @@ Item {
     property int sessionIndex: sessionModel.lastIndex
     property string userName: userModel.lastUser
 
+    readonly property bool animatedBackground: /\.gif$/i.test(config.background)
     Image {
         anchors.fill: parent
-        source: config.background
+        source: root.animatedBackground ? "" : config.background
+        fillMode: Image.PreserveAspectCrop
+    }
+    AnimatedImage {
+        anchors.fill: parent
+        source: root.animatedBackground ? config.background : ""
         fillMode: Image.PreserveAspectCrop
     }
     Rectangle { anchors.fill: parent; color: config.tint }
@@ -166,10 +172,10 @@ Item {
         }
     }
 
-    // Primo mark (bottom centre), level with the session and power buttons
+    // Primo mark (bottom centre), level with the session button
     Image {
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: powerRow.verticalCenter
+        anchors.verticalCenter: sessionButton.verticalCenter   // always shown; power buttons hide when unavailable
         width: 32; height: 32
         sourceSize: Qt.size(32, 32)
         source: "logo.svg"
@@ -177,7 +183,6 @@ Item {
 
     // Power buttons (bottom-right)
     Row {
-        id: powerRow
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 28

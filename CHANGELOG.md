@@ -33,4 +33,6 @@ First public release.
 - Primo logo everywhere the system showed one: the bar button (was the Arch glyph), fastfetch (was the Arch logo), the
   boot splash and the Settings icon; a small mark at the bottom of the lock and login screens. Drawn in the theme's
   colours (`templates/logo/`).
+- Lock and login screens: their own background (blurred windows, the desktop wallpaper, or a picture, GIF or video)
+  in Settings > Wallpaper; the lock screen says how many wrong passwords were typed and how long the faillock wait is.
 - Tooling: `install.sh`, `check.sh` (+ CI), `setup-shell.sh`, VS Code theme generator.

@@ -27,6 +27,11 @@ To theme another app, add a template under `templates/` and one `render` line in
 The Primo mark follows the theme: the bar button, the lock and login screens, the Settings icon (`primo`), fastfetch and the boot splash
 draw it in `logo` (accent on dark themes, text colour on light ones) and `logo_accent` (accent2). A theme may set both.
 
+Settings > Wallpaper > Lock and login screens picks what shows behind the clock: the desktop wallpaper (default), blurred
+windows (lock screen only), or a picture, GIF or video of their own. Videos show one frame; a GIF moves on the login screen.
+`install-sddm-theme.sh` (once, with sudo) links the login theme's colours, logo and background to `/var/lib/primo-login`,
+a folder owned by you, so the login screen follows theme and wallpaper changes without sudo.
+
 ## GTK and Qt apps
 
 - **GTK 3 and 4** (pavucontrol, nwg-look, file pickers…): `adw-gtk3` with named colours in `~/.config/gtk-{3,4}.0/gtk.css`, plus

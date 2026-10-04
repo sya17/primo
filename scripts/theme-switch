@@ -3,6 +3,7 @@
 #
 # Usage: theme-switch [--no-reload] <theme | dark | light | toggle>
 #        theme-switch --list | --current
+#        theme-switch --lock-wallpaper blur|desktop|PATH     --login-wallpaper desktop|PATH   (no reload)
 #
 # dark / light apply the theme last used in that mode (first available one otherwise);
 # toggle flips the current theme to the other mode.
@@ -33,7 +34,7 @@ pick_for_mode() {
     die "no $mode theme found in $themes_dir"
 }
 
-reload=1
+reload=1; [[ -n "${PRIMO_NO_RELOAD:-}" ]] && reload=0   # set by scripts/check.sh: render only, never touch the running desktop
 case "${1:-}" in
     --list)    for t in $(list_themes); do printf '%-20s %s\n' "$t" "$(theme_mode "$t")"; done; exit 0 ;;
     --current) cat "$state_dir/current" 2>/dev/null || echo "(none)"; exit 0 ;;
@@ -44,6 +45,14 @@ case "${1:-}" in
         if [[ "$2" == reset ]]; then rm -f "$state_dir/wallpaper"
         else [[ -f "$2" ]] || die "no such file: $2"; readlink -f "$2" > "$state_dir/wallpaper"; fi
         set -- "$(cat "$state_dir/current" 2>/dev/null || echo primo-dusk)" ;;
+    --lock-wallpaper|--login-wallpaper)
+        [[ -n "${2:-}" ]] || die "usage: theme-switch $1 blur|desktop|PATH"
+        mkdir -p "$state_dir"
+        case "$2" in
+            blur|desktop) echo "$2" > "$state_dir/${1#--}" ;;
+            *) [[ -f "$2" ]] || die "no such file: $2"; readlink -f "$2" > "$state_dir/${1#--}" ;;
+        esac
+        reload=0; set -- "$(cat "$state_dir/current" 2>/dev/null || echo primo-dusk)" ;;
     -h|--help|"") sed -n '2,9p' "$self" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
@@ -125,6 +134,34 @@ if [[ -n "$wp_override" && -f "$wp_override" ]]; then
 fi
 v[wallpaper_path]="$wp"
 
+# Lock and login screens (Settings > Wallpaper): blur (lock only), desktop, or a file of their own.
+# hyprlock shows a still and so does SDDM, except that it plays a GIF; a video gives its frame at 1 s.
+still() { # picture, GIF or video -> a still picture (cached in the state dir)
+    case "${1,,}" in
+        *.gif|*.mp4|*.webm|*.mkv|*.mov)
+            local out; out="$state_dir/still-$(printf '%s' "$1" | md5sum | cut -c1-12).png"
+            [[ -f "$out" ]] || ffmpeg -loglevel error -y -ss 1 -i "$1" -frames:v 1 "$out" 2>/dev/null \
+                || ffmpeg -loglevel error -y -i "$1" -frames:v 1 "$out" 2>/dev/null || return 1
+            echo "$out" ;;
+        *) echo "$1" ;;
+    esac
+}
+choice() { # state file, default -> blur | desktop | a file that still exists
+    local s; s="$(cat "$state_dir/$1" 2>/dev/null || true)"
+    if [[ "$s" == blur || "$s" == desktop || ( "$s" == /* && -f "$s" ) ]]; then echo "$s"; else echo "$2"; fi
+}
+# hyprpaper only shows stills: for a GIF or video it keeps its frame, so a wallpaper that cannot play still looks like yours
+if [[ -n "$live" ]] && s="$(still "$live")"; then v[wallpaper_path]="$s"; fi
+lock="$(choice lock-wallpaper desktop)"; [[ "$lock" == desktop ]] && lock="${live:-$wp}"
+if [[ "$lock" != blur ]] && lock="$(still "$lock")"; then
+    v[lock_bg]="$lock" v[lock_blur]=0 v[lock_tint]=59   # the picture itself, lightly tinted so the clock stays readable
+else
+    v[lock_bg]=screenshot v[lock_blur]=4
+fi
+login="$(choice login-wallpaper desktop)"; [[ "$login" == /* ]] || login="${live:-$wp}"
+if [[ "${login,,}" == *.gif ]]; then v[login_bg]=background.gif
+else login="$(still "$login")" || login="$wp"; v[login_bg]=background.png; fi
+
 # ---- render ----
 render() { # template -> output
     local tpl="$1" out="$2" content key
@@ -146,7 +183,8 @@ render "$tpl_dir/hypr/hyprlock-theme.conf.tpl" "$out_dir/hypr/hyprlock-theme.con
 render "$tpl_dir/confirm/confirm.css.tpl"      "$out_dir/hypr/confirm.css"
 render "$tpl_dir/waybar/style.css.tpl"        "$out_dir/waybar/style.css"
 render "$tpl_dir/waybar/theme.css.tpl"        "$out_dir/waybar/theme.css"
-render "$tpl_dir/logo/mark.svg.tpl"           "$out_dir/hypr/logo.svg"          # bar button + lock screen
+render "$tpl_dir/logo/mark.svg.tpl"           "$out_dir/hypr/logo.svg"          # bar button
+command -v rsvg-convert >/dev/null && rsvg-convert -w 64 -h 64 "$out_dir/hypr/logo.svg" -o "$out_dir/hypr/logo.png"   # lock screen: hyprlock does not load SVG
 render "$tpl_dir/wofi/style.css.tpl"          "$out_dir/wofi/style.css"
 render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
 render "$tpl_dir/swaync/style.css.tpl"         "$out_dir/swaync/style.css"
@@ -154,7 +192,15 @@ render "$tpl_dir/swayosd/style.css.tpl"       "$out_dir/swayosd/style.css"
 render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
 render "$tpl_dir/sddm/theme.conf.tpl"         "$root/sddm/primo/theme.conf"
 render "$tpl_dir/logo/mark.svg.tpl"           "$root/sddm/primo/logo.svg"
-cp -f "${v[wallpaper_path]}" "$root/sddm/primo/background.png" 2>/dev/null || true   # login screen uses the same wallpaper
+rm -f "$root/sddm/primo"/background.*
+cp -f "$login" "$root/sddm/primo/${v[login_bg]}" 2>/dev/null || true   # login screen (installed by install-sddm-theme.sh)
+# install-sddm-theme.sh links the installed theme's colours, logo and background to this folder, which it gives to you,
+# so the login screen follows without sudo.
+login_dir="${PRIMO_LOGIN_DIR:-/var/lib/primo-login}"
+if [[ -w "$login_dir" ]]; then
+    rm -f "$login_dir"/background.*
+    cp -f "$root/sddm/primo/theme.conf" "$root/sddm/primo/logo.svg" "$root/sddm/primo/${v[login_bg]}" "$login_dir/"
+fi
 render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
 
 # ---- toolkit theming: written to ~/.config / ~/.local (not into the repo) ----

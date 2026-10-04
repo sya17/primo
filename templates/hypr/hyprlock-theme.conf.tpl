@@ -10,4 +10,6 @@ $yellow  = rgba({{yellow}}ff)
 $font    = {{font_sans}}
 $lock_brightness = {{lock_brightness}}
 $tint = rgba({{base}}{{lock_tint}})
+$lock_bg = {{lock_bg}}
+$lock_blur = {{lock_blur}}
 $input_rounding = {{input_rounding}}

@@ -373,6 +373,8 @@ class SettingsWindow(Adw.ApplicationWindow):
         if shutil.which("mpvpaper"):
             page.add(self.build_video_options())
 
+        page.add(self.build_lock_login())
+
         self.wp_group = Adw.PreferencesGroup(title="Pictures", description="Theme art and images from ~/Pictures")
         self.wp_flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                    min_children_per_line=2, max_children_per_line=4,
@@ -550,8 +552,105 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         proc.wait_async(None, finished)
 
+    def build_lock_login(self):
+        group = Adw.PreferencesGroup(title="Lock and login screens",
+                                     description="Behind the clock. GIFs move at login; videos show one frame")
+        lock = [("Desktop wallpaper", "desktop"), ("Blurred windows", "blur"), ("A picture of its own…", "file")]
+        login = [("Desktop wallpaper", "desktop"), ("A picture of its own…", "file")]
+        group.add(self.screen_bg_row("Lock screen", "lock-wallpaper", lock))
+        group.add(self.screen_bg_row("Login screen", "login-wallpaper", login))
+        return group
+
+    def screen_bg_row(self, title, state, options):
+        keys = [k for _n, k in options]
+        try:
+            cur = (STATE_DIR / state).read_text().strip()
+        except OSError:
+            cur = ""
+        row = Adw.ComboRow(title=title, model=Gtk.StringList.new([n for n, _k in options]))
+        if cur.startswith("/"):
+            row.set_selected(keys.index("file"))
+            row.set_subtitle(Path(cur).name)
+        else:
+            row.set_selected(keys.index(cur) if cur in keys else keys.index("desktop"))
+        row.last, row.quiet = row.get_selected(), False
+
+        def apply(value):
+            proc = Gio.Subprocess.new([str(THEME_SWITCH), f"--{state}", value],
+                                      Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+
+            def finished(p, res):
+                try:
+                    p.wait_finish(res)
+                except GLib.Error:
+                    pass
+                if not p.get_successful():
+                    self.toast(f"Could not change the {title.lower()}")
+                    select(row.last)
+                    return
+                row.last = row.get_selected()
+                row.set_subtitle(Path(value).name if value.startswith("/") else "")
+                if state == "lock-wallpaper":
+                    self.toast("Shown the next time the screen locks")
+                else:
+                    self.install_login_theme()
+
+            proc.wait_async(None, finished)
+
+        def on_selected(r, _p):
+            if r.quiet:
+                return
+            key = keys[r.get_selected()]
+            if key != "file":
+                apply(key)
+                return
+
+            self.pick_media(f"Choose a picture for the {title.lower()}", apply, lambda: select(r.last))
+
+        def select(i):
+            row.quiet = True
+            row.set_selected(i)
+            row.quiet = False
+
+        def choose(*_):
+            def chosen(path):
+                select(keys.index("file"))
+                apply(path)
+            self.pick_media(f"Choose a picture for the {title.lower()}", chosen)
+
+        pick = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                          tooltip_text="Choose a picture")
+        pick.update_property([Gtk.AccessibleProperty.LABEL], [f"Choose a picture for the {title.lower()}"])
+        pick.connect("clicked", choose)
+        row.add_suffix(pick)
+        row.connect("notify::selected", on_selected)
+        return row
+
+    def install_login_theme(self):
+        """theme-switch already updated /var/lib/primo-login when install-sddm-theme.sh has set it up; else install (admin password)."""
+        if os.access("/var/lib/primo-login", os.W_OK):
+            self.toast("Login screen updated")
+            return
+        if not Path("/usr/share/sddm/themes/primo").is_dir():
+            self.toast("Saved. Install the login theme once: sudo scripts/install-sddm-theme.sh")
+            return
+        proc = Gio.Subprocess.new(["pkexec", str(REPO / "scripts" / "install-sddm-theme.sh")],
+                                  Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+
+        def finished(p, res):
+            try:
+                p.wait_finish(res)
+            except GLib.Error:
+                pass
+            self.toast("Login screen updated" if p.get_successful() else "Login screen not updated (password not given)")
+
+        proc.wait_async(None, finished)
+
     def on_choose_file(self, *_):
-        dialog = Gtk.FileDialog(title="Choose a wallpaper")  # videos need mpvpaper
+        self.pick_media("Choose a wallpaper", self.set_wallpaper)   # videos need mpvpaper
+
+    def pick_media(self, title, on_path, on_cancel=None):
+        dialog = Gtk.FileDialog(title=title)
         flt = Gtk.FileFilter(name="Images")
         flt.add_mime_type("image/png")
         flt.add_mime_type("image/jpeg")
@@ -569,9 +668,11 @@ class SettingsWindow(Adw.ApplicationWindow):
             try:
                 f = d.open_finish(res)
             except GLib.Error:
-                return
+                f = None
             if f:
-                self.set_wallpaper(f.get_path())
+                on_path(f.get_path())
+            elif on_cancel:
+                on_cancel()
 
         dialog.open(self, None, done)
 

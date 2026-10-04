@@ -15,7 +15,7 @@ next() {
     dir="$(cat "$state/slideshow-dir" 2>/dev/null)"
     [[ -d "$dir" ]] || return 1
     cur="$(cat "$state/wallpaper-current" 2>/dev/null)"
-    pick="$(find -L "$dir" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' -o -iname '*.gif' \
+    pick="$(find -L "$dir" -maxdepth 1 -type f -size +0 \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' -o -iname '*.gif' \
             -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' \) \
             | grep -vxF "$cur" | shuf -n1)"
     [[ -n "$pick" ]] || return 1   # empty folder, or the current picture is the only one
@@ -31,9 +31,12 @@ flock -n 9 || exit 0   # already running
 
 # A video wallpaper keeps the GPU busy: freeze it on battery (Settings > Wallpaper), thaw it when plugged in.
 guard_video() {
-    pgrep -x mpvpaper >/dev/null || return 0
+    local pid; pid="$(pgrep -xo mpvpaper)" || return 0
     if [[ ! -e "$state/video-keep-on-battery" ]] && grep -qs Discharging /sys/class/power_supply/BAT*/status; then
+        [[ "$(ps -o stat= -p "$pid")" == T* ]] && return 0   # already paused: say it once
         pkill -STOP -x mpvpaper
+        notify-send -a Wallpaper -i video-display -h string:x-dunst-stack-tag:wallpaper "Video wallpaper paused on battery" \
+            "It plays again when you plug in. Settings > Wallpaper > Pause on battery turns this off."
     else
         pkill -CONT -x mpvpaper
     fi

@@ -10,7 +10,9 @@ A libadwaita app with these pages:
 - **Appearance**: dark and light switch, and theme cards with a live palette preview.
 - **Wallpaper**: a gallery of theme art and `~/Pictures`. A picture you choose survives theme switches until you press "Use the theme's
   wallpaper". Also a slideshow from a folder (every minute to every three hours), animated transitions when `awww` is installed, GIFs
-  (through `awww`), videos (through `mpvpaper`, paused on battery).
+  (through `awww`), videos (through `mpvpaper`, paused on battery with a notification). Lock and login screens: the desktop
+  wallpaper, blurred windows (lock only) or a picture, GIF or video of their own. When a GIF or video cannot play, its still
+  frame is shown instead of the theme's wallpaper; `~/.local/state/hyprland-dotfiles/wallpaper.log` says why.
 - **Displays**: resolution, refresh rate, scale, rotation and arrangement for each monitor. Changes apply live and revert by themselves
   after 10 seconds unless you press Keep. Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored). It replaces
   `nwg-displays`, which writes hyprlang files the Lua config does not read.

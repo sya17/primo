@@ -45,6 +45,6 @@
 | `SUPER+SHIFT+A` | Screenshot an area, then annotate it |
 | `SHIFT+Print` | Screenshot the whole screen |
 | `SUPER+SHIFT+R` / `SUPER+CTRL+R` | Record an area / the whole screen with audio. Press again to stop (a red timer shows in the bar) |
-| `SUPER+L` | Lock screen (hypridle also locks after 5 minutes) |
+| `SUPER+L` | Lock screen (hypridle also locks after 5 minutes). After a wrong password it shows the tries left before the 10-minute `pam_faillock` lock, and how long to wait once locked |
 | `SUPER+X` | Power menu: lock, suspend, log out, restart, shut down |
 | `SUPER+M` | Log out (asks first) |

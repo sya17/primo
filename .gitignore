@@ -5,6 +5,7 @@ config/hypr/theme.env
 config/hypr/hyprpaper.conf
 config/hypr/hyprlock-theme.conf
 config/hypr/logo.svg
+config/hypr/logo.png
 config/waybar/theme.css
 config/waybar/style.css
 config/wofi/style.css
@@ -29,6 +30,7 @@ config/hypr/workspaces.conf
 # Generated for the SDDM login theme
 sddm/primo/theme.conf
 sddm/primo/background.png
+sddm/primo/background.gif
 sddm/primo/logo.svg
 
 # Generated VS Code theme extension

@@ -16,6 +16,12 @@ cd "$work/repo" || exit 1
 export HOME="$work/home" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_STATE_HOME="$work/state"
 export PYTHONPYCACHEPREFIX="$work/pyc"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+# Anything that would reach the running desktop goes to a log instead; the last check fails if it is not empty.
+mkdir -p "$work/bin"; export LIVE_LOG="$work/live-calls"; : > "$LIVE_LOG"
+for c in hyprctl pkill gsettings dunstctl swaync-client swayosd-server setsid notify-send; do
+    printf '#!/bin/sh\necho "%s $*" >> "$LIVE_LOG"\n' "$c" > "$work/bin/$c"; chmod +x "$work/bin/$c"
+done
+export PATH="$work/bin:$PATH" PRIMO_NO_RELOAD=1 PRIMO_LOGIN_DIR="$work/login"
 
 fails=0
 pass() { printf '  ok    %s\n' "$1"; }
@@ -92,6 +98,21 @@ scripts/theme-switch --no-reload primo-dusk >/dev/null 2>&1
     && pass "a video is the live wallpaper, static consumers keep a still" || fail "video wallpaper handling"
 scripts/theme-switch --wallpaper reset >/dev/null
 
+echo "lock and login screens"
+cp themes/primo-dawn/wallpaper.png "$work/pic.png"; printf 'GIF89a' > "$work/anim.gif"
+scripts/theme-switch --lock-wallpaper "$work/pic.png" >/dev/null; scripts/theme-switch --login-wallpaper "$work/anim.gif" >/dev/null
+grep -qx "\$lock_bg = $work/pic.png" config/hypr/hyprlock-theme.conf && grep -qx '$lock_blur = 0' config/hypr/hyprlock-theme.conf \
+    && grep -qx 'background=background.gif' sddm/primo/theme.conf && [[ -f sddm/primo/background.gif && ! -e sddm/primo/background.png ]] \
+    && pass "a picture on the lock screen, a GIF on the login screen" || fail "lock / login wallpaper"
+scripts/theme-switch --lock-wallpaper blur >/dev/null; scripts/theme-switch --login-wallpaper desktop >/dev/null
+grep -qx '$lock_bg = screenshot' config/hypr/hyprlock-theme.conf && [[ -f sddm/primo/background.png && ! -e sddm/primo/background.gif ]] \
+    && pass "back to the blurred screen and the desktop wallpaper" || fail "lock / login reset"
+fl() { printf 'u:\nWhen Type Source Valid\n'; for t in "$@"; do echo "2026-01-01 $t TTY V"; done; }
+now="$(date -d '2026-01-01 10:05:00' +%s)"; ls_() { FAILLOCK_CONF=/dev/null NOW="$now" config/hypr/scripts/lock-status.sh -; }
+[[ "$(fl 10:04:00 | ls_)" == "1 wrong password. 2 tries left before a 10 min lock." \
+   && "$(fl 10:03:00 10:04:00 10:04:30 | ls_)" == "Locked after 3 wrong passwords. Try again in 10 min." && -z "$(fl 09:00:00 | ls_)" ]] \
+    && pass "wrong-password line on the lock screen" || fail "lock-status.sh"
+
 echo "generated files are valid"
 python3 - <<PY && pass "TOML / JSON / SVG outputs" || fail "TOML / JSON / SVG outputs"
 import json, re, tomllib, pathlib, os
@@ -134,6 +155,10 @@ assert all(m.calculate(q) == v for q, v in cases.items())
 assert m.fuzzy("fire", "Firefox") > 0 and m.fuzzy("fire", "File Roller") == 0
 PY
 else skip "python-gobject not installed"; fi
+
+echo "isolation"
+[[ ! -s "$LIVE_LOG" ]] && pass "the checks never reached the running desktop" \
+    || { fail "the checks tried to change the running desktop:"; sort -u "$LIVE_LOG" | head -5 | sed 's/^/        /'; }
 
 echo
 (( fails == 0 )) && echo "All checks passed." || { echo "$fails check(s) failed."; exit 1; }
