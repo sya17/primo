@@ -39,6 +39,7 @@ if have shellcheck; then
 else skip "shellcheck not installed"; fi
 
 echo "python"
+python3 scripts/test-idle.py && pass "idle settings and Never" || fail "idle settings"
 while IFS= read -r f; do
     python3 -m py_compile "$f" 2>/dev/null && pass "$f" || fail "$f"
 done < <(find scripts config -type f -name '*.py')

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+import idle_core
 
 import gi
 
@@ -923,6 +924,32 @@ class SettingsWindow(Adw.ApplicationWindow):
     def build_power(self):
         page = Adw.PreferencesPage()
 
+        idle = Adw.PreferencesGroup(title="When idle", description="Times since your last activity. Fullscreen apps can keep the desktop awake.")
+        self.idle_rows = {}
+        try:
+            values = idle_core.load()
+        except (OSError, ValueError, TypeError) as error:
+            idle.add(Adw.ActionRow(title="Cannot read idle settings", subtitle=str(error)))
+        else:
+            for key, title in (("dim", "Dim screen"), ("lock", "Lock screen"),
+                               ("screen", "Turn off screen"), ("sleep", "Sleep")):
+                choices = sorted({0, 60, 120, 150, 300, 330, 600, 900, 1800, 3600, 7200, values[key]})
+                labels = ["Never" if n == 0 else
+                          f"{n // 60} min {n % 60} sec" if n % 60 else f"{n // 60} min" for n in choices]
+                row = Adw.ComboRow(title=title, model=Gtk.StringList.new(labels))
+                row.set_selected(choices.index(values[key]))
+                self.idle_rows[key] = (row, choices)
+                idle.add(row)
+            apply_row = Adw.ActionRow(title="Apply idle settings", subtitle="Never disables only the selected automatic action.")
+            button = Gtk.Button(label="Apply", valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
+            button.connect("clicked", self.apply_idle)
+            button.set_sensitive(shutil.which("hypridle") is not None)
+            if shutil.which("hypridle") is None:
+                apply_row.set_subtitle("Install hypridle to apply idle settings.")
+            apply_row.add_suffix(button)
+            idle.add(apply_row)
+        page.add(idle)
+
         mode = Adw.PreferencesGroup(title="Power mode",
                                     description="Power Saver stretches the battery, Performance trades it for speed.")
         if sh("sh", "-c", "command -v powerprofilesctl").returncode != 0:
@@ -993,6 +1020,18 @@ class SettingsWindow(Adw.ApplicationWindow):
         busy.add(alert)
         page.add(busy)
         return page
+
+    def apply_idle(self, _button):
+        values = {key: choices[row.get_selected()] for key, (row, choices) in self.idle_rows.items()}
+        try:
+            idle_core.save(values)
+            result = sh(sys.executable, str(Path(idle_core.__file__)), "--restart")
+            if result.returncode:
+                self.toast(result.stderr.strip() or "Saved, but the idle service could not start")
+            else:
+                self.toast("Idle settings applied")
+        except (OSError, ValueError, TypeError) as error:
+            self.toast(f"Cannot save idle settings: {error}")
 
     def set_profile(self, name):
         if name:

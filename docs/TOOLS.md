@@ -17,6 +17,10 @@ A libadwaita app with these pages:
   after 10 seconds unless you press Keep. Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored). It replaces
   `nwg-displays`, which writes hyprlang files the Lua config does not read.
 - **Power**: Power Saver, Balanced or Performance, charge, time left, battery health, and the low-battery behaviour.
+  Idle times for dimming, locking, turning off the screen and sleep each include **Never**. Press **Apply** to save them in
+  `$XDG_CONFIG_HOME/hypr/primo-idle.conf` (normally `~/.config/hypr/primo-idle.conf`) and restart Primo's idle service.
+  Until you save, the defaults are 2 min 30 sec, 5 min, 5 min 30 sec and 30 min. Manual lock and suspend, and critical-battery
+  suspend, still work with Never. If an older session started hypridle directly, log out and back in after saving.
 - **Bluetooth**: paired devices with Connect, Disconnect and Forget.
 - **Health**: every feature and whether it works on this machine, plus the checks behind it (see "Health and the `primo` command" below).
 - **Modes**, **Workflow**, **VPN**: described below.

@@ -33,6 +33,8 @@ boot/
 # ---- Specific to one machine: written by Primo Settings or by hand
 config/hypr/local.lua
 config/hypr/displays.lua
+config/hypr/primo-idle.conf
+config/hypr/primo-idle.tmp
 config/hypr/apprules.lua
 # written by nwg-displays in hyprlang format, which the Lua config does not read
 config/hypr/monitors.conf
