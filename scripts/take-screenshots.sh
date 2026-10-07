@@ -199,7 +199,7 @@ for t in "${themes[@]}"; do
     close_class dev.primo.Settings
 
     # launcher with a query already typed
-    PRIMO_LAUNCHER_QUERY="fire" setsid -f python3 "$scripts/launcher.py" --daemon >/dev/null 2>&1; sleep 2.5
+    PRIMO_SHOT_MODE=1 PRIMO_LAUNCHER_QUERY="fire" setsid -f python3 "$scripts/launcher.py" --daemon >/dev/null 2>&1; sleep 2.5
     "$scripts/launcher.sh" toggle; wait_class dev.primo.Launcher && { sleep 1.8; shot launcher dev.primo.Launcher; }
     "$scripts/launcher.sh" toggle; sleep 0.8; pkill -f "^python3 .*scripts/launcher\.py"; sleep 0.8
 
