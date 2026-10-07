@@ -30,7 +30,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from launcher_core import KIND_LABEL, Context, Facts, bump_history, calculate, collect, load_history, route  # noqa: E402
+from launcher_core import KIND_LABEL, Context, Facts, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -247,7 +247,7 @@ class Service(Adw.Application):
         self.window = None
         self.css = None
         self.apps = []
-        self.facts = Facts()
+        self.facts = SampleFacts() if os.environ.get("PRIMO_SHOT_MODE") else Facts()
         act = Gio.SimpleAction.new("toggle", None)
         act.connect("activate", lambda *_: self.toggle())
         self.add_action(act)

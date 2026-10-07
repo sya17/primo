@@ -121,6 +121,13 @@ try:
 finally:
     lc.shutil.which = real_which
 
+# the sample machine for documentation screenshots: invented windows, nothing of the user's own
+sf = lc.SampleFacts()
+sample_ctx = lc.Context(facts=sf)
+assert [i.title for i in lc.collect("ws ", sample_ctx)] == ["Go to workspace 1", "Go to workspace 2", "Go to workspace 3"]
+assert lc.collect("win ", sample_ctx) and {i.kind for i in lc.collect("win ", sample_ctx)} == {"window"}
+assert sf.snippets() == [] and sf.modes() == [] and sf.clipboard() == []
+
 # a failing source is skipped, the rest still answer
 class Broken(lc.Provider):
     id, label, order, limit = "broken", "BROKEN", 1, 3

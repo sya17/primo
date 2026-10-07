@@ -193,9 +193,19 @@ for t in "${themes[@]}"; do
     wait_class dev.primo.Settings && { sleep 2.5; shot settings dev.primo.Settings; }
     close_class dev.primo.Settings
 
+    # health: a sample machine where everything works (the real page would show the services this script stopped)
+    PRIMO_SHOT_MODE=1 setsid -f python3 "$scripts/primo-settings.py" --page health >/dev/null 2>&1
+    wait_class dev.primo.Settings && { sleep 3; shot health dev.primo.Settings; }
+    close_class dev.primo.Settings
+
     # launcher with a query already typed
     PRIMO_LAUNCHER_QUERY="fire" setsid -f python3 "$scripts/launcher.py" --daemon >/dev/null 2>&1; sleep 2.5
     "$scripts/launcher.sh" toggle; wait_class dev.primo.Launcher && { sleep 1.8; shot launcher dev.primo.Launcher; }
+    "$scripts/launcher.sh" toggle; sleep 0.8; pkill -f "^python3 .*scripts/launcher\.py"; sleep 0.8
+
+    # launcher command word, with invented windows and workspaces (your own window titles are never shown)
+    PRIMO_SHOT_MODE=1 PRIMO_LAUNCHER_QUERY="ws " setsid -f python3 "$scripts/launcher.py" --daemon >/dev/null 2>&1; sleep 2.5
+    "$scripts/launcher.sh" toggle; wait_class dev.primo.Launcher && { sleep 1.8; shot launcher-ws dev.primo.Launcher; }
     "$scripts/launcher.sh" toggle; sleep 0.8; pkill -f "^python3 .*scripts/launcher\.py"; sleep 0.8
 
     # the time hub, with sample data

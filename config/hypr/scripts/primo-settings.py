@@ -1526,7 +1526,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.health_again.set_sensitive(False)
 
         def work():
-            results = self.dc.run_all()
+            results = self.dc.sample_results() if os.environ.get("PRIMO_SHOT_MODE") else self.dc.run_all()
             GLib.idle_add(self.apply_health, results)
 
         threading.Thread(target=work, daemon=True).start()

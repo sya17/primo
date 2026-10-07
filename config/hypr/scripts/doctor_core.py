@@ -357,6 +357,16 @@ def run_all(s=None):
     return results
 
 
+def sample_results():
+    """What Health shows on a machine where everything works, for documentation screenshots (PRIMO_SHOT_MODE). Built from the feature list, not from this machine."""
+    out = [Result("session.hyprland", "Session", "Hyprland session", PASS, "Hyprland is running")]
+    for f in FEATURES:
+        if f.process:
+            out.append(Result(f"service.{f.id}", "Services", f.name, PASS, "Running", feature=f.id))
+        out.append(Result(f"dependency.{f.id}", "Features", f.name, PASS, "Everything it uses is installed", feature=f.id))
+    return out
+
+
 # ----------------------------------------------------------------------------- summaries
 def summary(results):
     counts = {k: sum(1 for r in results if r.status == k) for k in (PASS, WARNING, FAIL, SKIPPED)}

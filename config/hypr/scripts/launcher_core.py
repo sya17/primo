@@ -223,6 +223,29 @@ class Facts:
         return self._cached("modes", read, ttl=2.0)
 
 
+class SampleFacts(Facts):
+    """Invented windows and workspaces for documentation screenshots (PRIMO_SHOT_MODE): the real ones show your own window titles."""
+
+    def clients(self):
+        return [{"address": "0xa1", "class": "kitty", "title": "build", "workspace": {"id": 1, "name": "1"}},
+                {"address": "0xa2", "class": "firefox", "title": "Sample page", "workspace": {"id": 2, "name": "2"}},
+                {"address": "0xa3", "class": "obsidian", "title": "Meeting notes", "workspace": {"id": 2, "name": "2"}},
+                {"address": "0xa4", "class": "code", "title": "demo", "workspace": {"id": 3, "name": "3"}}]
+
+    def workspaces(self):
+        return [{"id": 1, "windows": 1, "lastwindowtitle": "build"}, {"id": 2, "windows": 2, "lastwindowtitle": "Meeting notes"},
+                {"id": 3, "windows": 1, "lastwindowtitle": "demo"}]
+
+    def clipboard(self):
+        return []
+
+    def snippets(self):
+        return []
+
+    def modes(self):
+        return []
+
+
 @dataclass
 class Context:
     apps: list = None          # objects with get_display_name(), get_generic_name(), get_description(), get_icon(), get_id(), get_keywords() (Gio.AppInfo)

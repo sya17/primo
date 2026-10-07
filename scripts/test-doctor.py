@@ -139,6 +139,13 @@ assert len({f.id for f in dc.FEATURES}) == len(dc.FEATURES)
 for f in dc.FEATURES:
     assert f.name and f.summary and all(len(r) == 2 for r in f.requires) and all(len(o) == 3 for o in f.optional), f.id
 
+# ---- the sample Health page for documentation screenshots: every feature works, and it cannot drift from the registry
+sample = dc.sample_results()
+assert dc.summary(sample)["health"] == "HEALTHY" and all(r.status == dc.PASS for r in sample)
+states = dc.feature_states(sample)
+assert [f["id"] for f in states] == [f.id for f in dc.FEATURES] and all(f["state"] == "working" and not f["notes"] for f in states)
+assert {r.feature for r in sample if r.id.startswith("service.")} == {f.id for f in dc.FEATURES if f.process}
+
 # ---- the command: JSON shape, exit codes, usage errors, no colour when piped
 loader = importlib.machinery.SourceFileLoader("primo_cli", str(ROOT / "scripts" / "primo"))
 spec = importlib.util.spec_from_loader("primo_cli", loader); cli = importlib.util.module_from_spec(spec); loader.exec_module(cli)
