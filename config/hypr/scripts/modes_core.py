@@ -13,6 +13,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import config_core as cc
+
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "modes.json"
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "mode.json"
 RECENT = STATE.parent / "mode-dirs.json"
@@ -39,18 +41,12 @@ DEFAULT_MODES = [
 
 # ----------------------------------------------------------------------------- storage
 def load_modes():
-    try:
-        data = json.loads(CONFIG.read_text())
-        if isinstance(data, list):
-            return data
-    except (OSError, ValueError):
-        pass
-    return json.loads(json.dumps(DEFAULT_MODES))
+    modes = cc.read_json(CONFIG, list, None)
+    return json.loads(json.dumps(DEFAULT_MODES)) if modes is None else modes
 
 
 def save_modes(modes):
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(modes, indent=1, ensure_ascii=False))
+    cc.write_json(CONFIG, modes)
 
 
 def get_mode(mode_id):
@@ -84,8 +80,7 @@ def project_dirs():
 
 def remember_dir(path):
     dirs = [path] + [d for d in project_dirs() if d != path]
-    RECENT.parent.mkdir(parents=True, exist_ok=True)
-    RECENT.write_text(json.dumps(dirs[:12]))
+    cc.atomic_write(RECENT, json.dumps(dirs[:12]))
 
 
 def apps_to_text(apps):
@@ -188,8 +183,7 @@ def start(mode, directory=None, run=sh, running=None, now=None):
              "org.gtk.Actions.Activate", "focus-start", f"[<'{state['label']}|{state['category']}'>]", "{}"])
         state["steps"].append("Focus session")
 
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state))
+    cc.atomic_write(STATE, json.dumps(state))
     if directory:
         remember_dir(directory)
     run(["notify-send", "-a", "Modes", "-i", mode.get("icon", "emblem-ok"), f"{mode['name']} mode",

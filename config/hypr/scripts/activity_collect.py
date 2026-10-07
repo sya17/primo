@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import config_core as cc
+
 CLK = os.sysconf("SC_CLK_TCK")
 ME = os.getuid()
 PROC = Path("/proc")
@@ -27,11 +29,7 @@ BOUNDARY = {"Hyprland", "systemd", "sddm-helper", "dbus-broker", "dbus-broker-la
 
 
 def _local():
-    try:
-        path = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "primo" / "activity.json"
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
+    return cc.read_json(Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "primo" / "activity.json", dict, {})
 
 
 _LOCAL = _local()

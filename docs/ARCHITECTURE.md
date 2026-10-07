@@ -56,9 +56,16 @@ that raises is skipped. `doctor_core.py` holds the feature registry (what each f
 the checks behind `primo doctor` and Settings > Health; both read the system through one small `System` class that tests replace with
 sample data.
 
+## Saving your files
+
+Modes, workflow settings and the time hub's data are JSON files under `~/.config/primo/` and the state folder. `config_core.py` reads
+and writes them: a file that does not parse (a typo after a hand edit) is copied to `<name>.bad-<time>` before anything is saved over it,
+defaults are used for that run, and a warning goes to stderr. Saves go through a temporary file that replaces the old one, so a crash or
+a full disk leaves the previous file whole. A file that cannot be read is never overwritten.
+
 ## Checks
 
 `scripts/check.sh` syntax-checks scripts, Python and Lua, runs ShellCheck, renders every theme into a temporary directory, validates the
-generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers, launcher, health checks and activity monitor. `scripts/check-docs.py` checks
+generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers, config files, launcher, health checks and activity monitor. `scripts/check-docs.py` checks
 that every link and image in the Markdown files exists. CI runs both in an Arch container, and checks that the commit messages follow
 Conventional Commits (`scripts/check-commits.py`); see [RELEASING.md](RELEASING.md) for versions and releases.

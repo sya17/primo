@@ -12,6 +12,8 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import config_core as cc
+
 CONFIG = Path(os.environ.get("PRIMO_WORKFLOW_CONFIG") or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "workflow.json")
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "hub"
 HYPR_DIR = Path(os.environ.get("PRIMO_HYPR_DIR", Path.home() / ".config" / "hypr"))
@@ -20,10 +22,7 @@ DEFAULTS = {"ics": [], "ics_alert": 10, "app_rules": [], "snippets": [], "backup
 
 
 def load():
-    try:
-        data = json.loads(CONFIG.read_text())
-    except (OSError, ValueError):
-        data = {}
+    data = cc.read_json(CONFIG, dict, {})
     out = json.loads(json.dumps(DEFAULTS))
     for k, v in data.items():
         if k in out:
@@ -32,11 +31,7 @@ def load():
 
 
 def save(data):
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CONFIG.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False))
-    tmp.chmod(0o600)
-    tmp.replace(CONFIG)
+    cc.write_json(CONFIG, data, 0o600)
 
 
 # ----------------------------------------------------------------------------- ICS
@@ -256,8 +251,7 @@ def rules_lua(rules):
 
 
 def write_rules(rules):
-    HYPR_DIR.mkdir(parents=True, exist_ok=True)
-    (HYPR_DIR / "apprules.lua").write_text(rules_lua(rules))
+    cc.atomic_write(HYPR_DIR / "apprules.lua", rules_lua(rules))
 
 
 # ----------------------------------------------------------------------------- notes backup

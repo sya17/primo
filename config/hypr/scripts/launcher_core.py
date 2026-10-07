@@ -32,6 +32,8 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+import config_core as cc  # noqa: E402
+
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
 HISTORY = STATE_DIR / "launcher-history.json"
 MAX_RESULTS = 9
@@ -114,8 +116,7 @@ def load_history():
 def bump_history(key):
     data = load_history()
     data[key] = data.get(key, 0) + 1
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY.write_text(json.dumps(data))
+    cc.atomic_write(HISTORY, json.dumps(data))
 
 
 def spawn(*cmd):

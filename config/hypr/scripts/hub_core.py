@@ -13,6 +13,8 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import config_core as cc
+
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "hub"
 NOTES_DIR = Path(os.environ.get("PRIMO_NOTES_DIR", Path.home() / "Notes"))
 
@@ -46,16 +48,10 @@ def merged(defaults, data):
 class Store:
     def __init__(self, path=None):
         self.path = Path(path) if path else STATE_DIR / "hub.json"
-        try:
-            self.data = merged(DEFAULTS, json.loads(self.path.read_text()))
-        except (OSError, ValueError):
-            self.data = merged(DEFAULTS, {})
+        self.data = merged(DEFAULTS, cc.read_json(self.path, dict, {}))
 
     def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=1, ensure_ascii=False))
-        tmp.replace(self.path)
+        cc.write_json(self.path, self.data)
 
     def __getitem__(self, key):
         return self.data[key]

@@ -277,7 +277,7 @@ def check_configuration(s):
             except ValueError as exc:
                 bad.append(f"{p.name}: {exc}")
     out.append(Result("config.json", "Configuration", "Settings files", PASS if not bad else FAIL,
-                      "All settings files parse" if not bad else "; ".join(bad)[:200], "" if not bad else "Fix or move the file; Primo does not overwrite a broken one"))
+                      "All settings files parse" if not bad else "; ".join(bad)[:200], "" if not bad else "Fix the file. Before saving over a broken one, Primo keeps a copy as <name>.bad-<time>"))
     wb = cfg / "waybar" / "config.jsonc"
     if s.exists(wb):
         try:
