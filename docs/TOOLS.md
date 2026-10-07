@@ -43,6 +43,8 @@ Type a command word and a space to ask one source only:
 | `win firefox` | Find an open window and focus it. Windows also show up in a plain search. |
 | `clip token` | Search the clipboard history; Enter copies the entry again. |
 
+<img src="screenshots/dusk-launcher-ws.webp" alt="The launcher with ws typed: a Workspaces list with Go to workspace 1, 2 and 3, each showing how many windows it holds and the title of the last one, and the command words ws, theme, win and clip in the footer. Sample windows." width="46%">
+
 The clipboard history can hold passwords, so it is never mixed into a plain search: it only appears after `clip`, `clipboard` or `cb`.
 
 An action whose tool is not installed (night light without `hyprsunset`, the colour picker without `hyprpicker`, screenshots without `grim`) is not listed until the tool is installed.
@@ -101,7 +103,11 @@ holds a port, build tools and runtimes with their folder, and Docker containers 
 
 Settings > Health lists every feature (bar, launcher, notifications, lock screen, VPN, …) as working, stopped or unavailable, with the
 reason and the command that fixes it, and the checks behind them: the session, resident services, packages, configuration, theme and
-system. From a terminal:
+system.
+
+<img src="screenshots/dusk-health.webp" alt="Settings on the Health page in Primo Dusk: a summary saying everything works, with 36 checks passed and a Check again button, above the Features list where the bar, launcher, window switcher, overview, settings, time hub, activity and modes are each marked Working next to their shortcut. A sample machine where everything works." width="80%">
+
+From a terminal:
 
 ```bash
 primo status                 # version, theme, mode, services, health, on one screen
