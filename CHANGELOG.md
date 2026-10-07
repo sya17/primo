@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/[secure]/primo/compare/v0.1.0...v0.2.0) (2026-10-07)
+
+### Added
+
+* **launcher:** hide actions whose tool is not installed ([3d1e3fb](https://github.com/[secure]/primo/commit/3d1e3fb38d91785bfa7f182ea6c2ae203e3fe1f9))
+* **settings:** add configurable idle times with Never option ([7054a0e](https://github.com/[secure]/primo/commit/7054a0ed9914812f13dbf5b81cb8734e291ed44d))
+
+### Fixed
+
+* **config:** keep a copy of a broken settings file before saving over it ([4c45b11](https://github.com/[secure]/primo/commit/4c45b118c39722c528b032505cb76aea1c52adf3))
+* **wallpaper:** recover stopped video playback ([43ddc33](https://github.com/[secure]/primo/commit/43ddc33e1e03a71098afe4e167f310674f7631b4))
+
 ## Unreleased
 
 - `primo` command (`status`, `doctor`, `features`, all with `--json`) and Settings > Health: every feature and check, whether it
