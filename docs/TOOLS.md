@@ -45,6 +45,8 @@ Type a command word and a space to ask one source only:
 
 The clipboard history can hold passwords, so it is never mixed into a plain search: it only appears after `clip`, `clipboard` or `cb`.
 
+An action whose tool is not installed (night light without `hyprsunset`, the colour picker without `hyprpicker`, screenshots without `grim`) is not listed until the tool is installed.
+
 ## Time hub (click the clock, or `SUPER+CTRL+H`)
 
 A floating panel under the bar clock. It does not push your windows around and it closes when you click elsewhere; the pin keeps it open

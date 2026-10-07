@@ -26,6 +26,11 @@ class App:
 
 
 class FakeFacts:
+    missing = ()          # tools that are not installed
+
+    def has(self, binary):
+        return binary not in self.missing
+
     def clients(self):
         return [{"address": "0xabc1", "class": "firefox", "title": "Sample page", "workspace": {"id": 2, "name": "2"}},
                 {"address": "0xabc2", "class": "kitty", "title": "build", "workspace": {"id": 1, "name": "1"}},
@@ -49,8 +54,9 @@ class FakeFacts:
         return [{"id": "work", "name": "Work", "icon": "emblem-system"}]
 
 
+facts = FakeFacts()
 ctx = lc.Context(apps=[App("Firefox", "firefox.desktop", "Web Browser", ["internet"]), App("Visual Studio Code", "code.desktop"), App("Kitty", "kitty.desktop")],
-                 facts=FakeFacts(), launch_app=lambda i: None)
+                 facts=facts, launch_app=lambda i: None)
 
 
 def titles(q, **kw):
@@ -89,6 +95,31 @@ assert "clipboard" not in kinds("sample-secret") and "clipboard" not in kinds("t
 assert "clipboard" not in kinds("clip") and "clipboard" not in kinds("secret")
 assert titles("clip secret") == ["sample-secret-token-123"] and titles("cb ") == ["sample-secret-token-123", "Image: 12 KiB png 10x10"]
 assert "bad id row" not in titles("clip ") and set(kinds("clip ")) == {"clipboard"}      # a non-numeric id is never passed to the shell
+
+# actions whose tool is not installed are not listed; actions that need nothing always are
+import doctor_core as dc
+assert "Toggle night light" in titles("night") and "Pick a colour" in titles("colour") and "Clipboard history" in titles("history")
+facts.missing = {"hyprsunset", "hyprpicker"}
+assert "Toggle night light" not in titles("night") and "Pick a colour" not in titles("colour")             # a tool named by the action
+assert "Clipboard history" in titles("history") and "Health" in titles("health")
+facts.missing = {"cliphist"}
+assert "Clipboard history" not in titles("history") and "Toggle night light" in titles("night")  # a feature's requirements, from the doctor registry
+assert "Take screenshot" in titles("screenshot") and "Health" in titles("health")
+facts.missing = {"grim"}
+assert "Take screenshot" not in titles("screenshot")
+facts.missing = ()
+assert set(lc.NEEDS) <= {a[0] for a in lc.ACTIONS}, "a rule for an action that does not exist"
+assert all(dc.FEATURES_BY_ID[n].requires for n in lc.NEEDS.values() if n in dc.FEATURES_BY_ID), "a feature with no requirements would hide nothing"
+
+# looking for a tool is cached: typing never runs `which` again for the same name
+asked = []
+real_which = lc.shutil.which
+lc.shutil.which = lambda b: asked.append(b) or (None if b == "nothing-here" else "/usr/bin/" + b)
+try:
+    live = lc.Facts()
+    assert [live.has("tool"), live.has("tool"), live.has("nothing-here"), live.has("nothing-here")] == [True, True, False, False] and asked == ["tool", "nothing-here"], asked
+finally:
+    lc.shutil.which = real_which
 
 # a failing source is skipped, the rest still answer
 class Broken(lc.Provider):

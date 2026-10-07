@@ -33,6 +33,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 import config_core as cc  # noqa: E402
+import doctor_core as dc  # noqa: E402
 
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
 HISTORY = STATE_DIR / "launcher-history.json"
@@ -169,6 +170,10 @@ class Facts:
     def workspaces(self):
         return self._cached("workspaces", lambda: sorted((w for w in self._json("hyprctl", "workspaces", "-j") if w.get("id", 0) > 0), key=lambda w: w["id"]))
 
+    def has(self, binary):
+        """Is this program on PATH? Remembered for a while, so typing never runs `which` again."""
+        return self._cached(("has", binary), lambda: shutil.which(binary) is not None, ttl=30.0)
+
     def themes(self):
         return self._cached("themes", self._read_themes, ttl=5.0)
 
@@ -301,8 +306,15 @@ class WindowProvider(Provider):
 class ActionProvider(Provider):
     id, label, order, limit = "action", "ACTIONS", 20, 4
 
-    def __init__(self, actions):
-        self.actions = actions
+    def __init__(self, actions, needs=None):
+        self.actions, self.needs = actions, needs or {}
+
+    def available(self, title, facts):
+        need = self.needs.get(title)
+        if not need:
+            return True
+        feature = dc.FEATURES_BY_ID.get(need)
+        return all(facts.has(b) for b in ([b for b, _pkg in feature.requires] if feature else [need]))
 
     def query(self, q, ctx, args):
         out = []
@@ -318,7 +330,7 @@ class ActionProvider(Provider):
                                 run=lambda i=m["id"]: spawn(str(SCRIPTS / "mode.sh"), "start", i)))
         for title, sub, icon, keywords, fn in self.actions:
             best = max(fuzzy(q, title), fuzzy(q, keywords) - 15)
-            if q and best > 0:
+            if q and best > 0 and self.available(title, ctx.facts):
                 out.append(Item("action", title, sub, icon=icon, run=fn, score=best - 5))
         return out
 
@@ -445,7 +457,13 @@ ACTIONS = [
     ("Take screenshot", "Select an area", "applets-screenshooter", "screenshot capture", lambda: spawn(str(SCRIPTS / "screenshot.sh"), "area")),
 ]
 
-PROVIDERS = [CalculatorProvider(), AppProvider(), WindowProvider(), ActionProvider(ACTIONS), WorkspaceProvider(), ThemeProvider(), ClipboardProvider(), FileProvider(), WebProvider()]
+# Actions that do nothing without a tool and are not listed until it is installed: a feature id (its required tools come from the doctor
+# registry, the same list `primo features` shows) or the name of a program.
+NEEDS = {"Lock screen": "hyprlock", "Toggle night light": "hyprsunset", "Pick a colour": "hyprpicker", "VPN": "vpn", "Clipboard history": "clipboard",
+         "Take screenshot": "capture", "Modes": "modes", "End mode": "modes",
+         **dict.fromkeys(["Calendar", "Reminders", "Timer", "Alarm", "Stopwatch", "World clock", "Standup note", "Time report", "Focus", "New note"], "hub")}
+
+PROVIDERS = [CalculatorProvider(), AppProvider(), WindowProvider(), ActionProvider(ACTIONS, NEEDS), WorkspaceProvider(), ThemeProvider(), ClipboardProvider(), FileProvider(), WebProvider()]
 KIND_LABEL = {p.id: p.label for p in PROVIDERS}
 
 
