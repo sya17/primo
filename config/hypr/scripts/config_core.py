@@ -19,22 +19,41 @@ from pathlib import Path
 SUPPORTED_VERSION = 1
 
 
-def _xdg(var, default):
-    """An XDG base directory; an empty or relative value is ignored, as the specification says."""
-    value = os.environ.get(var, "")
-    return Path(value) if os.path.isabs(value) else Path.home() / default
+def _xdg(var, default, env=None, home=None):
+    """An XDG base directory; an empty or relative value is ignored, as the specification says. `env` and `home` are for checks of another home."""
+    value = (os.environ if env is None else env).get(var, "")
+    return Path(value) if os.path.isabs(value) else Path(home or Path.home()) / default
 
 
-def config_home():
-    return _xdg("XDG_CONFIG_HOME", ".config")
+def config_home(env=None, home=None):
+    return _xdg("XDG_CONFIG_HOME", ".config", env, home)
 
 
-def data_home():
-    return _xdg("XDG_DATA_HOME", ".local/share")
+def data_home(env=None, home=None):
+    return _xdg("XDG_DATA_HOME", ".local/share", env, home)
 
 
-def state_home():
-    return _xdg("XDG_STATE_HOME", ".local/state")
+def state_home(env=None, home=None):
+    return _xdg("XDG_STATE_HOME", ".local/state", env, home)
+
+
+# The files Primo reads: (name, base folder, path in it, kind of value). `primo config` and the Health checks list them.
+FILES = [
+    ("modes", "config", "primo/modes.json", list),
+    ("workflow", "config", "primo/workflow.json", dict),
+    ("activity", "config", "primo/activity.json", dict),
+    ("hub", "state", "hyprland-dotfiles/hub/hub.json", dict),
+]
+
+
+def known_files(env=None, home=None):
+    """[(name, path, kind of value)] for this user (or for `home`), plus any other JSON or TOML file in the primo config folder."""
+    bases = {"config": config_home(env, home), "data": data_home(env, home), "state": state_home(env, home)}
+    out = [(name, bases[base] / rel, kind) for name, base, rel, kind in FILES]
+    known = {p for _n, p, _k in out}
+    folder = bases["config"] / "primo"
+    extra = sorted(p for p in folder.glob("*") if p.suffix in (".json", ".toml") and p not in known) if folder.is_dir() else []
+    return out + [(p.stem, p, (dict, list)) for p in extra]
 
 
 class ConfigError(ValueError):
@@ -42,8 +61,8 @@ class ConfigError(ValueError):
 
     def __init__(self, path, problem, line=None, column=None, hint="", newer=False):
         self.path, self.problem, self.line, self.column, self.hint, self.newer = Path(path), problem, line, column, hint, newer
-        where = f"{path}:{line}:{column}" if line and column else f"{path}:{line}" if line else str(path)
-        super().__init__(f"{where}: {problem}" + (f" ({hint})" if hint else ""))
+        self.where = f"{path}:{line}:{column}" if line and column else f"{path}:{line}" if line else str(path)
+        super().__init__(f"{self.where}: {problem}" + (f" ({hint})" if hint else ""))
 
 
 def _parse(path, raw, expect):

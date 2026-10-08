@@ -14,6 +14,8 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import config_core as cc
+
 PASS, WARNING, FAIL, SKIPPED = "pass", "warning", "fail", "skipped"
 CATEGORIES = ["Session", "Services", "Features", "Configuration", "Theme", "System"]
 LINKED_APPS = ["hypr", "waybar", "wofi", "dunst", "kitty", "swayosd", "swaync", "fontconfig"]
@@ -270,14 +272,14 @@ def check_configuration(s):
     out.append(Result("config.path", "Configuration", "Commands on PATH", PASS if not path_missing else WARNING,
                       "hypr-theme and primo are on PATH" if not path_missing else "Not on PATH: " + ", ".join(path_missing), "" if not path_missing else "scripts/install.sh"))
     bad = []
-    for p in sorted((cfg / "primo").glob("*.json")) + [s.home / ".local/state/hyprland-dotfiles/hub/hub.json"]:
-        if s.exists(p):
-            try:
-                json.loads(s.read(p))
-            except ValueError as exc:
-                bad.append(f"{p.name}: {exc}")
+    for _name, p, kind in cc.known_files(s.env, s.home):
+        try:
+            cc.load(p, kind)
+        except cc.ConfigError as exc:
+            bad.append(exc)
     out.append(Result("config.json", "Configuration", "Settings files", PASS if not bad else FAIL,
-                      "All settings files parse" if not bad else "; ".join(bad)[:200], "" if not bad else "Fix the file. Before saving over a broken one, Primo keeps a copy as <name>.bad-<time>"))
+                      "All settings files are valid" if not bad else "; ".join(f"{e.where}: {e.problem}" for e in bad)[:300],
+                      "" if not bad else f"{bad[0].hint or 'Fix the file'}. Before saving over a broken one, Primo keeps a copy as <name>.bad-<time>"))
     wb = cfg / "waybar" / "config.jsonc"
     if s.exists(wb):
         try:
@@ -285,7 +287,7 @@ def check_configuration(s):
             out.append(Result("config.waybar", "Configuration", "Waybar configuration", PASS, "Valid"))
         except ValueError as exc:
             out.append(Result("config.waybar", "Configuration", "Waybar configuration", FAIL, str(exc)[:160]))
-    wf = cfg / "primo" / "workflow.json"
+    wf = cc.config_home(s.env, s.home) / "primo" / "workflow.json"
     if s.exists(wf):
         mode = Path(wf).stat().st_mode & 0o077
         out.append(Result("config.secret-file", "Configuration", "Private settings file", PASS if not mode else WARNING,

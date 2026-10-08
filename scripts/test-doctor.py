@@ -111,6 +111,25 @@ assert status_of(res, "session.version") == "warning"
 (h / ".config/primo/modes.json").write_text("{ not json")
 assert status_of(dc.run_all(Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo)), "config.json") == "fail"
 (h / ".config/primo/modes.json").write_text("[]")
+
+# ---- the configuration check goes through the loader: path, line and a hint; shape and version count; absent files are fine
+def config_result(): return next(r for r in dc.run_all(Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo)) if r.id == "config.json")
+assert config_result().status == "pass"
+(h / ".config/primo/workflow.json").write_text('{\n "ics": ["https://calendar.example/private.ics"],\n "snippets": [ x ]\n}')
+r = config_result()
+assert r.status == "fail" and "workflow.json:3:" in r.message and "private.ics" not in r.message and r.fix, (r.message, r.fix)
+(h / ".config/primo/workflow.json").write_text("{}")
+(h / ".config/primo/modes.json").write_text("{}")
+r = config_result()
+assert r.status == "fail" and "modes.json" in r.message and "list" in r.message, r.message      # valid JSON, wrong kind of value
+(h / ".config/primo/modes.json").write_text("[]")
+(h / ".config/primo/extra.toml").write_text("version = 1\nname =\n")
+r = config_result()
+assert r.status == "fail" and "extra.toml:2:" in r.message, r.message                             # TOML definition files too
+(h / ".config/primo/extra.toml").write_text('version = 3\nname = "x"\n')
+assert "newer" in config_result().message
+(h / ".config/primo/extra.toml").unlink()
+(h / ".config/primo/workflow.json").unlink()
 wf = h / ".config/primo/workflow.json"; wf.write_text("{}"); wf.chmod(0o644)
 assert status_of(dc.run_all(Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo)), "config.secret-file") == "warning"
 wf.chmod(0o600)
