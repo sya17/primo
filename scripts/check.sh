@@ -106,6 +106,14 @@ c = json.load(open(".releaserc.json"))
 rules = dict(c["plugins"])["@semantic-release/commit-analyzer"]["releaseRules"]
 assert {"breaking": True, "release": "minor"} in rules and c["tagFormat"] == "v${version}" and c["branches"] == ["main"]
 PY
+python3 - <<'PY' && pass "release notes keep the repository links (no owner name in a variable semantic-release masks)" || fail "release workflow masks the owner name"
+import re
+# semantic-release replaces the value of every variable whose name matches this pattern with [secure], in the notes too
+masked = re.compile(r"token|password|credential|secret|private|key|auth|webhook", re.I)
+env = re.findall(r"^\s+([A-Z_]+):\s*(.+?)\s*(?:#.*)?$", open(".github/workflows/release.yml").read(), re.M)
+bad = [n for n, v in env if masked.search(n) and n != "GITHUB_TOKEN" and v.strip("\"'") in ("${{ github.repository_owner }}", "${{ github.repository }}")]
+assert not bad, bad
+PY
 
 echo "live wallpaper"
 : > "$work/live.mp4"; scripts/theme-switch --wallpaper "$work/live.mp4" >/dev/null
