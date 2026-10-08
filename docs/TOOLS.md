@@ -113,10 +113,13 @@ From a terminal:
 primo status                 # version, theme, mode, services, health, on one screen
 primo doctor                 # every check; problems first (-v lists the passing ones, --category services)
 primo features               # what Primo offers and whether each feature works here
+primo config path            # the folders and settings files Primo reads
+primo config show            # the settings in effect and where each comes from (links and snippet texts hidden)
+primo config validate        # check every settings file; names the file and line of a problem
 primo doctor --json | jq '.checks[] | select(.status != "pass")'
 ```
 
-Nothing here changes the system: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
+Nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into
 `~/.local/bin`.
 

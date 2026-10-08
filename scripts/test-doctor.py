@@ -184,4 +184,43 @@ with redirect_stdout(buf):
     assert cli.main(["status", "--json"]) == 1
 assert json.loads(buf.getvalue())["resident_services"] == {"running": 4, "total": 5}
 assert cli.main(["doctor", "--category", "nope"]) == 64 and cli.main([]) == 64
+
+# ---- primo config: path, show, validate (temp XDG folders; reads only, private values hidden)
+cfg_home = Path(tempfile.mkdtemp())
+os.environ.update({"XDG_CONFIG_HOME": str(cfg_home / "config"), "XDG_STATE_HOME": str(cfg_home / "state"), "XDG_DATA_HOME": str(cfg_home / "data")})
+def run_cli(*argv):
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        code = cli.main(list(argv))
+    return code, buf.getvalue()
+
+code, text = run_cli("config", "validate")
+assert code == 0 and "absent" in text, text                                      # nothing written yet: every file absent, all fine
+code, data = run_cli("config", "path", "--json")
+data = json.loads(data)
+assert code == 0 and data["folders"]["config"] == str(cfg_home / "config") and {f["name"] for f in data["files"]} >= {"modes", "workflow", "activity", "hub"}
+primo_dir = cfg_home / "config" / "primo"
+primo_dir.mkdir(parents=True)
+(primo_dir / "workflow.json").write_text(json.dumps({"ics": [{"name": "Work", "url": "https://calendar.example/private-token.ics"}],
+                                                      "snippets": [{"name": "API key", "text": "sk-sample-secret"}]}))
+code, text = run_cli("config", "show")
+assert code == 0 and "private-token" not in text and "sk-sample-secret" not in text and "API key" in text and "Work" in text, text
+code, data = run_cli("config", "show", "--json")
+data = json.loads(data)
+wf_entry = next(f for f in data["files"] if f["name"] == "workflow")
+assert wf_entry["source"]["ics"] == str(primo_dir / "workflow.json") and wf_entry["source"]["ics_alert"] == "default", wf_entry["source"]
+assert "private-token" not in json.dumps(data) and "sk-sample-secret" not in json.dumps(data)
+modes_entry = next(f for f in data["files"] if f["name"] == "modes")
+assert modes_entry["from"] == "defaults" and modes_entry["value"], modes_entry                 # no modes.json: the starting modes
+(primo_dir / "modes.json").write_text('[\n {"id": "x",\n  "name": }\n]')
+code, text = run_cli("config", "validate")
+assert code == 2 and "modes.json:3:" in text, text
+code, data = run_cli("config", "validate", "--json")
+data = json.loads(data)
+bad = next(f for f in data["files"] if f["name"] == "modes")
+assert code == 2 and not data["valid"] and bad["status"] == "invalid" and bad["line"] == 3 and bad["path"] == str(primo_dir / "modes.json")
+assert sorted(p.name for p in primo_dir.iterdir()) == ["modes.json", "workflow.json"], "primo config never writes, not even a copy of a broken file"
+code, text = run_cli("config", "show")
+assert code == 2 and "modes.json:3:" in text, text
+assert cli.main(["config"]) == 64 and cli.main(["config", "nope"]) == 64
 print("doctor checks passed")

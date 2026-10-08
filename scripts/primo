@@ -4,6 +4,9 @@
     primo status              one screen: version, theme, mode, resident services, health
     primo doctor              every check, grouped; problems first (--verbose lists the passing ones too)
     primo features            what Primo offers and whether each feature works on this machine
+    primo config path         the folders and files Primo reads
+    primo config show         the settings in effect and where each comes from (private links and snippet texts hidden)
+    primo config validate     check every settings file; exit 2 naming the file and line of the first problem in each
 
 Nothing here changes the system: a fix is only ever printed as a command for you to run.
 Exit codes: 0 healthy, 1 warnings, 2 at least one failure, 64 usage error.
@@ -18,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
+import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 
 MARK = {dc.PASS: "ok", dc.WARNING: "!!", dc.FAIL: "XX", dc.SKIPPED: "--"}
@@ -50,7 +54,7 @@ def make_out(args):
 
 def state_value(name, default=""):
     try:
-        return (Path.home() / ".local/state/hyprland-dotfiles" / name).read_text().strip() or default
+        return (cc.state_home() / "hyprland-dotfiles" / name).read_text().strip() or default
     except OSError:
         return default
 
@@ -132,6 +136,105 @@ def cmd_features(args):
     return 0
 
 
+HIDDEN = "<hidden>"
+
+
+def redact(value, key=""):
+    """Links can carry a private token and snippets can hold passwords: never print them."""
+    if isinstance(value, dict):
+        return {k: redact(v, k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v, key) for v in value]
+    if isinstance(value, str) and (key in ("url", "text") or re.match(r"(?i)https?://", value)):
+        return HIDDEN
+    return value
+
+
+def config_defaults():
+    import modes_core
+    import workflow_core
+    return {"modes": modes_core.DEFAULT_MODES, "workflow": workflow_core.DEFAULTS, "activity": {}}
+
+
+def config_files():
+    """Each known file with its state: ok (value), absent, or invalid (ConfigError). Reads only; never copies or writes."""
+    out = []
+    for name, path, kind in cc.known_files():
+        try:
+            value = cc.load(path, kind)
+            out.append({"name": name, "path": path, "status": "absent" if value is None else "ok", "value": value, "error": None})
+        except cc.ConfigError as e:
+            out.append({"name": name, "path": path, "status": "invalid", "value": None, "error": e})
+    return out
+
+
+def error_dict(e):
+    return {"error": e.problem, "line": e.line, "column": e.column, "hint": e.hint} if e else {}
+
+
+def cmd_config(args):
+    if args.action not in ("path", "show", "validate"):
+        print("primo: config needs one of: path, show, validate", file=sys.stderr)
+        return 64
+    files = config_files()
+    invalid = [f for f in files if f["status"] == "invalid"]
+    code = 2 if invalid else 0
+    out = make_out(args)
+    if args.action == "path":
+        folders = {"config": str(cc.config_home()), "data": str(cc.data_home()), "state": str(cc.state_home())}
+        if args.json:
+            print(json.dumps({"version": 1, "folders": folders, "files": [{"name": f["name"], "path": str(f["path"]), "exists": f["status"] != "absent"} for f in files]}, indent=2))
+            return 0
+        for k, v in folders.items():
+            print(f"  {k + ' folder':<15}{v}")
+        for f in files:
+            print(f"  {f['name']:<15}{f['path']}" + (out.c("2", "  (absent)") if f["status"] == "absent" else ""))
+        return 0
+    if args.action == "validate":
+        if args.json:
+            print(json.dumps({"version": 1, "valid": not invalid, "files": [{"name": f["name"], "path": str(f["path"]), "status": f["status"], **error_dict(f["error"])}
+                                                                         for f in files]}, indent=2))
+            return code
+        for f in files:
+            if f["status"] == "invalid":
+                print(f"  {out.mark(dc.FAIL)}  {f['error']}")
+            else:
+                print(f"  {out.mark(dc.PASS if f['status'] == 'ok' else dc.SKIPPED)}  {f['path']}" + ("" if f["status"] == "ok" else out.c("2", "  absent")))
+        print("\nAll settings files are valid." if not invalid else f"\n{len(invalid)} file{'s' if len(invalid) != 1 else ''} to fix. Primo uses the defaults for "
+              "a broken file and keeps a copy before saving over it.")
+        return code
+    defaults = config_defaults()
+    shown = []
+    # hub data and other valid files are not settings: `primo config path` lists them
+    files = [f for f in files if f["name"] in defaults or f["status"] == "invalid"]
+    for f in files:
+        entry = {"name": f["name"], "path": str(f["path"])}
+        if f["status"] == "invalid":
+            entry.update(status="invalid", **error_dict(f["error"]))
+        elif isinstance(defaults[f["name"]], dict):
+            value = f["value"] or {}
+            entry["value"] = redact({**defaults[f["name"]], **value})
+            entry["source"] = {k: (str(f["path"]) if k in value else "default") for k in entry["value"]}
+        else:
+            entry["value"] = redact(f["value"] if f["status"] == "ok" else defaults[f["name"]])
+            entry["from"] = str(f["path"]) if f["status"] == "ok" else "defaults"
+        shown.append(entry)
+    if args.json:
+        print(json.dumps({"version": 1, "files": shown}, indent=2, ensure_ascii=False))
+        return code
+    for e, f in zip(shown, files):
+        print(out.c("1", e["name"]) + out.c("2", f"  {e['path']}"))
+        if f["status"] == "invalid":
+            print(f"  {out.mark(dc.FAIL)}  {f['error']}")
+        elif "source" in e:
+            for k, v in e["value"].items():
+                print(f"  {k:<14}{json.dumps(v, ensure_ascii=False)}" + out.c("2", "  (default)" if e["source"][k] == "default" else ""))
+        else:
+            print(f"  {json.dumps(e['value'], ensure_ascii=False)}" + out.c("2", "  (defaults)" if e["from"] == "defaults" else ""))
+        print()
+    return code
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="primo", description="Look at the state of the Primo desktop. Nothing here changes the system.",
                                 epilog="Examples:\n  primo status\n  primo doctor --category services\n  primo doctor --json | jq '.checks[] | select(.status != \"pass\")'",
@@ -148,6 +251,13 @@ def main(argv=None):
             sp.add_argument("--category", help="only one of: " + ", ".join(dc.CATEGORIES))
             sp.add_argument("-v", "--verbose", action="store_true", help="also list the checks that pass")
         sp.set_defaults(fn=fn)
+    sp = sub.add_parser("config", help="the settings files: where they are, what is in effect, whether they are valid",
+                        description="path: the folders and files Primo reads. show: the settings in effect and where each comes from. "
+                                    "validate: check every file (exit 2 when one is broken). Reads only.")
+    sp.add_argument("action", nargs="?", metavar="path|show|validate")
+    sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+    sp.add_argument("--no-color", action="store_true", help="never use colours")
+    sp.set_defaults(fn=cmd_config)
     args = p.parse_args(argv)
     if not getattr(args, "fn", None):
         p.print_help(sys.stderr)
