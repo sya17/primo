@@ -14,8 +14,8 @@ from pathlib import Path
 
 import config_core as cc
 
-CONFIG = Path(os.environ.get("PRIMO_WORKFLOW_CONFIG") or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "workflow.json")
-STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "hub"
+CONFIG = Path(os.environ.get("PRIMO_WORKFLOW_CONFIG") or cc.config_home() / "primo" / "workflow.json")
+STATE = cc.state_home() / "hyprland-dotfiles" / "hub"
 HYPR_DIR = Path(os.environ.get("PRIMO_HYPR_DIR", Path.home() / ".config" / "hypr"))
 
 DEFAULTS = {"ics": [], "ics_alert": 10, "app_rules": [], "snippets": [], "backup": {"on": False, "push": False}}

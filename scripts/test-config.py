@@ -183,4 +183,82 @@ state = work / "state" / "nested" / "state.json"
 cc.atomic_write(state, '{"a": 1}')
 assert state.read_text() == '{"a": 1}' and [f.name for f in state.parent.iterdir()] == ["state.json"]
 
+# ---- one place for the XDG directories: an empty or relative value is ignored, as the specification says
+home = Path.home()
+saved = {k: os.environ.get(k) for k in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME")}
+os.environ["XDG_CONFIG_HOME"], os.environ["XDG_DATA_HOME"], os.environ["XDG_STATE_HOME"] = "", "relative/dir", str(work / "st")
+assert cc.config_home() == home / ".config" and cc.data_home() == home / ".local/share" and cc.state_home() == work / "st"
+for k, v in saved.items():
+    os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+assert modes_core.CONFIG == cc.config_home() / "primo" / "modes.json" and hub_core.STATE_DIR == cc.state_home() / "hyprland-dotfiles" / "hub"
+
+# every tool finds the directories through config_core, so an unusual XDG value means the same folder everywhere
+scripts_dir = Path(__file__).resolve().parent
+own = [f for f in sorted((scripts_dir.parent / "config" / "hypr" / "scripts").glob("*.py")) + [scripts_dir / "primo"]
+       if f.name != "config_core.py" and any(v in f.read_text() for v in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"))]
+assert not own, [f.name for f in own]
+
+# ---- the strict loader for validation: the value, None when absent, or one error naming the file, line and column
+d = work / "strict"
+d.mkdir()
+(d / "ok.json").write_text('{"a": 1}')
+(d / "ok.toml").write_text('version = 1\nname = "Work"\n[apps]\nterm = "kitty"\n')
+(d / "list.json").write_text("[1]")
+assert cc.load(d / "ok.json") == {"a": 1} and cc.load(d / "ok.toml")["apps"] == {"term": "kitty"} and cc.load(d / "list.json", list) == [1]
+assert cc.load(d / "absent.json") is None
+(d / "empty.json").write_text("  \n")
+assert cc.load(d / "empty.json") is None
+
+(d / "bad.json").write_text('{\n  "ics": ["https://calendar.example/private.ics"],\n  "snippets": [ oops ]\n}')
+try:
+    cc.load(d / "bad.json")
+    raise AssertionError("a broken JSON file must raise")
+except cc.ConfigError as e:
+    assert (e.path, e.line, e.column) == (d / "bad.json", 3, 17) and str(e).startswith(f"{d / 'bad.json'}:3:17: "), str(e)
+    assert "private.ics" not in str(e) and "oops" not in str(e), "an error never repeats the content of the file"
+
+(d / "bad.toml").write_text('version = 1\nname = \n')
+try:
+    cc.load(d / "bad.toml")
+    raise AssertionError("a broken TOML file must raise")
+except cc.ConfigError as e:
+    assert e.line == 2 and "(at line" not in e.problem, str(e)
+
+try:
+    cc.load(d / "list.json")
+    raise AssertionError("the wrong kind of value must raise")
+except cc.ConfigError as e:
+    assert "list" in e.problem and e.line is None, str(e)
+
+(d / "new.json").write_text('{"version": 2, "a": 1}')
+(d / "v1.json").write_text('{"version": 1, "a": 1}')
+assert cc.load(d / "v1.json") == {"version": 1, "a": 1}
+try:
+    cc.load(d / "new.json")
+    raise AssertionError("a file from a newer Primo must be refused")
+except cc.ConfigError as e:
+    assert "newer" in e.problem, str(e)
+
+# a file from a newer Primo is neither replaced by defaults on save nor copied aside as broken
+p = modes_core.CONFIG
+fresh(wf.CONFIG, '{"version": 9, "ics": ["https://calendar.example/private.ics"]}')
+got, warning = quiet(wf.load)
+assert got == wf.DEFAULTS and "newer" in warning and not backups(wf.CONFIG), (got, warning)
+try:
+    wf.save({"ics": []})
+    raise AssertionError("save must refuse to replace a file from a newer Primo")
+except cc.ConfigError:
+    pass
+assert "version" in wf.CONFIG.read_text()
+
+if os.geteuid() != 0:
+    (d / "locked.json").write_text("{}")
+    (d / "locked.json").chmod(0)
+    try:
+        cc.load(d / "locked.json")
+        raise AssertionError("an unreadable file must raise")
+    except cc.ConfigError as e:
+        assert "cannot be read" in e.problem
+    (d / "locked.json").chmod(0o600)
+
 print("ok")

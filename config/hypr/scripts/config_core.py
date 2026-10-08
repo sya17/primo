@@ -1,7 +1,9 @@
-"""Safe reading and writing of the JSON files Primo keeps for you (modes, workflow settings, hub data).
+"""Where Primo keeps its files, and safe reading and writing of them (modes, workflow settings, hub data).
 
+Existing settings are JSON; new hand-edited definition files are TOML (read only: Primo never rewrites them).
 A file that does not parse is never thrown away by a later save: its bytes are copied to `<name>.bad-<time>` first, so a typo in a
 hand-edited file cannot erase calendar links, snippets or reminders. Writes go to a temporary file that replaces the target.
+A file written by a newer Primo (a `version` above SUPPORTED_VERSION) is read as defaults and never saved over.
 Standard library only.
 """
 import itertools
@@ -11,23 +13,84 @@ import stat
 import sys
 import tempfile
 import time
+import tomllib
 from pathlib import Path
+
+SUPPORTED_VERSION = 1
+
+
+def _xdg(var, default):
+    """An XDG base directory; an empty or relative value is ignored, as the specification says."""
+    value = os.environ.get(var, "")
+    return Path(value) if os.path.isabs(value) else Path.home() / default
+
+
+def config_home():
+    return _xdg("XDG_CONFIG_HOME", ".config")
+
+
+def data_home():
+    return _xdg("XDG_DATA_HOME", ".local/share")
+
+
+def state_home():
+    return _xdg("XDG_STATE_HOME", ".local/state")
+
+
+class ConfigError(ValueError):
+    """A file Primo cannot use: the path, the line and column when known, and what to do. Never quotes the file's content."""
+
+    def __init__(self, path, problem, line=None, column=None, hint="", newer=False):
+        self.path, self.problem, self.line, self.column, self.hint, self.newer = Path(path), problem, line, column, hint, newer
+        where = f"{path}:{line}:{column}" if line and column else f"{path}:{line}" if line else str(path)
+        super().__init__(f"{where}: {problem}" + (f" ({hint})" if hint else ""))
+
+
+def _parse(path, raw, expect):
+    """The value in `raw`, or ConfigError."""
+    try:
+        data = tomllib.loads(raw.decode()) if path.suffix == ".toml" else json.loads(raw)
+    except UnicodeDecodeError:
+        raise ConfigError(path, "is not UTF-8 text", hint="save it as UTF-8") from None
+    except ValueError as e:      # json.JSONDecodeError and tomllib.TOMLDecodeError
+        raise ConfigError(path, getattr(e, "msg", "does not parse"), getattr(e, "lineno", None), getattr(e, "colno", None),
+                          "fix that line, or move the file away to start from the defaults") from None
+    if not isinstance(data, expect):
+        raise ConfigError(path, f"must hold a {'list' if expect is list else 'table of settings'}, not a {type(data).__name__}")
+    version = data.get("version", SUPPORTED_VERSION) if isinstance(data, dict) else SUPPORTED_VERSION
+    if not isinstance(version, int) or version > SUPPORTED_VERSION:
+        raise ConfigError(path, f"was written by a newer Primo (version {version!r})", hint="update Primo", newer=True)
+    return data
+
+
+def load(path, expect=dict):
+    """Strict read, for validation: the value, None when the file is absent or empty, or ConfigError."""
+    path = Path(path)
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise ConfigError(path, f"cannot be read ({e.strerror})", hint="check its owner and permissions") from None
+    return _parse(path, raw, expect) if raw.strip() else None
 
 
 def _load(path, expect):
     """(data, b"") for a good file; (None, raw) when it has content that is unusable; (None, b"") when there is nothing to lose.
-    Any error other than "not there" is raised: a file we cannot read must not be saved over."""
+    Any error other than "not there" is raised, and so is a file from a newer Primo: neither may be saved over."""
+    path = Path(path)
     try:
-        raw = Path(path).read_bytes()
+        raw = path.read_bytes()
     except FileNotFoundError:
         return None, b""
     if not raw.strip():
         return None, b""
     try:
-        data = json.loads(raw)
-    except ValueError:
+        return _parse(path, raw, expect), b""
+    except ConfigError as e:
+        if e.newer:
+            raise
         return None, raw
-    return (data, b"") if isinstance(data, expect) else (None, raw)
 
 
 def preserve(path, raw):
@@ -70,6 +133,9 @@ def read_json(path, expect, default):
         data, raw = _load(path, expect)
     except OSError as e:
         _warn((path, e.errno), f"cannot read {path} ({e.strerror}); using defaults, and it will not be saved over")
+        return default
+    except ConfigError as e:
+        _warn((path, "newer"), f"{e}; using defaults, and it will not be saved over")
         return default
     if data is not None:
         return data

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+import config_core as cc
 import idle_core
 
 import gi
@@ -31,7 +32,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)  # Gdk.Texture.ne
 REPO = Path(__file__).resolve().parents[3]
 THEME_SWITCH = REPO / "scripts" / "theme-switch"
 THEMES_DIR = REPO / "themes"
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
+STATE_DIR = cc.state_home() / "hyprland-dotfiles"
 HYPR_DIR = Path.home() / ".config" / "hypr"
 DISPLAYS_LUA = HYPR_DIR / "displays.lua"
 USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"

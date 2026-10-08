@@ -23,8 +23,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import activity_collect as ac  # noqa: E402
+import config_core as cc  # noqa: E402
 
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
+STATE_DIR = cc.state_home() / "hyprland-dotfiles"
 APP_ID = "dev.primo.Activity"
 
 

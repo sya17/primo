@@ -61,7 +61,8 @@ sample data.
 Modes, workflow settings and the time hub's data are JSON files under `~/.config/primo/` and the state folder. `config_core.py` reads
 and writes them: a file that does not parse (a typo after a hand edit) is copied to `<name>.bad-<time>` before anything is saved over it,
 defaults are used for that run, and a warning goes to stderr. Saves go through a temporary file that replaces the old one, so a crash or
-a full disk leaves the previous file whole. A file that cannot be read is never overwritten.
+a full disk leaves the previous file whole. A file that cannot be read, or that a newer Primo wrote (a `version` above the one this
+code knows), is never overwritten. The same module finds the XDG folders for every tool; an empty or relative `XDG_*` value is ignored.
 
 ## Checks
 

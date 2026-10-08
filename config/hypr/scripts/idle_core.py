@@ -8,9 +8,11 @@ import select
 import subprocess
 import sys
 
+import config_core as cc
+
 DEFAULTS = {"dim": 150, "lock": 300, "screen": 330, "sleep": 1800}
-CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "hypr" / "primo-idle.conf"
-STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "idle"
+CONFIG = cc.config_home() / "hypr" / "primo-idle.conf"
+STATE = cc.state_home() / "hyprland-dotfiles" / "idle"
 BASE = Path(__file__).resolve().parents[1] / "hypridle.conf"
 
 

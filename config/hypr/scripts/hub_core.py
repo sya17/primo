@@ -15,7 +15,7 @@ from pathlib import Path
 
 import config_core as cc
 
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "hub"
+STATE_DIR = cc.state_home() / "hyprland-dotfiles" / "hub"
 NOTES_DIR = Path(os.environ.get("PRIMO_NOTES_DIR", Path.home() / "Notes"))
 
 DEFAULTS = {

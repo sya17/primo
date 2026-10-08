@@ -6,7 +6,6 @@ research, writing, relaxing: the recipes are yours (Settings > Modes); a few sta
 Standard library only. The functions take a `run` callable so the tests can check what would happen without doing it.
 """
 import json
-import os
 import re
 import shlex
 import subprocess
@@ -15,8 +14,8 @@ from pathlib import Path
 
 import config_core as cc
 
-CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "primo" / "modes.json"
-STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles" / "mode.json"
+CONFIG = cc.config_home() / "primo" / "modes.json"
+STATE = cc.state_home() / "hyprland-dotfiles" / "mode.json"
 RECENT = STATE.parent / "mode-dirs.json"
 
 POWER = {"": "Leave as is", "power-saver": "Power saver", "balanced": "Balanced", "performance": "Performance"}

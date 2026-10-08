@@ -20,7 +20,6 @@ import ast
 import json
 import math
 import operator
-import os
 import re
 import shutil
 import subprocess
@@ -35,7 +34,7 @@ if str(SCRIPTS) not in sys.path:
 import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "hyprland-dotfiles"
+STATE_DIR = cc.state_home() / "hyprland-dotfiles"
 HISTORY = STATE_DIR / "launcher-history.json"
 MAX_RESULTS = 9
 

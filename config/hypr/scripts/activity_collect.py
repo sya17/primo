@@ -29,7 +29,7 @@ BOUNDARY = {"Hyprland", "systemd", "sddm-helper", "dbus-broker", "dbus-broker-la
 
 
 def _local():
-    return cc.read_json(Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "primo" / "activity.json", dict, {})
+    return cc.read_json(cc.config_home() / "primo" / "activity.json", dict, {})
 
 
 _LOCAL = _local()
