@@ -2,7 +2,7 @@
 """Time hub: calendar, reminders, clock (world, alarm, stopwatch, timer), focus and notes. A dropdown under the bar clock.
 
 A resident service, like the switcher: it keeps the timers, alarms and reminders running while the window is closed
-and notifies you when they are due. Everything it remembers is in <state>/hub/hub.json; notes are Markdown in ~/Notes.
+and notifies you when they are due. Everything it remembers is in the data folder (~/.local/share/primo/hub.json); notes are Markdown in ~/Notes.
 
     hub.py --daemon        start the service (autostart does this)
     hub.sh toggle|calendar|reminders|clock|focus|notes|new-note     what the clock click and the keybinds call
@@ -1403,7 +1403,7 @@ class Service(Adw.Application):
         self.daemon = daemon
         self.window = None
         self.css = None
-        self.store = hc.Store()
+        self.store = None           # read in do_startup: only the resident hub moves or opens its data, not a process that just asks it to show
         self.last_break = 0.0
         self.ringing = []
         self.wf = wf.load()
@@ -1423,6 +1423,9 @@ class Service(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         self.hold()
+        self.store = hc.Store()
+        if self.store.notice:
+            notify("Time hub", self.store.notice, icon="dialog-information")
         self.load_events()
         self.check_due(datetime.now(), startup=True)
         GLib.timeout_add_seconds(1, self.tick)

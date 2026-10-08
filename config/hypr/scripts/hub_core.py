@@ -1,13 +1,16 @@
 """Time hub core: storage, reminder parsing and the maths for alarms, work hours and the pomodoro cycle.
 
 Standard library only, no GTK, so it can be tested on its own (scripts/check.sh does).
-State lives in <state>/hub/hub.json (one file, written atomically); notes are plain Markdown files in ~/Notes,
+Your reminders, alarms and focus log live in the data folder, ~/.local/share/primo/hub.json (one file, written atomically; before 0.3.0 it was in the
+state folder and is moved on first use); notes are plain Markdown files in ~/Notes,
 so Obsidian or any editor can open the folder.
 """
 import calendar
 import json
 import os
 import re
+import stat
+import sys
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -45,9 +48,71 @@ def merged(defaults, data):
     return out
 
 
+def _set_aside(path):
+    """Rename `path` to `<name>.bak-primo` (or `.bak-primo-<time>` when that exists); the new name, or None. Never deletes anything."""
+    backup = path.with_name(path.name + ".bak-primo")
+    if backup.exists():
+        backup = path.with_name(f"{path.name}.bak-primo-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}")
+    try:
+        os.rename(path, backup)
+        return backup
+    except OSError:
+        return None
+
+
+def _usable(raw):
+    try:
+        return isinstance(json.loads(raw), dict)
+    except ValueError:
+        return False
+
+
+def migrate(new=None, old=None):
+    """Move the hub data from the state folder (before 0.3.0) to the data folder, once. Returns (file to use, notice for the user or None).
+    The old file is kept as `hub.json.bak-primo`; nothing is deleted. When both files exist and differ, the new place wins unless its
+    file is broken (an older Primo, run again after the move, may have started a fresh file in the old place): the other copy is kept
+    as a backup and the notice says where. When the move cannot be done, the old place stays in use. Only the resident hub calls it."""
+    new = Path(new) if new else cc.data_home() / "primo" / "hub.json"
+    old = Path(old) if old else cc.state_home() / "hyprland-dotfiles" / "hub" / "hub.json"
+    try:
+        raw = old.read_bytes()
+    except FileNotFoundError:
+        return new, None
+    except OSError as e:
+        print(f"primo: cannot read {old} ({e.strerror}); the hub data stays there for now", file=sys.stderr)
+        return old, None
+    try:
+        if os.path.samefile(old, new):
+            return new, None                 # one file under two names (a symlinked folder): nothing to move
+        current = new.read_bytes()
+    except FileNotFoundError:
+        current = None
+    except OSError as e:
+        print(f"primo: cannot read {new} ({e.strerror}); still using {old}", file=sys.stderr)
+        return old, None
+    notice = None
+    if current is not None and current != raw:
+        if _usable(current) or not _usable(raw):
+            kept = _set_aside(old)
+            return new, f"Two copies of the hub data were found. Using {new}; the other one is kept as {kept or old}."
+        kept = _set_aside(new)               # the new place holds a broken file: keep it, and move the good data in
+        if not kept:
+            return old, None
+        notice = f"{new} could not be read, so the hub data from {old} is used. The broken file is kept as {kept}."
+    if current != raw:
+        try:
+            cc.atomic_write(new, raw, stat.S_IMODE(old.stat().st_mode))
+        except OSError as e:
+            print(f"primo: cannot move the hub data to {new} ({e.strerror}); still using {old}", file=sys.stderr)
+            return old, None
+    _set_aside(old)
+    return new, notice
+
+
 class Store:
     def __init__(self, path=None):
-        self.path = Path(path) if path else STATE_DIR / "hub.json"
+        """`path` for tests and samples; without it the data is moved to the data folder first (see migrate)."""
+        self.path, self.notice = (Path(path), None) if path else migrate()
         self.data = merged(DEFAULTS, cc.read_json(self.path, dict, {}))
 
     def save(self):

@@ -123,12 +123,12 @@ print(f'{min(1920 - x0, w + 2 * m)}:{min(1080 - y0, h + 2 * m)}:{x0}:{y0}')")"
 }
 
 # ---------------------------------------------------------------------------- sample data (never your own)
-sample="$tmp/sample"; mkdir -p "$sample/state" "$sample/notes"
+sample="$tmp/sample"; mkdir -p "$sample/state" "$sample/data" "$sample/notes"
 SCRIPTS="$scripts" python3 - "$sample" <<'PY'
 import os, sys, time
 from datetime import datetime, timedelta
 d = sys.argv[1]
-os.environ["XDG_STATE_HOME"] = d + "/state"; os.environ["PRIMO_WORKFLOW_CONFIG"] = d + "/workflow.json"
+os.environ["XDG_STATE_HOME"] = d + "/state"; os.environ["XDG_DATA_HOME"] = d + "/data"; os.environ["PRIMO_WORKFLOW_CONFIG"] = d + "/workflow.json"
 sys.path.insert(0, os.environ["SCRIPTS"])
 import hub_core as hc, workflow_core as wf
 now = datetime.now()
@@ -209,10 +209,10 @@ for t in "${themes[@]}"; do
     "$scripts/launcher.sh" toggle; sleep 0.8; pkill -f "^python3 .*scripts/launcher\.py"; sleep 0.8
 
     # the time hub, with sample data
-    PRIMO_SHOT_MODE=1 PRIMO_HUB_KEEP=1 PRIMO_HUB_MUTE=1 XDG_STATE_HOME="$sample/state" PRIMO_WORKFLOW_CONFIG="$sample/workflow.json" PRIMO_NOTES_DIR="$sample/notes" \
+    PRIMO_SHOT_MODE=1 PRIMO_HUB_KEEP=1 PRIMO_HUB_MUTE=1 XDG_STATE_HOME="$sample/state" XDG_DATA_HOME="$sample/data" PRIMO_WORKFLOW_CONFIG="$sample/workflow.json" PRIMO_NOTES_DIR="$sample/notes" \
         setsid -f python3 "$scripts/hub.py" --daemon >/dev/null 2>&1; sleep 2.5
     for tab in calendar reminders clock focus report notes; do
-        XDG_STATE_HOME="$sample/state" "$scripts/hub.sh" "$tab"; wait_class dev.primo.Hub && { sleep 2; shot "hub-$tab" dev.primo.Hub; }
+        XDG_STATE_HOME="$sample/state" XDG_DATA_HOME="$sample/data" "$scripts/hub.sh" "$tab"; wait_class dev.primo.Hub && { sleep 2; shot "hub-$tab" dev.primo.Hub; }
     done
     pkill -f "^python3 .*scripts/hub\.py"; sleep 1
 

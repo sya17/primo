@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 work = tempfile.mkdtemp()
 os.environ["XDG_STATE_HOME"] = os.path.join(work, "state")
+os.environ["XDG_DATA_HOME"] = os.path.join(work, "data")
 os.environ["PRIMO_NOTES_DIR"] = os.path.join(work, "notes")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "hypr", "scripts"))
 if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
@@ -31,6 +32,7 @@ hub.sound = lambda *a, **k: None
 hub.set_dnd = lambda on: None
 hub.dnd_is_on = lambda: False
 app = hub.Service(False)
+assert app.store is None     # a process that only forwards to the running hub never moves or opens the data
 app.store = hc.Store(os.path.join(work, "hub.json"))
 app.ring_alarm = lambda a: rang.append(a["time"])
 app.write_status = lambda: None

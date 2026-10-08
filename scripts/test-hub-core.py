@@ -56,5 +56,90 @@ assert c.previous_work_day({"days": [0, 1, 2, 3, 4]}, date(2026, 10, 6)) == date
 
 import tempfile, os
 d = tempfile.mkdtemp(); s = c.Store(os.path.join(d, "h.json")); s["reminders"].append({"id": "1"}); s.save(); assert c.Store(os.path.join(d, "h.json"))["reminders"] == [{"id": "1"}] and c.Store(os.path.join(d, "h.json"))["work"]["start"] == "09:00"
+# ---- hub data moves from the state folder to the data folder, once, keeping a backup; nothing is ever deleted
+import contextlib, errno, io, json, time as _t
+from pathlib import Path
+
+def place():
+    root = Path(tempfile.mkdtemp())
+    return root / "state" / "hub.json", root / "data" / "primo" / "hub.json"
+
+def quiet_migrate(old, new):
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        used, notice = c.migrate(new, old)
+    return used, notice, err.getvalue()
+
+def aside(path): return sorted(path.parent.glob(path.name + ".bak-primo*"))
+
+old, new = place()                                               # fresh install: nothing to move, nothing created
+assert quiet_migrate(old, new) == (new, None, "") and not new.exists() and not old.parent.exists()
+
+old, new = place()                                               # the normal move
+old.parent.mkdir(parents=True); old.write_text('{"reminders": [{"id": "r1"}]}'); old.chmod(0o640)
+used, notice, _ = quiet_migrate(old, new)
+assert used == new and notice is None and new.read_text() == '{"reminders": [{"id": "r1"}]}' and oct(new.stat().st_mode & 0o777) == "0o640"
+assert not old.exists() and [b.read_text() for b in aside(old)] == ['{"reminders": [{"id": "r1"}]}']
+assert quiet_migrate(old, new) == (new, None, "") and len(aside(old)) == 1 and new.read_text() == '{"reminders": [{"id": "r1"}]}'   # twice: nothing changes
+
+old, new = place()                                               # an earlier move stopped after the copy: finish it
+old.parent.mkdir(parents=True); new.parent.mkdir(parents=True)
+old.write_text('{"a": 1}'); new.write_text('{"a": 1}')
+assert quiet_migrate(old, new)[:2] == (new, None) and not old.exists() and len(aside(old)) == 1
+
+for later in ("old", "new"):                                     # both differ: the new place wins whichever was saved later, the other is kept
+    old, new = place()                                           # (an older Primo run again after the move starts a fresh file in the old place)
+    old.parent.mkdir(parents=True); new.parent.mkdir(parents=True)
+    old.write_text('{"reminders": []}'); new.write_text('{"reminders": [{"id": "real"}]}')
+    os.utime(new if later == "old" else old, (_t.time() - 60, _t.time() - 60))
+    used, notice, _ = quiet_migrate(old, new)
+    assert used == new and new.read_text() == '{"reminders": [{"id": "real"}]}' and [b.read_text() for b in aside(old)] == ['{"reminders": []}']
+    assert notice and str(aside(old)[0]) in notice, notice
+
+old, new = place()                                               # a broken file in the new place does not win over good data
+old.parent.mkdir(parents=True); new.parent.mkdir(parents=True)
+old.write_text('{"a": "good"}'); new.write_text('{"a": ')
+used, notice, _ = quiet_migrate(old, new)
+assert used == new and new.read_text() == '{"a": "good"}' and [b.read_text() for b in aside(new)] == ['{"a": '] and notice and not old.exists()
+
+old, new = place()                                               # the copy fails (full disk): keep using the old place, change nothing
+old.parent.mkdir(parents=True); old.write_text('{"a": 1}')
+real_write = c.cc.atomic_write
+def full(*a, **k): raise OSError(errno.ENOSPC, "No space left on device")
+c.cc.atomic_write = full
+try:
+    used, notice, warning = quiet_migrate(old, new)
+finally:
+    c.cc.atomic_write = real_write
+assert used == old and old.read_text() == '{"a": 1}' and not new.exists() and "No space" in warning and not aside(old)
+
+old, new = place()                                               # one file under two names (a symlinked folder): it stays where it is
+old.parent.mkdir(parents=True); old.write_text('{"a": 1}')
+new.parent.parent.mkdir(parents=True); new.parent.symlink_to(old.parent)
+assert quiet_migrate(old, new)[:2] == (new, None) and old.read_text() == '{"a": 1}' and not aside(old)
+
+if os.geteuid() != 0:                                            # the new place cannot be read: keep using the old one, touch nothing
+    old, new = place()
+    old.parent.mkdir(parents=True); new.parent.mkdir(parents=True)
+    old.write_text('{"a": "old"}'); new.write_text('{"a": "new"}'); new.chmod(0)
+    used, notice, warning = quiet_migrate(old, new)
+    new.chmod(0o600)
+    assert used == old and old.read_text() == '{"a": "old"}' and new.read_text() == '{"a": "new"}' and not aside(old) and warning
+
+# the store moves the data on first use, and reads and saves the new place
+root = Path(tempfile.mkdtemp())
+saved_env = {k: os.environ.get(k) for k in ("XDG_STATE_HOME", "XDG_DATA_HOME")}
+os.environ["XDG_STATE_HOME"], os.environ["XDG_DATA_HOME"] = str(root / "state"), str(root / "data")
+try:
+    legacy = root / "state" / "hyprland-dotfiles" / "hub" / "hub.json"
+    legacy.parent.mkdir(parents=True); legacy.write_text('{"reminders": [{"id": "kept"}]}')
+    st = c.Store()
+    assert st.path == root / "data" / "primo" / "hub.json" and st["reminders"] == [{"id": "kept"}] and not legacy.exists() and st.notice is None
+    st["reminders"].append({"id": "new"}); st.save()
+    assert json.loads(st.path.read_text())["reminders"][-1] == {"id": "new"} and c.Store()["reminders"][-1] == {"id": "new"}
+finally:
+    for k, v in saved_env.items():
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
 print("FAILURES:", bad)
 sys.exit(1 if bad else 0)

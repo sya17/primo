@@ -42,7 +42,7 @@ FILES = [
     ("modes", "config", "primo/modes.json", list),
     ("workflow", "config", "primo/workflow.json", dict),
     ("activity", "config", "primo/activity.json", dict),
-    ("hub", "state", "hyprland-dotfiles/hub/hub.json", dict),
+    ("hub", "data", "primo/hub.json", dict),
 ]
 
 
@@ -168,7 +168,7 @@ def read_json(path, expect, default):
 
 
 def atomic_write(path, text, mode=None):
-    """Replace `path` with `text` through a temporary file in the same folder. A symlink is followed, not replaced.
+    """Replace `path` with `text` (str or bytes) through a temporary file in the same folder. A symlink is followed, not replaced.
     `mode` defaults to the permissions the file already has, or private (0600) for a new one."""
     path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,7 +176,7 @@ def atomic_write(path, text, mode=None):
         mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with (os.fdopen(fd, "wb") if isinstance(text, bytes) else os.fdopen(fd, "w", encoding="utf-8")) as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())

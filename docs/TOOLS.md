@@ -76,7 +76,8 @@ and shows it on every workspace.
 </table>
 
 A background service keeps timers, alarms and reminders running while the window is closed. Its data is
-`~/.local/state/hyprland-dotfiles/hub/hub.json`.
+`~/.local/share/primo/hub.json` (`$XDG_DATA_HOME`). Before 0.3.0 it was in `~/.local/state/hyprland-dotfiles/hub/`; the hub moves it
+the first time it starts and keeps the old file next to it as `hub.json.bak-primo`.
 
 ## Modes (`SUPER+CTRL+W`)
 
