@@ -5,7 +5,9 @@ windows that open often (launcher, switcher, overview, time hub, activity) run a
 
 ## Settings (`SUPER+,`)
 
-A libadwaita app with these pages:
+A libadwaita app with these pages. Pages open at once and fill in as the system answers; a change you make (applying a theme, a
+display layout, a power mode, a Bluetooth or VPN switch) runs in the background, one at a time per item, and the page shows what the
+system reports afterwards. If a tool is slow you see "it is taking too long" and the real state, not a success you were not given.
 
 - **Appearance**: dark and light switch, and theme cards with a live palette preview.
 - **Wallpaper**: a gallery of theme art and `~/Pictures`. A picture you choose survives theme switches until you press "Use the theme's

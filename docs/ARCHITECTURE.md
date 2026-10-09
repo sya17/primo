@@ -72,7 +72,10 @@ Settings does the same for the tools its pages read (hyprctl, powerprofilesctl, 
 runs at most two reads at a time with four waiting (one running and one latest waiting request per key, anything more is refused
 with a "busy" message), each command has 3 seconds and the whole refresh 8, output is capped at 1 MiB, leaving a page stops its
 reads, and a page that was left before its read finished reads again when you return. A failed read shows the reason and a
-"Try again" button.
+"Try again" button. Changes (`settings_jobs.Operations`) are different: one per item at a time (a second Apply is refused, a toggle
+clicked again waits and the latest wins), leaving a page does not stop them, the application stays open until they finish or reach
+their deadline (10 s, 30 s for theme and wallpaper, 65 s for a VPN), a timeout is reported as such and never as success, and the
+page then reads the real state.
 The file search runs `find` off the GTK thread through `launcher_core.FileSearch`: one child at a time and one waiting query, a newer
 query or closing the window stops the running child (by its own handle, never by name), hidden folders and `node_modules` are pruned
 before they are entered, and a result is shown only if it belongs to the text still in the box. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and

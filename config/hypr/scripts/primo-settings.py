@@ -9,6 +9,7 @@ Everything here drives the same tools you can run by hand:
   displays   -> hyprctl eval 'hl.monitor{...}', persisted in ~/.config/hypr/displays.lua
 """
 import json
+import logging
 import os
 import warnings
 import re
@@ -63,16 +64,28 @@ APP_CSS = """
 
 
 # --------------------------------------------------------------------------- helpers
-def sh(*cmd):
-    return subprocess.run(cmd, capture_output=True, text=True)
-
-
 def spawn(*cmd):
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 class ReadError(Exception):
-    """A read that did not finish: the message says why, in words for the page."""
+    """A tool call that did not finish: the message says why, in words for the page; `reason` is proc_core's ("timeout", "missing"...)."""
+
+    def __init__(self, message, reason=""):
+        super().__init__(message)
+        self.reason = reason
+
+
+WHY = {"timeout": "took too long", "cancelled": "was stopped", "output too large": "printed too much"}
+
+
+def failure_text(what, result):
+    """The words for a toast when an operation did not succeed. A timeout says so: the change may still happen, and the page shows the real state.
+    The log gets what failed and why in a word, never what the tool printed (it can name networks, devices or paths)."""
+    logging.getLogger("primo.settings").warning("%s (%s)", what, getattr(result, "reason", "") or type(result).__name__)
+    if isinstance(result, ReadError) and result.reason == "timeout":
+        return f"{what}: it is taking too long. What is shown is the real state."
+    return f"{what}: {result}" if isinstance(result, Exception) and str(result) else what
 
 
 def ran(budget, argv, strict=True):
@@ -80,9 +93,9 @@ def ran(budget, argv, strict=True):
     Run. A tool that is missing, too slow, too chatty or cancelled raises ReadError; with strict, so does a non-zero exit."""
     run = budget(argv)
     if run.reason == "missing":
-        raise ReadError(f"{argv[0]} is not installed")
+        raise ReadError(f"{argv[0]} is not installed", "missing")
     if run.reason:
-        raise ReadError(f"{argv[0]}: {run.reason}")
+        raise ReadError(f"{argv[0]} {WHY.get(run.reason, run.reason)}", run.reason)
     if strict and run.code != 0:
         raise ReadError((run.err.strip().splitlines() or [f"{argv[0]} exited with {run.code}"])[-1].removeprefix("Error: "))
     return run
@@ -174,10 +187,6 @@ class Swatch(Gtk.Widget):
         self._rect(snap, w - 40, h - 22, 30, 12, 6, c["accent2"])
 
 
-def hypr_eval(lua):
-    return sh("hyprctl", "eval", lua)
-
-
 # --------------------------------------------------------------------------- application
 class SettingsWindow(Adw.ApplicationWindow):
     def __init__(self, app, page):
@@ -225,6 +234,9 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.incomplete = set()              # keys whose read was asked for and not delivered (the page was left first)
         self.current_page = None
         self.refreshers = {}                 # page -> what refreshes it when it is shown again
+        # Changes to the system (apply, connect, remove) run on their own owner: one per resource, not stopped by leaving a page, the
+        # application is held until they end or reach their deadline, and nothing is shown for a window that closed meanwhile.
+        self.ops = sj.Operations(lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]), app.hold, app.release)
         self.connect("close-request", self.on_close_request)
         self.content_page = Adw.NavigationPage(title="Appearance")
         content_view = Adw.ToolbarView()
@@ -266,7 +278,15 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def on_close_request(self, *_):
         self.jobs.close()
+        self.ops.close()
         return False
+
+    def operate(self, key, work, done, deadline=None, coalesce=False, busy="Still working on the last change, try again in a moment"):
+        """Run work(budget) as a change to the system; done(result) comes back here (the exception if it failed)."""
+        if not self.ops.run(key, work, done, deadline or sj.ORDINARY, coalesce):
+            self.toast(busy)
+            return False
+        return True
 
     def read(self, key, work, deliver):
         """Run work(cancel) off the UI thread and call deliver(result) here (result is the exception if it failed). Keys are
@@ -373,21 +393,18 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def run_theme_switch(self, args, done_text):
         self.toast("Applying…")
-        proc = Gio.Subprocess.new([str(THEME_SWITCH)] + args,
-                                  Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
 
-        def finished(p, res):
-            try:
-                p.wait_finish(res)
-            except GLib.Error:
-                pass
-            self.load_user_css()
+        def work(budget):
+            return ran(budget, [str(THEME_SWITCH)] + args, strict=False).code
+
+        def done(result):
+            self.load_user_css()                      # whatever happened, show what is really set
             self.refresh_theme_state()
             if "wallpaper" in self.built:
                 self.refresh_wallpaper_state()
-            self.toast(done_text if p.get_successful() else "Could not apply the theme")
+            self.toast(done_text if result == 0 else failure_text("Could not apply the theme", result))
 
-        proc.wait_async(None, finished)
+        self.operate("theme-switch", work, done, deadline=sj.LONG, busy="Still applying the last change")
 
     # ======================================================================= Wallpaper
     def build_wallpaper(self):
@@ -515,9 +532,8 @@ class SettingsWindow(Adw.ApplicationWindow):
             Gtk.FileDialog(title="Choose a folder of wallpapers").select_folder(self, None, done)
 
         def on_now(*_):
-            Gio.Subprocess.new([str(HYPR_DIR / "scripts" / "wallpaper-rotate.sh"), "next"],
-                               Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
-            GLib.timeout_add(1500, lambda: (self.refresh_wallpaper_state(), False)[1])
+            self.operate("wallpaper-next", lambda budget: ran(budget, [str(HYPR_DIR / "scripts" / "wallpaper-rotate.sh"), "next"], strict=False).code,
+                         lambda _r: GLib.timeout_add(1500, lambda: (self.refresh_wallpaper_state(), False)[1]))
 
         folder.connect("activated", on_folder)
         on.connect("notify::active", on_toggle)
@@ -600,18 +616,13 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.toast("Video wallpapers need mpvpaper: yay -S mpvpaper")
             return
         self.toast("Applying…")
-        proc = Gio.Subprocess.new([str(THEME_SWITCH), "--wallpaper", path],
-                                  Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
 
-        def finished(p, res):
-            try:
-                p.wait_finish(res)
-            except GLib.Error:
-                pass
+        def done(result):
             self.refresh_wallpaper_state()
-            self.toast("Wallpaper updated" if p.get_successful() else "Could not set the wallpaper")
+            self.toast("Wallpaper updated" if result == 0 else failure_text("Could not set the wallpaper", result))
 
-        proc.wait_async(None, finished)
+        self.operate("theme-switch", lambda budget: ran(budget, [str(THEME_SWITCH), "--wallpaper", path], strict=False).code, done,
+                     deadline=sj.LONG, busy="Still applying the last change")
 
     def build_lock_login(self):
         group = Adw.PreferencesGroup(title="Lock and login screens",
@@ -637,16 +648,9 @@ class SettingsWindow(Adw.ApplicationWindow):
         row.last, row.quiet = row.get_selected(), False
 
         def apply(value):
-            proc = Gio.Subprocess.new([str(THEME_SWITCH), f"--{state}", value],
-                                      Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
-
-            def finished(p, res):
-                try:
-                    p.wait_finish(res)
-                except GLib.Error:
-                    pass
-                if not p.get_successful():
-                    self.toast(f"Could not change the {title.lower()}")
+            def finished(result):
+                if result != 0:
+                    self.toast(failure_text(f"Could not change the {title.lower()}", result))
                     select(row.last)
                     return
                 row.last = row.get_selected()
@@ -656,7 +660,9 @@ class SettingsWindow(Adw.ApplicationWindow):
                 else:
                     self.install_login_theme()
 
-            proc.wait_async(None, finished)
+            if not self.operate("theme-switch", lambda budget: ran(budget, [str(THEME_SWITCH), f"--{state}", value], strict=False).code,
+                                finished, deadline=sj.LONG, busy="Still applying the last change"):
+                select(row.last)
 
         def on_selected(r, _p):
             if r.quiet:
@@ -922,15 +928,24 @@ class SettingsWindow(Adw.ApplicationWindow):
                             "transform": m["transform"], "position": f'{m["x"]}x{m["y"]}'})
         return out
 
-    def apply_specs(self, specs):
+    def apply_specs(self, budget, specs):
         for s in specs:
-            hypr_eval(self.spec_to_lua(s))
+            ran(budget, ["hyprctl", "eval", self.spec_to_lua(s)], strict=False)
 
     def on_apply_displays(self, *_):
         previous = self.current_specs()
         specs = self.collect_specs()
-        self.apply_specs(specs)
 
+        def done(result):
+            if isinstance(result, Exception):          # nothing is saved and nothing is announced; show what the screens really are
+                self.toast(failure_text("Could not apply the display settings", result))
+                self.load_monitors()
+                return
+            self.confirm_displays(specs, previous)
+
+        self.operate("displays", lambda budget: self.apply_specs(budget, specs), done)
+
+    def confirm_displays(self, specs, previous):
         dialog = Adw.AlertDialog(heading="Keep these display settings?")
         dialog.add_response("revert", "Revert")
         dialog.add_response("keep", "Keep")
@@ -962,10 +977,12 @@ class SettingsWindow(Adw.ApplicationWindow):
             if choice == "keep":
                 self.persist_displays(specs)
                 self.toast("Display settings saved")
+                GLib.timeout_add(900, lambda: (self.load_monitors(), False)[1])
             else:
-                self.apply_specs(previous)
-                self.toast("Reverted")
-            GLib.timeout_add(900, lambda: (self.load_monitors(), False)[1])
+                def reverted(result):
+                    self.toast("Reverted" if not isinstance(result, Exception) else failure_text("Could not revert", result))
+                    GLib.timeout_add(900, lambda: (self.load_monitors(), False)[1])
+                self.operate("displays", lambda budget: self.apply_specs(budget, previous), reverted)
 
         dialog.choose(self, None, answered)
 
@@ -975,11 +992,15 @@ class SettingsWindow(Adw.ApplicationWindow):
         DISPLAYS_LUA.write_text("\n".join(lines) + "\n")
 
     def on_restore_displays(self, *_):
-        if DISPLAYS_LUA.exists():
-            DISPLAYS_LUA.unlink()
-        sh("hyprctl", "reload")
-        self.toast("Defaults restored")
-        GLib.timeout_add(1200, lambda: (self.load_monitors(), False)[1])
+        def done(result):
+            self.toast("Defaults restored" if not isinstance(result, Exception) else failure_text("Could not reload the configuration", result))
+            GLib.timeout_add(1200, lambda: (self.load_monitors(), False)[1])
+
+        def work(budget):
+            DISPLAYS_LUA.unlink(missing_ok=True)                     # the generated file goes first, then Hyprland reads its defaults
+            return ran(budget, ["hyprctl", "reload"], strict=False).code
+
+        self.operate("displays", work, done)
 
 
     # ======================================================================= Power
@@ -1093,19 +1114,34 @@ class SettingsWindow(Adw.ApplicationWindow):
         values = {key: choices[row.get_selected()] for key, (row, choices) in self.idle_rows.items()}
         try:
             idle_core.save(values)
-            result = sh(sys.executable, str(Path(idle_core.__file__)), "--restart")
-            if result.returncode:
-                self.toast(result.stderr.strip() or "Saved, but the idle service could not start")
-            else:
-                self.toast("Idle settings applied")
         except (OSError, ValueError, TypeError) as error:
             self.toast(f"Cannot save idle settings: {error}")
+            return
+
+        def done(result):
+            if isinstance(result, Exception):
+                self.toast(failure_text("Saved, but the idle service could not be restarted", result))
+            elif result.code:
+                self.toast(result.err.strip() or "Saved, but the idle service could not start")
+            else:
+                self.toast("Idle settings applied")
+
+        self.operate("idle", lambda budget: ran(budget, [sys.executable, str(Path(idle_core.__file__)), "--restart"], strict=False), done)
 
     def set_profile(self, name):
-        if name:
-            sh("powerprofilesctl", "set", name)
-            sh("pkill", "-RTMIN+12", "waybar")
-            self.toast(dict(self.PROFILES).get(name, name))
+        if not name:
+            return
+
+        def work(budget):
+            ran(budget, ["powerprofilesctl", "set", name])
+            budget(["pkill", "-RTMIN+12", "waybar"])             # the bar's icon
+            return name
+
+        def done(result):
+            self.toast(failure_text("Could not change the power mode", result) if isinstance(result, Exception) else dict(self.PROFILES).get(name, name))
+            self.refresh_power()                                   # the system's answer is what is shown
+
+        self.operate("power", work, done, coalesce=True)
 
     def update_battery(self):
         bat = self.battery_dir()
@@ -1252,18 +1288,24 @@ class SettingsWindow(Adw.ApplicationWindow):
         return False
 
     def on_bt_power(self, row, _p):
-        sh("bluetoothctl", "power", "on" if row.get_active() else "off")
-        GLib.timeout_add(600, lambda: (self.refresh_bluetooth(), False)[1])
+        want = "on" if row.get_active() else "off"
+
+        def done(result):
+            if isinstance(result, Exception):
+                self.toast(failure_text(f"Could not turn Bluetooth {want}", result))
+            self.refresh_bluetooth()
+
+        self.operate("bluetooth", lambda budget: ran(budget, ["bluetoothctl", "power", want]).code, done, coalesce=True)
 
     def bt_action(self, action, mac):
         self.toast("Working…")
 
-        def work():
-            sh("bluetoothctl", action, mac)
-            GLib.idle_add(self.refresh_bluetooth)
+        def done(result):
+            if isinstance(result, Exception):
+                self.toast(failure_text("Bluetooth", result))
+            self.refresh_bluetooth()
 
-        import threading
-        threading.Thread(target=work, daemon=True).start()
+        self.operate("bluetooth", lambda budget: ran(budget, ["bluetoothctl", action, mac]).code, done)
 
     # ======================================================================= Modes
     def build_modes(self):
@@ -1443,6 +1485,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             backup.add(r)
         page.add(backup)
         self.wf_rows = {"cal": [], "apps": [], "snip": []}
+        self.wf_hypr_reload = False
         self.refresh_workflow()
         return page
 
@@ -1450,9 +1493,16 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.wf.save(self.wfc)
         if rules:
             self.wf.write_rules(self.wfc["app_rules"])
-            sh("hyprctl", "reload")
-        sh("gdbus", "call", "--session", "--dest", "dev.primo.Hub", "--object-path", "/dev/primo/Hub", "--method",
-           "org.gtk.Actions.Activate", "workflow-reload", "[]", "{}")
+            self.wf_hypr_reload = True
+
+        def work(budget):
+            reload_hypr, self.wf_hypr_reload = self.wf_hypr_reload, False
+            if reload_hypr:
+                budget(["hyprctl", "reload"])
+            budget(["gdbus", "call", "--session", "--dest", "dev.primo.Hub", "--object-path", "/dev/primo/Hub", "--method",
+                    "org.gtk.Actions.Activate", "workflow-reload", "[]", "{}"])
+
+        self.operate("workflow-reload", work, lambda _r: None, coalesce=True)
 
     def refresh_workflow(self):
         for key, group in (("cal", self.cal_group), ("apps", self.apps_group), ("snip", self.snip_group)):
@@ -1850,21 +1900,29 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.vpn_busy = True
         self.toast(("Connecting to " if state else "Disconnecting from ") + name + "…")
 
-        def work():
-            r = sh("nmcli", "--wait", "60", "connection", "up" if state else "down", "uuid", uuid)
-            msg = ""
-            if r.returncode != 0:
-                msg = (r.stderr.strip().splitlines() or ["failed"])[-1].removeprefix("Error: ")
-            GLib.idle_add(self.vpn_done, msg or ("Connected to " + name if state else "Disconnected"))
+        def work(budget):
+            r = budget(["nmcli", "--wait", "60", "connection", "up" if state else "down", "uuid", uuid])
+            budget(["pkill", "-RTMIN+13", "waybar"])             # the bar's shield
+            if r.reason == "timeout":
+                return "NetworkManager is taking too long. What is shown is the real state."
+            if r.reason or r.code != 0:
+                return (r.err.strip().splitlines() or ["failed"])[-1].removeprefix("Error: ")
+            return ""
 
-        import threading
-        threading.Thread(target=work, daemon=True).start()
+        def done(result):
+            if isinstance(result, Exception):
+                self.vpn_done("", result)
+            else:
+                self.vpn_done(result or ("Connected to " + name if state else "Disconnected"))
+
+        if not self.operate("vpn", work, done, deadline=sj.ACTIVATION, busy="Still working on the last change"):
+            self.vpn_busy = False
+            return True
         return False
 
-    def vpn_done(self, msg):
+    def vpn_done(self, msg, result=None):
         self.vpn_busy = False
-        sh("pkill", "-RTMIN+13", "waybar")
-        self.toast(msg)
+        self.toast(failure_text("VPN", result) if isinstance(result, Exception) else msg)
         self.refresh_vpn()
         return False
 
@@ -1876,14 +1934,18 @@ class SettingsWindow(Adw.ApplicationWindow):
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
 
-        def answered(_d, response):
-            if response == "remove":
-                sh("nmcli", "connection", "delete", "uuid", uuid)
-                self.toast("Removed " + name)
-                self.refresh_vpn()
-
-        dialog.connect("response", answered)
+        dialog.connect("response", lambda _d, response: self.vpn_remove_answered(response, uuid, name))
         dialog.present(self)
+
+    def vpn_remove_answered(self, response, uuid, name):
+        if response != "remove":
+            return                                                   # Cancel: nothing runs
+
+        def done(result):
+            self.toast(failure_text(f"Could not remove {name}", result) if isinstance(result, Exception) else "Removed " + name)
+            self.refresh_vpn()
+
+        self.operate("vpn", lambda budget: ran(budget, ["nmcli", "connection", "delete", "uuid", uuid]).code, done)
 
     def on_vpn_import(self, *_):
         dialog = Gtk.FileDialog(title="Choose an OpenVPN profile")
@@ -1900,12 +1962,13 @@ class SettingsWindow(Adw.ApplicationWindow):
                 return
             if not f:
                 return
-            r = sh("nmcli", "connection", "import", "type", "openvpn", "file", f.get_path())
-            if r.returncode == 0:
-                self.toast("Imported " + Path(f.get_path()).stem)
-            else:
-                self.toast((r.stderr.strip().splitlines() or ["Could not import"])[-1].removeprefix("Error: "))
-            self.refresh_vpn()
+            path = f.get_path()
+
+            def done(result):
+                self.toast(failure_text("Could not import", result) if isinstance(result, Exception) else "Imported " + Path(path).stem)
+                self.refresh_vpn()
+
+            self.operate("vpn", lambda budget: ran(budget, ["nmcli", "connection", "import", "type", "openvpn", "file", path]).code, done)
 
         dialog.open(self, None, done)
 
@@ -1953,6 +2016,7 @@ class App(Adw.Application):
 
 
 def main():
+    cc.setup_logging("settings")
     page = "appearance"
     if "--page" in sys.argv:
         i = sys.argv.index("--page")

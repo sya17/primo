@@ -76,11 +76,13 @@ class JobOwner:
                 if key.startswith(prefix):
                     self._invalidate(key)
 
-    def close(self):
+    def close(self, cancel=True):
+        """Stop delivering. Reads are told to stop too; an operation (cancel=False) is left to finish, its deadline bounds it."""
         with self.lock:
             self.closed = True
-            for job in self.active.values():
-                job.cancel.set()
+            if cancel:
+                for job in self.active.values():
+                    job.cancel.set()
             self.pending.clear()
 
     def _invalidate(self, key):
@@ -113,3 +115,49 @@ class JobOwner:
             current = not self.closed and job.generation == self.generation.get(job.key, 0) and not job.cancel.is_set()
         if current:
             job.deliver(result)
+
+
+ORDINARY = 10.0        # seconds an apply may take
+LONG = 30.0            # theme and wallpaper
+ACTIVATION = 65.0      # a VPN activation: nmcli waits 60
+
+
+class Operations:
+    """Changes to the system (apply, connect, remove). Unlike reads: one per key at a time (a second request is refused, or with
+    coalesce=True the latest waits and runs after the current one), leaving a page does not stop them, the application is held until
+    they end or reach their deadline (`deadline` seconds for the whole operation, shared by its commands through the Budget given to
+    `work(budget)`), and a result is delivered only while the window is open. A timeout is an error, not a success and not a rollback:
+    the page asks the system for the real state afterwards. `hold` and `release` run on the UI thread."""
+
+    def __init__(self, post, hold, release):
+        self.post, self.hold, self.release = post, hold, release
+        self.jobs = JobOwner(post, workers=4, pending_limit=0)
+        self.waiting = {}                  # key -> (work, deliver, deadline) of the latest request made while one ran
+
+    def run(self, key, work, deliver, deadline=ORDINARY, coalesce=False):
+        """True when it started or will run after the current one; False when it was refused."""
+        self.hold()
+
+        def wrapped(cancel):
+            try:
+                return work(Budget(cancel, total=deadline, per_child=deadline))
+            finally:
+                self.post(self._finished, key)
+
+        if self.jobs.submit(key, wrapped, deliver, replace=False):
+            return True
+        self.release()
+        if coalesce and not self.jobs.closed and key in self.jobs.active:
+            self.waiting[key] = (work, deliver, deadline)
+            return True
+        return False
+
+    def _finished(self, key):
+        self.release()
+        nxt = self.waiting.pop(key, None)
+        if nxt and not self.jobs.closed:
+            self.run(key, *nxt[:2], deadline=nxt[2])
+
+    def close(self):
+        self.waiting.clear()
+        self.jobs.close(cancel=False)

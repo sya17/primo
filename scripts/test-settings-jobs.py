@@ -191,6 +191,78 @@ g_cancel.set()
 th.join(5)
 assert box and box[0].reason == "cancelled" and not alive(int(box[0].out.split()[0])), box
 
+# ---- operations: changes to the system. One per key (a duplicate Apply is refused), never cancelled by leaving a page, the application held
+# ---- until they end or hit their deadline, a result only for a window that is still open
+holds = {"hold": 0, "release": 0}
+def mk_ops():
+    holds.update(hold=0, release=0)
+    return sj.Operations(post, lambda: holds.__setitem__("hold", holds["hold"] + 1), lambda: holds.__setitem__("release", holds["release"] + 1))
+
+ops, runs, got = mk_ops(), [], []
+gate = threading.Event()
+def slow_op(budget):
+    runs.append(1)
+    gate.wait(5)
+    return "applied"
+assert ops.run("displays", slow_op, got.append) is True
+time.sleep(0.05)
+assert ops.run("displays", slow_op, got.append) is False, "a second Apply while the first runs is refused"
+assert ops.run("power", lambda b: "other resource", got.append) is True, "another resource may run at the same time"
+pump(0.3, until=lambda: "other resource" in got)
+gate.set()
+pump(until=lambda: "applied" in got)
+assert runs == [1] and sorted(got) == ["applied", "other resource"], (runs, got)
+pump(0.3)
+assert holds == {"hold": 3, "release": 3}, holds                       # every hold is released, the refused one at once
+
+# the latest request waits and runs after the current one (a toggle clicked three times: first and last, not the middle)
+ops, order, got = mk_ops(), [], []
+gate = threading.Event()
+def tagged(tag):
+    def run(budget):
+        order.append(tag)
+        gate.wait(5)
+        return tag
+    return run
+ops.run("bluetooth", tagged("on"), got.append, coalesce=True)
+time.sleep(0.05)
+assert ops.run("bluetooth", tagged("off"), got.append, coalesce=True) is True
+assert ops.run("bluetooth", tagged("on again"), got.append, coalesce=True) is True
+gate.set()
+pump(until=lambda: len(got) >= 2)
+pump(0.5)
+assert order == ["on", "on again"] and got == ["on", "on again"], (order, got)
+assert holds["hold"] == holds["release"], holds
+
+# a command gets its own deadline (10 s ordinary in the app; short here), the time out is an error not a success, and nothing is rolled back
+ops, got = mk_ops(), []
+def ran_slow(budget):
+    run = budget([PY, "-c", "import time; time.sleep(30)"])
+    return run.reason
+ops.run("power", ran_slow, got.append, deadline=0.4)
+t0 = time.monotonic()
+pump(until=lambda: bool(got))
+assert got == ["timeout"] and time.monotonic() - t0 < 2, (got, time.monotonic() - t0)
+
+# the window closes while an operation runs: the child is not killed early, nothing is delivered, and the hold ends with the operation
+ops, got = mk_ops(), []
+pidfile_work = lambda budget: budget([PY, "-c", "import time; time.sleep(0.6); print('done')"]).out.strip()
+ops.run("vpn", pidfile_work, got.append, deadline=5)
+time.sleep(0.15)
+ops.close()
+assert holds["hold"] == 1 and holds["release"] == 0, "still held while the operation runs"
+pump(2, until=lambda: holds["release"] == 1)
+assert got == [] and holds["release"] == 1, (got, holds)
+assert ops.run("vpn", lambda b: "x", got.append) is False, "a closed window starts nothing"
+assert holds["hold"] == holds["release"] == 2, holds
+
+# a work function that raises delivers the exception and releases the hold
+ops, got = mk_ops(), []
+ops.run("vpn", lambda b: 1 / 0, got.append)
+pump(until=lambda: bool(got))
+pump(0.3)
+assert isinstance(got[0], ZeroDivisionError) and holds["hold"] == holds["release"] == 1, (got, holds)
+
 # ---- the app's limits are the design's
 assert (sj.JobOwner(post).workers, sj.JobOwner(post).pending_limit) == (2, 4)
 b = sj.Budget(threading.Event())

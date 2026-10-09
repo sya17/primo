@@ -29,9 +29,14 @@ import os, sys, time
 name = os.path.basename(sys.argv[0])
 args = sys.argv[1:]
 with open(%(log)r, "a") as f:
-    f.write(f"start {name} {os.getpid()} {time.monotonic():.3f}\\n")
-if os.path.exists(%(slow)r):
-    time.sleep(1.0)
+    f.write(f"start {name} {os.getpid()} {time.monotonic():.3f} {' '.join(args)}\\n")
+if name == "hyprctl" and os.path.exists(%(slow)r + "-hyprctl"):
+    time.sleep(5)
+if os.path.exists(%(slow)r) or (args[:1] == ["set"] and os.path.exists(%(slow)r + "-set")):
+    time.sleep(3.0 if args[:1] == ["set"] and os.path.exists(%(slow)r + "-set") else 1.0)
+if args[:1] == ["set"] and os.path.exists(%(slow)r + "-fail"):
+    sys.stderr.write("Error: set failed\\n")
+    sys.exit(1)
 out = ""
 if name == "hyprctl" and args[:1] == ["monitors"]:
     out = '[{"name": "SAMPLE-1", "description": "Sample display", "width": 1920, "height": 1080, "refreshRate": 60.0, "scale": 1.0, "transform": 0, "x": 0, "y": 0, "disabled": false, "availableModes": ["1920x1080@60.00Hz", "1280x720@60.00Hz"]}]'
@@ -47,13 +52,13 @@ sys.stdout.write(out)
 with open(%(log)r, "a") as f:
     f.write(f"end {name} {os.getpid()} {time.monotonic():.3f}\\n")
 """
-for tool in ("hyprctl", "powerprofilesctl", "bluetoothctl", "nmcli", "pacman"):
+for tool in ("hyprctl", "powerprofilesctl", "bluetoothctl", "nmcli", "pacman", "pkill", "gdbus", "theme-switch"):
     path = tools / tool
     path.write_text(FAKE % {"log": str(log), "slow": str(slow)})
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 for var, sub in (("XDG_CONFIG_HOME", "config"), ("XDG_STATE_HOME", "state"), ("XDG_DATA_HOME", "data")):
     os.environ[var] = str(work / sub)
-os.environ["PATH"] = f"{tools}:{os.environ['PATH']}"
+os.environ["PATH"] = f"{tools}:{os.environ['PATH']}"      # the fakes come first; every tool a page may call has a fake (a real pkill or hyprctl would act on the live desktop)
 os.environ["PRIMO_SHOT_MODE"] = "1"      # the Health page shows its sample results: no real checks
 
 import gi
@@ -70,9 +75,14 @@ loader = importlib.machinery.SourceFileLoader("primo_settings", str(here / "prim
 spec = importlib.util.spec_from_loader("primo_settings", loader)
 ps = importlib.util.module_from_spec(spec)
 loader.exec_module(ps)
+ps.THEME_SWITCH = tools / "theme-switch"      # never the real theme-switch: it changes the live desktop
 
 app = Adw.Application(application_id="dev.primo.SettingsTest", flags=Gio.ApplicationFlags.NON_UNIQUE)
 app.register(None)
+holds = []
+real_hold, real_release = app.hold, app.release
+app.hold = lambda: (holds.append("hold"), real_hold())
+app.release = lambda: (holds.append("release"), real_release())
 ctx = GLib.MainContext.default()
 beats = [time.monotonic()]
 GLib.timeout_add(20, lambda: (beats.append(time.monotonic()), True)[1])
@@ -88,7 +98,7 @@ def pump(seconds, until=None):
 def concurrent_most():
     live, most = set(), 0
     for line in log.read_text().splitlines() if log.exists() else []:
-        kind, name, pid, _t = line.split()
+        kind, name, pid, _t = line.split(None, 4)[:4]
         (live.add if kind == "start" else live.discard)(pid)
         most = max(most, len(live))
     return most
@@ -151,11 +161,113 @@ win.refresh_power()
 pump(3, until=lambda: "power/profile" not in win.incomplete)
 assert win.power_rows and win.power_rows[0].get_title() == "Mode"
 
-# closing the window cancels what is still running and delivers nothing afterwards
+# ---- changes to the system (T023): off the UI thread, one at a time per resource, honest about failure, held until done
+def log_lines(tool, *first):
+    return [l for l in (log.read_text().splitlines() if log.exists() else []) if l.startswith("start " + tool) and (not first or l.split(None, 4)[4:5] == [" ".join(first)] or " ".join(first) in l)]
+
+slow.unlink(missing_ok=True)
+toasts.clear()
+win.select_page("appearance")
+log.write_text("")
 slow.write_text("1")
-win.refresh_bluetooth()
-pump(0.2)
-win.on_close_request()                     # what GTK's close-request runs (an unshown window ignores close())
+t0 = time.monotonic()
+win.apply_theme("primo-dusk", "Primo Dusk")
+win.apply_theme("primo-dawn", "Primo Dawn")                             # a second Apply while the first runs is refused, visibly
+assert time.monotonic() - t0 < 0.3, "applying returned at once"
+assert toasts.count("Still applying the last change") == 1, toasts
+pump(4, until=lambda: "Primo Dusk applied" in toasts)
+assert "Primo Dusk applied" in toasts and len(log_lines("theme-switch")) == 1, (toasts, log_lines("theme-switch"))
+assert max(b - a for a, b in zip(beats, beats[1:])) < 0.2, "the main loop kept running during the apply"
+
+# a failed apply says so and shows the real state; nothing claims success
+slow.unlink()
+(slow.parent / "slow-fail").write_text("1")
+toasts.clear()
+win.select_page("power")
+pump(1)
+win.set_profile("performance")
+pump(3, until=lambda: any("Could not change" in t for t in toasts))
+assert any("Could not change the power mode: set failed" in t for t in toasts) and "performance" not in " ".join(t for t in toasts if "changed" in t), toasts
+pump(2, until=lambda: "power/profile" not in win.incomplete)
+assert win.power_rows[0].get_title() == "Mode", "the page asked the system for the real state afterwards"
+(slow.parent / "slow-fail").unlink()
+
+# a tool that is too slow is an error, not success and not a rollback; the real state is read afterwards; the limit is the operation's own
+(slow.parent / "slow-set").write_text("1")
+ps.sj.ORDINARY = 0.5
+toasts.clear()
+t0 = time.monotonic()
+win.set_profile("power-saver")
+pump(4, until=lambda: any("taking too long" in t for t in toasts))
+assert any("Could not change the power mode: it is taking too long" in t for t in toasts) and time.monotonic() - t0 < 2.5, (toasts, time.monotonic() - t0)
+(slow.parent / "slow-set").unlink()
+ps.sj.ORDINARY = 10.0
+
+# the power toggle clicked three times: the first and the latest run, never the middle one
+log.write_text("")
+(slow.parent / "slow-set").write_text("1")
+ps.sj.ORDINARY = 6.0
+win.set_profile("power-saver")
+win.set_profile("balanced")
+win.set_profile("performance")
+pump(8, until=lambda: len(log_lines("powerprofilesctl", "set")) >= 2 and not win.ops.jobs.active)
+sets = [l.split(None, 4)[4] for l in log_lines("powerprofilesctl", "set")]
+assert sets == ["set power-saver", "set performance"], sets
+(slow.parent / "slow-set").unlink()
+pump(1)
+ps.sj.ORDINARY = 10.0
+
+# declining a confirmation starts nothing; confirming runs it
+log.write_text("")
+win.vpn_remove_answered("cancel", "11111111-2222-3333-4444-555555555555", "Sample VPN")
+pump(0.5)
+assert not log_lines("nmcli", "connection delete"), log_lines("nmcli")
+win.vpn_remove_answered("remove", "11111111-2222-3333-4444-555555555555", "Sample VPN")
+pump(3, until=lambda: "Removed Sample VPN" in toasts)
+assert "Removed Sample VPN" in toasts and len(log_lines("nmcli", "connection delete")) == 1
+
+# a display change that cannot be applied keeps nothing and asks nothing
+confirmed = []
+win.confirm_displays = lambda specs, previous: confirmed.append(specs)
+real_run = ps.ran
+win.select_page("displays")
+pump(5, until=lambda: not win.incomplete)
+log.write_text("")
+win.on_apply_displays()
+win.on_apply_displays()                                                 # the same resource: refused while the first runs
+pump(4, until=lambda: confirmed)
+assert len(confirmed) == 1 and len(log_lines("hyprctl", "eval")) == len(win.collect_specs()), (len(confirmed), log_lines("hyprctl"))
+confirmed.clear()
+(slow.parent / "slow-hyprctl").write_text("1")                          # a hyprctl that never answers in time (the fake; the real one is never reached)
+ps.sj.ORDINARY = 0.5
+toasts.clear()
+win.on_apply_displays()
+pump(4, until=lambda: any("Could not apply" in t for t in toasts))
+(slow.parent / "slow-hyprctl").unlink()
+ps.sj.ORDINARY = 10.0
+assert confirmed == [] and any("Could not apply the display settings: it is taking too long" in t for t in toasts), (confirmed, toasts)
+assert not ps.DISPLAYS_LUA.exists(), "nothing was saved for a change that was never applied"
+
+# the window closes while a change runs: the application stays held until it ends, nothing is shown afterwards
+holds.clear()
+toasts.clear()
+(slow.parent / "slow-set").write_text("1")
+ps.sj.ORDINARY = 6.0
+win.select_page("power")
+win.set_profile("balanced")
+pump(0.3)
+win.on_close_request()
+assert holds.count("hold") - holds.count("release") >= 1, holds
+pump(5, until=lambda: holds.count("hold") == holds.count("release"))
+assert holds.count("hold") == holds.count("release") and not toasts, (holds, toasts)
+(slow.parent / "slow-set").unlink()
+ps.sj.ORDINARY = 10.0
+
+# closing the window cancels what is still running and delivers nothing afterwards
+win2 = ps.SettingsWindow(app, "bluetooth")
+slow.write_text("1")
+pump(0.3)
+win2.on_close_request()                    # what GTK's close-request runs (an unshown window ignores close())
 pump(1.5)
-assert win.jobs.closed and not any(p for p in subprocess.run(["pgrep", "-f", str(tools)], capture_output=True, text=True).stdout.split()), "no fake tool left running"
+assert win2.jobs.closed and not any(p for p in subprocess.run(["pgrep", "-f", str(tools)], capture_output=True, text=True).stdout.split()), "no fake tool left running"
 print("settings window checks passed (longest main-loop gap %.0f ms)" % (max(b - a for a, b in zip(beats, beats[1:])) * 1000))
