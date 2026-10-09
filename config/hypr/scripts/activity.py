@@ -329,7 +329,8 @@ class ActivityWindow(Adw.ApplicationWindow):
         self.alive = True
         self.groups = []
         self.procs = {}
-        app.sampler.sample()                      # baseline for the rates
+        self.last_error = None
+        app.collector.request(lambda sampler: sampler.sample(), lambda *_: None)   # baseline for the rates, off the GTK thread
         if os.environ.get("PRIMO_ACTIVITY_TAB"):  # debugging aid: start on another tab, with the first row open
             self.set_tab(os.environ["PRIMO_ACTIVITY_TAB"])
             tabs.set_active_name(os.environ["PRIMO_ACTIVITY_TAB"])
@@ -373,7 +374,21 @@ class ActivityWindow(Adw.ApplicationWindow):
     def tick(self):
         if not self.alive:
             return False
-        self.procs, self.groups = snapshot(self.app.sampler)
+        self.app.collector.request(snapshot, self.on_snapshot)   # collected off the GTK thread; a slow one is coalesced, never queued
+        GLib.timeout_add(2000, self.tick)
+        return False
+
+    def on_snapshot(self, result, error):
+        if not self.alive:
+            return                     # this window closed while it was being collected
+        if error is not None:
+            if str(error) != self.last_error:
+                self.last_error = str(error)
+                logging.getLogger("primo.activity").warning("collection failed: %s", error)
+            self.footer.set_label(f"Could not measure: {error}")
+            return
+        self.last_error = None
+        self.procs, self.groups = result
         self.tick_n += 1
         if self.tab == "services":
             if self.tick_n % 3 == 0:   # three systemctl calls: no need to repeat them every 2 s
@@ -384,8 +399,6 @@ class ActivityWindow(Adw.ApplicationWindow):
         else:
             self.refresh_apps(resort=(self.tick_n % 3 == 1))
         self.refresh_footer()
-        GLib.timeout_add(2000, self.tick)
-        return False
 
     def set_tab(self, name):
         self.tab = name
@@ -761,7 +774,8 @@ class Service(Adw.Application):
         self.daemon = daemon
         self.window = None
         self.css = None
-        self.sampler = ac.Sampler()
+        # The one sampler, owned by one worker thread: the window and the battery watcher only ask for collections.
+        self.collector = ac.Collector(ac.Sampler(), lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]))
         self.streak = {}
         self.notified = {}
         for name, fn in (("toggle", self.toggle), ("quit", self.quit)):
@@ -815,7 +829,16 @@ class Service(Adw.Application):
             if not bat or bat[0] != "Discharging":
                 self.streak.clear()
                 return True
-            _procs, groups = snapshot(self.sampler)
+            self.collector.request(snapshot, self.on_watch)
+        except Exception:          # a watcher must never take the service down
+            logging.getLogger("primo.activity").exception("battery watch failed")
+        return True
+
+    def on_watch(self, result, error):
+        try:
+            if error is not None or (self.window is not None and self.window.alive):
+                return                 # failed (logged by the next window or ignored), or the window opened meanwhile
+            _procs, groups = result
             busy = {g.key: g for g in groups if g.cpu >= self.ALERT_CPU and not g.protected}
             self.streak = {k: self.streak.get(k, 0) + 1 for k in busy}
             now = time.time()
@@ -828,7 +851,6 @@ class Service(Adw.Application):
                                       f"About {g.cpu:.0f}% CPU for 5 minutes. Open Activity (Super+Shift+Esc) to quit or freeze it."])
         except Exception:          # a watcher must never take the service down
             logging.getLogger("primo.activity").exception("battery watch failed")
-        return True
 
 
 if __name__ == "__main__":

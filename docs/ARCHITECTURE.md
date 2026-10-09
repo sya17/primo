@@ -45,7 +45,9 @@ Copy a folder in `themes/`, edit `theme.conf` (keep `mode=dark|light`), then
 
 The launcher (`launcher.py`), Alt+Tab switcher (`switcher.py`), overview (`overview.py`), time hub (`hub.py`) and activity monitor
 (`activity.py`) run as small background services so they open instantly. Their `.sh` wrappers start them if needed and talk to them over
-D-Bus (`org.gtk.Actions.Activate`). The windows close themselves safely (focus loss, or an idle timeout). The hub also keeps timers, alarms
+D-Bus (`org.gtk.Actions.Activate`). The windows close themselves safely (focus loss, or an idle timeout).
+Activity's measurements run on one worker thread that owns the sampler (`activity_collect.Collector`): the window and the battery
+watcher only ask for a collection, requests made while one runs are merged into one, and a result reaches a window only if it is still open. The hub also keeps timers, alarms
 and reminders running while its window is closed; the activity monitor only measures while its window is open.
 
 ## Logs

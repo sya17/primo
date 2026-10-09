@@ -15,6 +15,7 @@ import os
 import re
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -168,6 +169,40 @@ def run(*cmd, timeout=4):
 
 
 # ----------------------------------------------------------------------------- sampler
+class Collector:
+    """Owns one Sampler and runs every collection on one worker thread, so the window never waits for /proc, ss, pactl or hyprctl.
+    request(job, done): job(sampler) runs on the worker, then done(result, error) is handed to `post` (GLib.idle_add in the app).
+    One collection at a time; requests made meanwhile are coalesced: only the latest waits, older ones are dropped (no queue)."""
+
+    def __init__(self, sampler, post):
+        self.sampler, self.post = sampler, post
+        self.lock = threading.Lock()
+        self.pending = None
+        self.busy = False
+
+    def request(self, job, done):
+        with self.lock:
+            self.pending = (job, done)
+            if self.busy:
+                return
+            self.busy = True
+        threading.Thread(target=self._work, name="activity-collector", daemon=True).start()
+
+    def _work(self):
+        while True:
+            with self.lock:
+                item, self.pending = self.pending, None
+                if item is None:
+                    self.busy = False
+                    return
+            job, done = item
+            try:
+                result, error = job(self.sampler), None
+            except Exception as exc:          # handed to the caller; the next request starts fresh
+                result, error = None, exc
+            self.post(done, result, error)
+
+
 class Sampler:
     """Call sample() every couple of seconds; rates are measured between two calls."""
 
