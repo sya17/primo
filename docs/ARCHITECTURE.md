@@ -70,3 +70,5 @@ code knows), is never overwritten. The same module finds the XDG folders for eve
 generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow helpers, config files, launcher, health checks and activity monitor. `scripts/check-docs.py` checks
 that every link and image in the Markdown files exists. CI runs both in an Arch container, and checks that the commit messages follow
 Conventional Commits (`scripts/check-commits.py`); see [RELEASING.md](RELEASING.md) for versions and releases.
+`scripts/perf-baseline.py` (opt-in, read-only, not run in CI) measures the resident services, the Activity collector and the launcher
+for before/after comparisons on one machine.
