@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 import config_core as cc
 import idle_core
+import settings_jobs as sj
 
 import gi
 
@@ -68,6 +69,23 @@ def sh(*cmd):
 
 def spawn(*cmd):
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+class ReadError(Exception):
+    """A read that did not finish: the message says why, in words for the page."""
+
+
+def ran(budget, argv, strict=True):
+    """Run argv through a Budget (a deadline shared by the whole refresh, an output cap, stopped when the page is left) and return its
+    Run. A tool that is missing, too slow, too chatty or cancelled raises ReadError; with strict, so does a non-zero exit."""
+    run = budget(argv)
+    if run.reason == "missing":
+        raise ReadError(f"{argv[0]} is not installed")
+    if run.reason:
+        raise ReadError(f"{argv[0]}: {run.reason}")
+    if strict and run.code != 0:
+        raise ReadError((run.err.strip().splitlines() or [f"{argv[0]} exited with {run.code}"])[-1].removeprefix("Error: "))
+    return run
 
 
 def read_conf(path):
@@ -202,6 +220,12 @@ class SettingsWindow(Adw.ApplicationWindow):
             "more": self.build_more,
         }
         self.built = set()
+        # Reads that call tools run on workers (settings_jobs); a page asks, shows "Loading…" or what it knew, and is told the result.
+        self.jobs = sj.JobOwner(lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]))
+        self.incomplete = set()              # keys whose read was asked for and not delivered (the page was left first)
+        self.current_page = None
+        self.refreshers = {}                 # page -> what refreshes it when it is shown again
+        self.connect("close-request", self.on_close_request)
         self.content_page = Adw.NavigationPage(title="Appearance")
         content_view = Adw.ToolbarView()
         content_view.add_top_bar(Adw.HeaderBar())
@@ -230,6 +254,8 @@ class SettingsWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=2))
 
+    REFRESH_ON_RETURN = {"power", "bluetooth", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
+
     # ---- navigation
     def select_page(self, pid):
         for i, (page_id, _t, _i) in enumerate(PAGES):
@@ -238,13 +264,44 @@ class SettingsWindow(Adw.ApplicationWindow):
                 return
         self.sidebar_list.select_row(self.sidebar_list.get_row_at_index(0))
 
+    def on_close_request(self, *_):
+        self.jobs.close()
+        return False
+
+    def read(self, key, work, deliver):
+        """Run work(cancel) off the UI thread and call deliver(result) here (result is the exception if it failed). Keys are
+        "<page>/<what>". Nothing is delivered after the page was left or the window closed; coming back refreshes what was not finished."""
+        self.incomplete.add(key)
+
+        def done(result):
+            self.incomplete.discard(key)
+            deliver(result)
+
+        if not self.jobs.submit(key, work, done):
+            self.incomplete.discard(key)
+            self.toast("Busy, try again in a moment")
+
+    def read_failed_row(self, title, error, retry):
+        row = Adw.ActionRow(title=title, subtitle=GLib.markup_escape_text(str(error) or "Unknown error"))
+        row.add_prefix(Gtk.Image.new_from_icon_name("dialog-warning-symbolic"))
+        again = Gtk.Button(label="Try again", valign=Gtk.Align.CENTER)
+        again.connect("clicked", lambda *_: retry())
+        row.add_suffix(again)
+        return row
+
     def on_row_selected(self, _lb, row):
         if row is None:
             return
         pid = row.page_id
+        if self.current_page and self.current_page != pid:
+            self.jobs.invalidate_prefix(self.current_page + "/")          # leaving a page cancels its reads
+        returning = pid in self.built
         if pid not in self.built:
             self.stack.add_named(self.builders[pid](), pid)
             self.built.add(pid)
+        self.current_page = pid
+        if returning and pid in self.refreshers and (pid in self.REFRESH_ON_RETURN or any(k.startswith(pid + "/") for k in self.incomplete)):
+            self.refreshers[pid]()
         self.stack.set_visible_child_name(pid)
         self.content_page.set_title(dict((p, t) for p, t, _ in PAGES)[pid])
         self.split.set_show_content(True)
@@ -353,7 +410,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         actions.add(self.wp_reset)
         page.add(actions)
 
-        if sh("sh", "-c", "command -v awww").returncode == 0:
+        if shutil.which("awww"):
             transitions = [("Grow from the cursor", "grow"), ("Fade", "fade"), ("Wave", "wave"),
                            ("Wipe", "wipe"), ("None", "none")]
             tgroup = Adw.PreferencesGroup(title="Transition", description="How the new wallpaper appears")
@@ -674,16 +731,35 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.disp_page = Adw.PreferencesPage()
         self.disp_groups = []
         self.disp_apply_group = None
+        self.monitors = []
+        self.refreshers["displays"] = self.load_monitors
+        self.disp_loading = Adw.PreferencesGroup()
+        self.disp_loading.add(Adw.ActionRow(title="Reading the displays…"))
+        self.disp_page.add(self.disp_loading)
         self.load_monitors()
         return self.disp_page
 
     def load_monitors(self):
+        def work(cancel):
+            return json.loads(ran(sj.Budget(cancel), ["hyprctl", "monitors", "all", "-j"]).out or "[]")
+        self.read("displays/monitors", work, self.apply_monitors)
+
+    def apply_monitors(self, raw):
+        if self.disp_loading is not None:
+            self.disp_page.remove(self.disp_loading)
+            self.disp_loading = None
         for g in self.disp_groups:
             self.disp_page.remove(g)
         if self.disp_apply_group is not None:
             self.disp_page.remove(self.disp_apply_group)
+            self.disp_apply_group = None
         self.disp_groups = []
-        raw = json.loads(sh("hyprctl", "monitors", "all", "-j").stdout or "[]")
+        if isinstance(raw, Exception):
+            failed = Adw.PreferencesGroup()
+            failed.add(self.read_failed_row("Could not read the displays", raw, self.load_monitors))
+            self.disp_page.add(failed)
+            self.disp_groups.append(failed)
+            return
         self.monitors = []
         for m in raw:
             modes = {}
@@ -953,23 +1029,14 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         mode = Adw.PreferencesGroup(title="Power mode",
                                     description="Power Saver stretches the battery, Performance trades it for speed.")
-        if sh("sh", "-c", "command -v powerprofilesctl").returncode != 0:
+        self.power_group, self.power_rows = mode, []
+        if shutil.which("powerprofilesctl") is None:
             row = Adw.ActionRow(title="power-profiles-daemon is not installed",
                                 subtitle="sudo pacman -S power-profiles-daemon, then sudo scripts/setup-system.sh --apply")
             mode.add(row)
         else:
-            listing = sh("powerprofilesctl", "list").stdout
-            available = [n for n, _l in self.PROFILES if re.search(rf"^\s*\*?\s*{n}:", listing, re.M)] or ["balanced"]
-            current = sh("powerprofilesctl", "get").stdout.strip() or "balanced"
-            row = Adw.ActionRow(title="Mode", subtitle="Applies to the whole system")
-            group = Adw.ToggleGroup(valign=Gtk.Align.CENTER)
-            for name, label in self.PROFILES:
-                if name in available:
-                    group.add(Adw.Toggle(name=name, label=label))
-            group.set_active_name(current)
-            group.connect("notify::active-name", lambda g, _p: self.set_profile(g.get_active_name()))
-            row.add_suffix(group)
-            mode.add(row)
+            self.refreshers["power"] = self.refresh_power
+            self.refresh_power()
         page.add(mode)
 
         bat = self.battery_dir()
@@ -1068,10 +1135,42 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.bat_health.set_subtitle("Not reported by this battery")
         return True
 
+    def refresh_power(self):
+        if not self.power_rows:
+            self.show_power_rows([Adw.ActionRow(title="Mode", subtitle="Reading the power mode…")])
+
+        def work(cancel):
+            budget = sj.Budget(cancel)
+            return ran(budget, ["powerprofilesctl", "list"]).out, ran(budget, ["powerprofilesctl", "get"]).out.strip()
+        self.read("power/profile", work, self.apply_power)
+
+    def show_power_rows(self, rows):
+        for r in self.power_rows:
+            self.power_group.remove(r)
+        self.power_rows = rows
+        for r in rows:
+            self.power_group.add(r)
+
+    def apply_power(self, result):
+        if isinstance(result, Exception):
+            self.show_power_rows([self.read_failed_row("Could not read the power mode", result, self.refresh_power)])
+            return
+        listing, current = result
+        available = [n for n, _l in self.PROFILES if re.search(rf"^\s*\*?\s*{n}:", listing, re.M)] or ["balanced"]
+        row = Adw.ActionRow(title="Mode", subtitle="Applies to the whole system")
+        group = Adw.ToggleGroup(valign=Gtk.Align.CENTER)
+        for name, label in self.PROFILES:
+            if name in available:
+                group.add(Adw.Toggle(name=name, label=label))
+        group.set_active_name(current or "balanced")
+        group.connect("notify::active-name", lambda g, _p: self.set_profile(g.get_active_name()))
+        row.add_suffix(group)
+        self.show_power_rows([row])
+
     # ======================================================================= Bluetooth
     def build_bluetooth(self):
         page = Adw.PreferencesPage()
-        if sh("sh", "-c", "command -v bluetoothctl").returncode != 0:
+        if shutil.which("bluetoothctl") is None:
             group = Adw.PreferencesGroup()
             group.add(Adw.ActionRow(title="Bluetooth is not installed",
                                     subtitle="sudo pacman -S bluez bluez-utils blueman, then sudo scripts/setup-system.sh --apply"))
@@ -1094,25 +1193,36 @@ class SettingsWindow(Adw.ApplicationWindow):
         pair.add(row)
         page.add(pair)
         self.bt_rows = []
+        self.refreshers["bluetooth"] = self.refresh_bluetooth
         self.refresh_bluetooth()
         return page
 
     def refresh_bluetooth(self):
-        def work():
-            show = sh("bluetoothctl", "show").stdout
+        def work(cancel):
+            budget = sj.Budget(cancel)
+            show = ran(budget, ["bluetoothctl", "show"], strict=False).out
             powered = "Powered: yes" in show
             has_adapter = bool(show.strip()) and "No default controller" not in show
             devices = []
             if has_adapter:
-                for line in sh("bluetoothctl", "devices", "Paired").stdout.splitlines():
+                for line in ran(budget, ["bluetoothctl", "devices", "Paired"], strict=False).out.splitlines():
                     parts = line.split(" ", 2)
                     if len(parts) == 3 and parts[0] == "Device":
-                        info = sh("bluetoothctl", "info", parts[1]).stdout
+                        info = ran(budget, ["bluetoothctl", "info", parts[1]], strict=False).out
                         devices.append((parts[1], parts[2], "Connected: yes" in info))
-            GLib.idle_add(self.apply_bluetooth, has_adapter, powered, devices)
+            return has_adapter, powered, devices
+        self.read("bluetooth/devices", work, self.apply_bluetooth_result)
 
-        import threading
-        threading.Thread(target=work, daemon=True).start()
+    def apply_bluetooth_result(self, result):
+        if not isinstance(result, Exception):
+            return self.apply_bluetooth(*result)
+        self.bt_switch.set_sensitive(False)
+        self.bt_switch.set_subtitle("Could not read Bluetooth")
+        for r in self.bt_rows:
+            self.bt_devices.remove(r)
+        row = self.read_failed_row("Could not read the devices", result, self.refresh_bluetooth)
+        self.bt_devices.add(row)
+        self.bt_rows = [row]
 
     def apply_bluetooth(self, has_adapter, powered, devices):
         self.bt_switch.handler_block(self.bt_switch_handler)
@@ -1223,10 +1333,22 @@ class SettingsWindow(Adw.ApplicationWindow):
         main.add(ask)
         page.add(main)
         sys_group = Adw.PreferencesGroup(title="Settings it changes", description="Put back when you end the mode")
-        vpns = ["None"] + [f[0] for f in map(nm_fields, sh("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show").stdout.splitlines())
-                           if len(f) > 1 and f[1] in ("vpn", "wireguard")]
-        vpn = Adw.ComboRow(title="VPN", model=Gtk.StringList.new(vpns))
+        vpns = ["None"] + ([mode["vpn"]] if mode["vpn"] else [])          # the saved choice shows at once; the rest is read in the background
+        vpn = Adw.ComboRow(title="VPN", subtitle="Reading the connections…", model=Gtk.StringList.new(vpns))
         vpn.set_selected(vpns.index(mode["vpn"]) if mode["vpn"] in vpns else 0)
+
+        def vpn_work(cancel):
+            lines = ran(sj.Budget(cancel), ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]).out.splitlines()
+            return ["None"] + [f[0] for f in map(nm_fields, lines) if len(f) > 1 and f[1] in ("vpn", "wireguard")]
+
+        def vpn_done(names):
+            if isinstance(names, Exception):
+                vpn.set_subtitle(f"Could not read the connections: {names}")
+                return
+            vpn.set_subtitle("")
+            vpn.set_model(Gtk.StringList.new(names))
+            vpn.set_selected(names.index(mode["vpn"]) if mode["vpn"] in names else 0)
+        self.read("modes/vpn-names", vpn_work, vpn_done)
         powers = list(mc.POWER)
         power = Adw.ComboRow(title="Power mode", model=Gtk.StringList.new([mc.POWER[p] for p in powers]))
         power.set_selected(powers.index(mode["power"]) if mode["power"] in powers else 0)
@@ -1259,7 +1381,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         def do_save(*_):
             modes = mc.load_modes()
             buf = text.get_buffer()
-            mode.update(name=name.get_text().strip() or "Mode", ask_dir=ask.get_active(), vpn="" if vpn.get_selected() == 0 else vpns[vpn.get_selected()],
+            mode.update(name=name.get_text().strip() or "Mode", ask_dir=ask.get_active(), vpn="" if vpn.get_selected() == 0 else vpn.get_selected_item().get_string(),
                         power=powers[power.get_selected()], dnd=dnd.get_active(), focus=focus.get_active(),
                         category=mc.CATEGORIES[cats.get_selected()],
                         apps=mc.text_to_apps(buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)))
@@ -1435,11 +1557,20 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.wf_dialog("Add a calendar", box, save)
 
     def wf_add_rule(self):
-        import json as _json
-        classes = sorted({c["class"] for c in _json.loads(sh("hyprctl", "clients", "-j").stdout or "[]")
-                          if c.get("class") and not c["class"].startswith("dev.primo")})
+        classes = []                          # filled in by the read below; the dropdown works with what it has meanwhile
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        pick = Gtk.DropDown.new_from_strings(["Type it below"] + classes)
+        pick = Gtk.DropDown.new_from_strings(["Type it below"])
+
+        def classes_work(cancel):
+            raw = json.loads(ran(sj.Budget(cancel), ["hyprctl", "clients", "-j"]).out or "[]")
+            return sorted({c["class"] for c in raw if c.get("class") and not c["class"].startswith("dev.primo")})
+
+        def classes_done(found):
+            if isinstance(found, Exception):
+                return                        # typing the class still works; nothing to pick from
+            classes[:] = found
+            pick.set_model(Gtk.StringList.new(["Type it below"] + found))
+        self.read("workflow/window-classes", classes_work, classes_done)
         entry = Gtk.Entry(placeholder_text="Window class, e.g. discord")
         ws = Gtk.SpinButton.new_with_range(1, 10, 1)
         ws.set_value(3)
@@ -1517,20 +1648,28 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.health_checks = Adw.PreferencesGroup(title="All checks", description="The same checks as the terminal command: primo doctor")
         page.add(self.health_checks)
         self.health_rows = {"problems": [], "features": [], "checks": []}
+        self.refreshers["health"] = self.refresh_health
         self.refresh_health()
         return page
 
     def refresh_health(self):
-        import threading
         self.health_spinner.set_visible(True)
         self.health_spinner.start()
         self.health_again.set_sensitive(False)
 
-        def work():
-            results = self.dc.sample_results() if os.environ.get("PRIMO_SHOT_MODE") else self.dc.run_all()
-            GLib.idle_add(self.apply_health, results)
+        def work(cancel):
+            return self.dc.sample_results() if os.environ.get("PRIMO_SHOT_MODE") else self.dc.run_all()
+        self.read("health/checks", work, self.apply_health_result)
 
-        threading.Thread(target=work, daemon=True).start()
+    def apply_health_result(self, results):
+        if not isinstance(results, Exception):
+            return self.apply_health(results)
+        self.health_spinner.stop()
+        self.health_spinner.set_visible(False)
+        self.health_again.set_sensitive(True)
+        self.health_icon.set_from_icon_name("dialog-warning-symbolic")
+        self.health_row.set_title("Could not run the checks")
+        self.health_row.set_subtitle(GLib.markup_escape_text(str(results)))
 
     def health_check_row(self, r, with_title=True):
         row = Adw.ActionRow(title=GLib.markup_escape_text(r.title), subtitle=GLib.markup_escape_text(r.message))
@@ -1612,21 +1751,20 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def build_vpn(self):
         page = Adw.PreferencesPage()
-        if sh("sh", "-c", "command -v nmcli").returncode != 0:
+        if shutil.which("nmcli") is None:
             group = Adw.PreferencesGroup()
             group.add(Adw.ActionRow(title="NetworkManager is not installed", subtitle="sudo pacman -S networkmanager"))
             page.add(group)
             return page
 
-        if sh("pacman", "-Q", "networkmanager-openvpn").returncode != 0:
-            need = Adw.PreferencesGroup(title="OpenVPN is not installed")
-            cmd = "sudo pacman -S openvpn networkmanager-openvpn && sudo systemctl restart NetworkManager"
-            row = Adw.ActionRow(title="Install it first", subtitle=cmd)
-            copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Copy the command")
-            copy.connect("clicked", lambda *_: (spawn("wl-copy", cmd), self.toast("Command copied")))
-            row.add_suffix(copy)
-            need.add(row)
-            page.add(need)
+        self.vpn_need = Adw.PreferencesGroup(title="OpenVPN is not installed", visible=False)     # shown when the read finds it missing
+        cmd = "sudo pacman -S openvpn networkmanager-openvpn && sudo systemctl restart NetworkManager"
+        row = Adw.ActionRow(title="Install it first", subtitle=GLib.markup_escape_text(cmd))
+        copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"], tooltip_text="Copy the command")
+        copy.connect("clicked", lambda *_: (spawn("wl-copy", cmd), self.toast("Command copied")))
+        row.add_suffix(copy)
+        self.vpn_need.add(row)
+        page.add(self.vpn_need)
 
         self.vpn_status = Adw.ActionRow(title="Status", subtitle="Checking…")
         top = Adw.PreferencesGroup()
@@ -1649,6 +1787,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         page.add(more)
         self.vpn_rows = []
         self.vpn_busy = False
+        self.refreshers["vpn"] = self.refresh_vpn
         self.refresh_vpn()
         GLib.timeout_add_seconds(4, self.vpn_tick)
         return page
@@ -1662,17 +1801,25 @@ class SettingsWindow(Adw.ApplicationWindow):
         return True
 
     def refresh_vpn(self):
-        def work():
-            active = {f[0] for f in map(nm_fields, sh("nmcli", "-t", "-f", "UUID", "connection", "show", "--active").stdout.splitlines())}
+        def work(cancel):
+            budget = sj.Budget(cancel)
+            active = {f[0] for f in map(nm_fields, ran(budget, ["nmcli", "-t", "-f", "UUID", "connection", "show", "--active"]).out.splitlines())}
             conns = []
-            for line in sh("nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show").stdout.splitlines():
+            for line in ran(budget, ["nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show"]).out.splitlines():
                 name, uuid, kind = (nm_fields(line) + ["", "", ""])[:3]
                 if kind in self.VPN_TYPES:
                     conns.append((name, uuid, self.VPN_TYPES[kind], uuid in active))
-            GLib.idle_add(self.apply_vpn, sorted(conns, key=lambda c: (not c[3], c[0].lower())))
+            openvpn = ran(budget, ["pacman", "-Q", "networkmanager-openvpn"], strict=False).code == 0
+            return sorted(conns, key=lambda c: (not c[3], c[0].lower())), openvpn
+        self.read("vpn/connections", work, self.apply_vpn_result)
 
-        import threading
-        threading.Thread(target=work, daemon=True).start()
+    def apply_vpn_result(self, result):
+        if isinstance(result, Exception):
+            self.vpn_status.set_subtitle(f"Could not read the connections: {result}")      # the rows stay as they were; the next refresh retries
+            return
+        conns, openvpn = result
+        self.vpn_need.set_visible(not openvpn)
+        self.apply_vpn(conns)
 
     def apply_vpn(self, conns):
         for r in self.vpn_rows:
@@ -1776,7 +1923,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             ("Disk usage", "See what takes up space", "drive-harddisk-symbolic", ["baobab"]),
             ("Passwords", "KeePassXC vault", "dialog-password-symbolic", ["keepassxc"]),
         ]:
-            if sh("sh", "-c", f"command -v {cmd[0]}").returncode != 0:
+            if not shutil.which(cmd[0]):
                 continue
             row = Adw.ActionRow(title=title, subtitle=sub, activatable=True)
             row.add_prefix(Gtk.Image.new_from_icon_name(icon))

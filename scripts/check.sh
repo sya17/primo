@@ -40,6 +40,8 @@ else skip "shellcheck not installed"; fi
 
 echo "python"
 python3 scripts/test-idle.py && pass "idle settings and Never" || fail "idle settings"
+python3 scripts/test-settings-jobs.py >"$work/sjobs.out" 2>&1 && pass "Settings reads: two at a time, four waiting, one per key, cancelled when the page is left" || { fail "Settings jobs"; tail -6 "$work/sjobs.out"; }
+python3 scripts/test-settings-window.py >"$work/swin.out" 2>&1 && pass "Settings window with slow tools: pages open at once, the main loop keeps running" || { fail "Settings window"; tail -6 "$work/swin.out"; }
 python3 scripts/test-proc.py >"$work/proc.out" 2>&1 && pass "bounded commands: deadline, output cap, cancel, always reaped" || { fail "bounded commands"; tail -6 "$work/proc.out"; }
 python3 scripts/test-activity.py >"$work/activity.out" 2>&1 && pass "Activity collects off the window's thread, one at a time, and recovers from a failure" || { fail "Activity collector worker"; tail -6 "$work/activity.out"; }
 python3 scripts/test-perf.py >"$work/perf.out" 2>&1 && pass "measurement helper: /proc parsing, restarts and unavailable counters" || { fail "measurement helper"; tail -6 "$work/perf.out"; }
