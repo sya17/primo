@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/sya17/primo/compare/v0.2.0...v0.3.0) (2026-10-09)
+
+### Added
+
+* **cli:** add primo config to list, show and validate settings files ([55d4513](https://github.com/sya17/primo/commit/55d451374c6238289e4ec71e96581aa32eb062d3))
+* **config:** one loader with file and line errors, TOML for new files ([ac5ecce](https://github.com/sya17/primo/commit/ac5ecce5bf155d5aee914d2e4d36997eebd0c8ec))
+* **doctor:** check settings files through the loader with file and line ([05cd5eb](https://github.com/sya17/primo/commit/05cd5ebe151d22dac0096d47c4428ef6334cef0f))
+* **hub:** keep reminders in the data folder, moved once with a backup ([c3ff62d](https://github.com/sya17/primo/commit/c3ff62d3fc1138c42e8429fe1bf5b44bf96b9dea))
+
+### Fixed
+
+* **doctor:** night light and colour picker need their tool to work ([e555ac4](https://github.com/sya17/primo/commit/e555ac49cd33259dbe1770a75771da9cced578c9))
+
+### Faster
+
+* **activity:** collect on a worker so the window never waits ([16f7287](https://github.com/sya17/primo/commit/16f7287a79e94007e48a9c033c6568f8a6b811df))
+* **launcher:** one file search at a time, pruned and stopped when stale ([84da5b2](https://github.com/sya17/primo/commit/84da5b2e5cfde0b5b34b947b204cbd0ceed1dca2))
+
 ## [0.2.0](https://github.com/sya17/primo/compare/v0.1.0...v0.2.0) (2026-10-07)
 
 ### Added
