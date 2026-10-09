@@ -127,7 +127,8 @@ def load_history():
     """The launch counts. The file is read again only when its modification time changed, so typing costs one stat, not a read."""
     global history_reads, _history
     try:
-        stamp = HISTORY.stat().st_mtime_ns
+        st = HISTORY.stat()
+        stamp = (st.st_mtime_ns, st.st_size, st.st_ino)
     except OSError:
         return {}
     if _history[0] != stamp:
@@ -257,12 +258,14 @@ class Facts:
         self._cache = {}      # key -> (time of the last answer, value)
         self._state = {}      # key -> "ok" | "unavailable"
         self._wanted = set()
+        self._used = set()
         self._readers = {"clients": (self._read_clients, 1.0), "workspaces": (self._read_workspaces, 1.0), "themes": (self._read_themes, 5.0),
                          "clipboard": (self._read_clipboard, 2.0), "snippets": (self._read_snippets, 2.0), "modes": (self._read_modes, 2.0)}
 
     # ---- the typing path: cache only
     def _get(self, key):
         hit = self._cache.get(key)
+        self._used.add(key)
         if hit is None or not self.fresh(key):
             self._wanted.add(key)
         return hit[1] if hit else []
@@ -278,6 +281,16 @@ class Facts:
 
     def state(self, key):
         return self._state.get(key)
+
+    def take_used(self):
+        """The keys the providers read since the last call (what the list on screen depends on)."""
+        used, self._used = self._used, set()
+        return used
+
+    def forget(self, key):
+        """Drop a cached value (the clipboard previews when the window closes)."""
+        self._cache.pop(key, None)
+        self._state.pop(key, None)
 
     def take_wanted(self):
         """The keys that were asked for and not fresh, since the last call."""
@@ -312,21 +325,23 @@ class Facts:
 
     # ---- the worker's side: may wait, and can be cancelled
     def refresh(self, keys, cancel):
-        """Read `keys` now (blocking: call from a worker). Returns {key: value} for those that were read; stops at `cancel`."""
+        """Read `keys` now (blocking: call from a worker). Returns {key: value} for those whose value or state changed; stops at `cancel`."""
         out = {}
         for key in keys:
             if cancel.is_set():
                 break
+            before = (self.peek(key), self._state.get(key))
             try:
                 value, state = self._readers[key][0](cancel), "ok"
-            except FactsUnavailable as exc:
+            except Exception as exc:          # a tool failing, or printing something unexpected: unknown, not empty
                 if cancel.is_set():
                     break
                 value, state = self.peek(key) or [], "unavailable"
                 warn_once(f"facts {key}", exc)
             self._cache[key] = (time.monotonic(), value)     # a failure also counts as an answer for its lifetime: no retry loop
             self._state[key] = state
-            out[key] = value
+            if (value, state) != before:
+                out[key] = value
         return out
 
     def _json(self, cmd, cancel):
@@ -421,9 +436,12 @@ class FactsWorker:
                 if not keys or self.cancelled.is_set():
                     self.busy = False
                     return
-            values = self.facts.refresh(keys, self.cancelled)
-            if values and not self.cancelled.is_set():
-                self.deliver(values)
+            try:
+                values = self.facts.refresh(keys, self.cancelled)
+                if values and not self.cancelled.is_set():
+                    self.deliver(values)
+            except Exception as exc:          # the worker must stay usable for the next request
+                warn_once("facts worker", exc)
 
 
 class SampleFacts(Facts):

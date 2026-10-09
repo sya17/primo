@@ -330,6 +330,35 @@ while w4.busy and time.monotonic() < end:
     time.sleep(0.01)
 assert not w4.busy and after_close == [], after_close
 
+# a reader that raises something unexpected is "unavailable", and the worker stays usable for the next request
+def bad_run(cmd, cancel):
+    return pc.Run(code=0, out='{"not": "a list"}')
+f5 = lc.Facts(run=bad_run)
+survived = []
+w5 = lc.FactsWorker(f5, survived.append)
+w5.request(("clients",))
+end = time.monotonic() + 3
+while w5.busy and time.monotonic() < end:
+    time.sleep(0.01)
+assert not w5.busy and f5.state("clients") == "unavailable" and f5.clients() == [], (w5.busy, f5.state("clients"))
+f5._run = lambda cmd, cancel: pc.Run(code=0, out=CLIENTS)
+f5._cache["clients"] = (0.0, [])
+w5.request(("clients",))
+end = time.monotonic() + 3
+while (w5.busy or not survived) and time.monotonic() < end:
+    time.sleep(0.01)
+assert survived and f5.state("clients") == "ok" and f5.clients()[0]["class"] == "firefox", "the second request worked"
+
+# only what changed is delivered, and the keys a list used are known
+f6 = lc.Facts(run=lambda cmd, cancel: pc.Run(code=0, out=CLIENTS))
+assert set(f6.refresh(("clients", "modes"), threading.Event())) == {"clients", "modes"}
+f6._cache["clients"] = (0.0, f6._cache["clients"][1])
+assert f6.refresh(("clients",), threading.Event()) == {}, "the same answer again is not news"
+lc.collect("fire", lc.Context(apps=ctx.apps, facts=f6, launch_app=lambda i: None))
+assert {"clients", "snippets", "modes"} <= f6.take_used() and f6.take_used() == set()
+f6.forget("clients")
+assert f6.peek("clients") is None and f6.state("clients") is None
+
 # a provider that fails does not take the healthy results with it (here: every tool is missing)
 dead = lc.Context(apps=ctx.apps, facts=lc.Facts(run=lambda cmd, cancel: pc.Run(reason="missing")), launch_app=lambda i: None)
 assert [i.title for i in lc.collect("fire", dead)][0] == "Firefox"

@@ -36,32 +36,33 @@ def run_bounded(cmd, deadline=DEADLINE, cap=CAP, cancel=None, env=None):
         return Run(reason="missing")
     chunks = {proc.stdout: [], proc.stderr: []}
     size, reason, end = 0, "", time.monotonic() + deadline
-    with selectors.DefaultSelector() as sel:
-        for pipe in chunks:
-            sel.register(pipe, selectors.EVENT_READ)
-        while sel.get_map():
-            if cancel is not None and cancel.is_set():
-                reason = "cancelled"
-            elif time.monotonic() >= end:
-                reason = "timeout"
-            elif size >= cap:
-                reason = "output too large"
-            if reason:
-                break
-            for key, _ in sel.select(0.05):
-                data = os.read(key.fd, 65536)
-                if data:
-                    chunks[key.fileobj].append(data)
-                    size += len(data)
-                else:
-                    sel.unregister(key.fileobj)
-    if reason:
-        proc.kill()
     try:
-        proc.wait(timeout=2)
-    except subprocess.TimeoutExpired:     # a process that ignores SIGKILL for two seconds is not ours to wait for
-        reason = reason or "timeout"
-    for pipe in chunks:
-        pipe.close()
+        with selectors.DefaultSelector() as sel:
+            for pipe in chunks:
+                sel.register(pipe, selectors.EVENT_READ)
+            while True:
+                if cancel is not None and cancel.is_set():
+                    reason = "cancelled"
+                elif time.monotonic() >= end:
+                    reason = "timeout"
+                elif size >= cap:
+                    reason = "output too large"
+                elif not sel.get_map() and proc.poll() is not None:
+                    break              # both pipes closed and the program is gone: done
+                if reason:
+                    break
+                for key, _ in sel.select(0.05):
+                    data = os.read(key.fd, 65536)
+                    if data:
+                        chunks[key.fileobj].append(data)
+                        size += len(data)
+                    else:
+                        sel.unregister(key.fileobj)
+    finally:
+        if proc.poll() is None:        # still running: a timeout, a cancel, a cap, a program that closed its pipes and lingers, or an error
+            proc.kill()
+        proc.wait()                    # SIGKILL cannot be ignored: this returns, and the child is reaped
+        for pipe in chunks:
+            pipe.close()
     text = lambda pipe: b"".join(chunks[pipe]).decode(errors="replace")
     return Run(None if reason else proc.returncode, text(proc.stdout), text(proc.stderr), reason)

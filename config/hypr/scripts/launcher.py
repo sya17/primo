@@ -65,9 +65,10 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.file_hits = []
         self.query_token = 0
         self.alive = True
+        self.used = set()
         self.search = FileSearch(lambda text, hits: GLib.idle_add(self.apply_file_hits, hits, text))
         # Windows, clipboard and the like are read by a worker; typing only ever uses what is cached.
-        self.facts_worker = FactsWorker(app.facts, lambda _values: GLib.idle_add(self.apply_facts))
+        self.facts_worker = FactsWorker(app.facts, lambda values: GLib.idle_add(self.apply_facts, set(values)))
         self.connect("close-request", self.on_close)
         self.connect("map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
 
@@ -102,7 +103,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.add_controller(keys)
         self.connect("notify::is-active", self.on_active_changed)
         self.rebuild("")
-        self.facts_worker.request(("clients", "snippets", "modes"))      # what the first keystroke will want
+        if not isinstance(app.facts, SampleFacts):
+            self.facts_worker.request(("clients", "snippets", "modes"))   # what the first keystroke will want
         self.entry.grab_focus()
         preset = os.environ.get("PRIMO_LAUNCHER_QUERY")  # used to take documentation screenshots
         if preset:
@@ -140,39 +142,43 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.alive = False
         self.search.cancel()
         self.facts_worker.cancel()
+        self.app.facts.forget("clipboard")          # previews of what you copied do not stay in memory after the window closes
         return False
 
     def collect(self, text):
         ctx = Context(apps=self.app.apps, file_hits=self.file_hits, history=load_history(), facts=self.app.facts, launch_app=self.launch_app)
         items = collect(text, ctx)
+        self.used = self.app.facts.take_used()     # what this list depends on
         wanted = self.app.facts.take_wanted()      # what the providers used and the cache did not have fresh
         if wanted and self.alive:
             self.facts_worker.request(wanted)
         return items
 
-    def apply_facts(self):
-        if self.alive:                              # not for a window that closed meanwhile
+    def apply_facts(self, changed):
+        if self.alive and (changed & self.used):    # not for a window that closed meanwhile, nor for facts the list does not show
             self.rebuild(self.entry.get_text(), keep_selection=True)
         return False
 
     def rebuild(self, text, keep_selection=False):
         previous = None
         if keep_selection and self.listbox.get_selected_row():
-            previous = self.listbox.get_selected_row().item.title
+            chosen = self.listbox.get_selected_row().item
+            previous = (chosen.kind, chosen.title)
         child = self.listbox.get_first_child()
         while child:
             nxt = child.get_next_sibling()
             self.listbox.remove(child)
             child = nxt
         self.items = self.collect(text)
-        selected = None
+        first = kept = None
         for it in self.items:
             row = self.make_row(it)
             self.listbox.append(row)
-            if selected is None or (previous and it.title == previous):
-                selected = row if selected is None or it.title == previous else selected
-        if selected:
-            self.listbox.select_row(selected)
+            first = first or row
+            if kept is None and previous == (it.kind, it.title):
+                kept = row                         # the first row that is the same kind and title: "Settings" the app, not the action
+        if first:
+            self.listbox.select_row(kept or first)
         self.scroller.set_visible(bool(self.items))
 
     def make_row(self, it):

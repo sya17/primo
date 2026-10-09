@@ -69,4 +69,14 @@ assert r.out.split() == ["yes", "True"], r
 # non-UTF-8 output does not raise
 r = py("import sys; sys.stdout.buffer.write(b'ok \\xff\\xfe done')")
 assert r.ok and r.out.startswith("ok ") and r.out.endswith(" done"), r
+# a program that closes its output and keeps running is stopped at the deadline, not left behind
+t0 = time.monotonic()
+r = py("import os, time; print(os.getpid(), flush=True); os.close(1); os.close(2); time.sleep(30)", deadline=0.5)
+assert r.reason == "timeout" and time.monotonic() - t0 < 2.5 and not alive(int(r.out.split()[0])), (r, time.monotonic() - t0)
+
+# many runs leave no zombies behind
+for _ in range(20):
+    py("print(1)")
+    py("import time; time.sleep(5)", deadline=0.05)
+assert not [c for c in __import__("subprocess").run(["ps", "--ppid", str(os.getpid()), "-o", "stat="], capture_output=True, text=True).stdout.split() if c.startswith("Z")]
 print("bounded command checks passed")
