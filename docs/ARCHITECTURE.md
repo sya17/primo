@@ -56,13 +56,36 @@ that raises is skipped. `doctor_core.py` holds the feature registry (what each f
 the checks behind `primo doctor` and Settings > Health; both read the system through one small `System` class that tests replace with
 sample data.
 
-## Saving your files
+## Configuration
 
-Modes, workflow settings and the time hub's data are JSON files under `~/.config/primo/` and the state folder. `config_core.py` reads
-and writes them: a file that does not parse (a typo after a hand edit) is copied to `<name>.bad-<time>` before anything is saved over it,
-defaults are used for that run, and a warning goes to stderr. Saves go through a temporary file that replaces the old one, so a crash or
-a full disk leaves the previous file whole. A file that cannot be read, or that a newer Primo wrote (a `version` above the one this
-code knows), is never overwritten. The same module finds the XDG folders for every tool; an empty or relative `XDG_*` value is ignored.
+**Formats.** Settings you change in Settings (modes, workflow, activity) are JSON. New files meant to be written by hand (mode and project
+definitions, in later releases) will be TOML: comments are allowed and Primo only reads them, never rewrites them. `theme.conf` and the
+one-line state files (`current`, `wallpaper`, …) stay plain text because bash reads them. There is no YAML.
+
+**Folders.** `config_core.py` finds them for every tool and follows the XDG variables (an empty or relative value is ignored):
+
+| Folder | Default | Holds |
+| --- | --- | --- |
+| config | `~/.config/primo/` | `modes.json`, `workflow.json` (private: mode 0600), `activity.json`, TOML definitions |
+| data | `~/.local/share/primo/` | `hub.json`: reminders, alarms, timers and the focus log |
+| state | `~/.local/state/hyprland-dotfiles/` | what the desktop is doing now: theme, wallpaper, the running mode, caches |
+
+`primo config path` lists them, `primo config show` prints the settings in effect and where each value comes from (calendar links and
+snippet texts hidden), `primo config validate` checks every file. `primo doctor` and Settings > Health run the same check.
+
+**The loader.** Tools read with `config_core.read_json` (forgiving: defaults for a broken or missing file) and save with `write_json`
+or `atomic_write`; checks use `config_core.load` (strict: a `ConfigError` with the file, line and column, never the content).
+A file that does not parse is copied to `<name>.bad-<time>` before anything is saved over it, and a warning goes to stderr. Saves go
+through a temporary file that replaces the old one, so a crash or a full disk leaves the previous file whole. A file that cannot be read,
+or that a newer Primo wrote (a `version` above the one the code knows), is never overwritten.
+
+**Adding a file.** Put it in the right folder, add it to `config_core.FILES` (name, folder, path, list or table) so that `primo config`
+and the Health check know it, read it with `read_json` (or `load` for a TOML definition) and save it with `write_json`. Give a new file
+`version = 1` and keep accepting files without it. Tests set the `XDG_*` variables to temporary folders.
+
+**Moving a file.** A move runs once, in the one process that owns the file, keeps the old file as `<name>.bak-primo`, is harmless when it
+runs again, and leaves the old place in use when it cannot finish; nothing is deleted. `hub_core.migrate` (the hub data, from the
+state folder to the data folder in 0.3.0) is the example. The old place stays readable for at least one release.
 
 ## Checks
 
