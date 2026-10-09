@@ -79,4 +79,12 @@ for _ in range(20):
     py("print(1)")
     py("import time; time.sleep(5)", deadline=0.05)
 assert not [c for c in __import__("subprocess").run(["ps", "--ppid", str(os.getpid()), "-o", "stat="], capture_output=True, text=True).stdout.split() if c.startswith("Z")]
+# input on stdin, bigger than a pipe buffer, without deadlocking against a program that answers while it reads
+r = py("import sys; data = sys.stdin.buffer.read(); print(len(data))", data=b"x" * 500_000, deadline=10)
+assert r.ok and r.out.strip() == "500000", r
+r = py("import sys; sys.stdout.write(sys.stdin.read().upper())", data=b"hello")
+assert r.ok and r.out == "HELLO", r
+r = py("import time; time.sleep(30)", data=b"ignored", deadline=0.3)             # a program that never reads: still stopped at the deadline
+assert r.reason == "timeout", r
+
 print("bounded command checks passed")

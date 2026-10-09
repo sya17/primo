@@ -26,11 +26,11 @@ class Budget:
         self.cancel, self.total, self.per_child, self.cap = cancel, total, per_child, cap
         self.end = time.monotonic() + total
 
-    def __call__(self, argv, env=None):
+    def __call__(self, argv, env=None, data=None):
         left = self.end - time.monotonic()
         if left <= 0:
             return pc.Run(reason="timeout")
-        return pc.run_bounded(argv, deadline=min(self.per_child, left), cap=self.cap, cancel=self.cancel, env=env)
+        return pc.run_bounded(argv, deadline=min(self.per_child, left), cap=self.cap, cancel=self.cancel, env=env, data=data)
 
 
 class _Job:

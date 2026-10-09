@@ -80,6 +80,10 @@ Wallpaper previews are made by `thumbnail_core.render`, which supervises one dec
 waiting: pictures over 32 MiB, headers that declare more than 40 million pixels, previews over 900 x 520 or 4 MiB, a decoder that takes
 more than 5 seconds or 256 MiB more memory are refused and the tile still appears, with the reason in its tooltip. A video goes
 through `ffmpegthumbnailer` at a finite size. Each preview works in its own private folder, removed when it ends or is cancelled.
+The clipboard picker (`clipboard_core`) reads the history, copies, deletes and previews in the background too: the history is capped at
+120 entries and 1 MiB of output, a copy decodes into a private file and only then starts `wl-copy` (so a vanished entry never empties the
+clipboard; 10 s, up to 256 MiB), previews follow the picture limits, "Clear all" asks first, and closing the picker stops reads and
+previews while a copy or delete already started finishes.
 The file search runs `find` off the GTK thread through `launcher_core.FileSearch`: one child at a time and one waiting query, a newer
 query or closing the window stops the running child (by its own handle, never by name), hidden folders and `node_modules` are pruned
 before they are entered, and a result is shown only if it belongs to the text still in the box. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and
