@@ -16,9 +16,7 @@ word and a space to ask one source only:
 Up/Down move, Enter opens, Esc closes. Calculator results are copied with Enter. The sources live in launcher_core.py.
 """
 import os
-import subprocess
 import sys
-import threading
 import warnings
 from pathlib import Path
 
@@ -31,7 +29,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_core as cc  # noqa: E402
-from launcher_core import KIND_LABEL, Context, Facts, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
+from launcher_core import KIND_LABEL, Context, Facts, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -63,6 +61,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.items = []
         self.file_hits = []
         self.query_token = 0
+        self.alive = True
+        self.search = FileSearch(lambda text, hits: GLib.idle_add(self.apply_file_hits, hits, text))
+        self.connect("close-request", self.on_close)
 
         # The window is fixed-size and transparent; the visible card sits at its top and grows
         # downwards, so the search box never jumps while results appear (Hyprland keeps a floating
@@ -114,30 +115,23 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.file_hits = []
         if len(text.strip()) >= 3 and not calculate(text) and route(text.lstrip())[0] is None:
             GLib.timeout_add(260, self.start_file_search, text.strip(), token)
+        else:
+            self.search.cancel()        # shorter query, a calculation or a command word: obsolete file work stops
 
     def start_file_search(self, text, token):
-        if token != self.query_token:
-            return False
-
-        def work():
-            hits = []
-            try:
-                out = subprocess.run(
-                    ["find", str(Path.home()), "-maxdepth", "5", "-iname", f"*{text}*",
-                     "-not", "-path", "*/.*", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/.cache/*"],
-                    capture_output=True, text=True, timeout=2.5).stdout.splitlines()
-                hits = out[:6]
-            except (subprocess.TimeoutExpired, OSError):
-                pass
-            GLib.idle_add(self.apply_file_hits, hits, token)
-
-        threading.Thread(target=work, daemon=True).start()
+        if token == self.query_token and self.alive:   # the user stopped typing for a moment
+            self.search.search(text)
         return False
 
-    def apply_file_hits(self, hits, token):
-        if token == self.query_token:
+    def apply_file_hits(self, hits, text):
+        if self.alive and text == self.entry.get_text().strip():   # never for an older query or a closed window
             self.file_hits = hits
             self.rebuild(self.entry.get_text(), keep_selection=True)
+        return False
+
+    def on_close(self, *_):
+        self.alive = False
+        self.search.cancel()
         return False
 
     def collect(self, text):

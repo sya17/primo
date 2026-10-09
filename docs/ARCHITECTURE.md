@@ -61,7 +61,10 @@ logged once. `PRIMO_DEBUG=1` adds debug lines. When the services become systemd 
 
 `launcher_core.py` holds the launcher's logic without GTK: a registry of providers (calculator, applications, windows, actions, workspaces,
 themes, clipboard, files, web) that each answer a query with results, and the command words that route a query to one of them. A provider
-that raises is skipped. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and
+that raises is skipped (and logged once).
+The file search runs `find` off the GTK thread through `launcher_core.FileSearch`: one child at a time and one waiting query, a newer
+query or closing the window stops the running child (by its own handle, never by name), hidden folders and `node_modules` are pruned
+before they are entered, and a result is shown only if it belongs to the text still in the box. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and
 the checks behind `primo doctor` and Settings > Health; both read the system through one small `System` class that tests replace with
 sample data.
 

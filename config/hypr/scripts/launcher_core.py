@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -128,6 +129,83 @@ def bump_history(key):
     data = load_history()
     data[key] = data.get(key, 0) + 1
     cc.atomic_write(HISTORY, json.dumps(data))
+
+
+def find_command(root, text, depth=5):
+    """`find` for names containing `text` (literally, any case) under `root`: hidden folders and node_modules are pruned before they
+    are entered, symlinks are not followed, at most `depth` levels."""
+    pattern = "*" + re.sub(r"([*?\[\]\\])", r"\\\1", text) + "*"
+    return ["find", "-P", str(root), "-mindepth", "1", "-maxdepth", str(depth),
+            "(", "-name", ".*", "-o", "-name", "node_modules", ")", "-prune", "-o", "-iname", pattern, "-print"]
+
+
+class FileSearch:
+    """Searches files for the launcher, off the GTK thread. At most one child runs and at most one query waits; a newer query stops
+    the running child (only the child this object started, by its own handle), and only the newest query's result is delivered:
+    `deliver(text, hits)` from the worker thread. A child is stopped after `timeout` seconds or once `limit` results are in."""
+
+    def __init__(self, deliver, root=None, limit=6, timeout=2.5, command=None):
+        self.deliver, self.root, self.limit, self.timeout = deliver, root or Path.home(), limit, timeout
+        self.command = command or (lambda text: find_command(self.root, text))
+        self.lock = threading.Lock()
+        self.pending = None      # the query waiting to run
+        self.current = None      # the query whose child is running; None once it is superseded or cancelled
+        self.child = None
+        self.busy = False
+
+    def search(self, text):
+        with self.lock:
+            self.pending, self.current = text, None
+            self._stop(self.child)
+            if self.busy:
+                return
+            self.busy = True
+        threading.Thread(target=self._work, daemon=True).start()
+
+    def cancel(self):
+        with self.lock:
+            self.pending = self.current = None
+            self._stop(self.child)
+
+    def _start(self, cmd):
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True, errors="replace")
+
+    @staticmethod
+    def _stop(proc):
+        if proc is not None and proc.poll() is None:   # not reaped yet, so the PID is still this child's
+            proc.kill()
+
+    def _work(self):
+        while True:
+            with self.lock:
+                text, self.pending = self.pending, None
+                if text is None:
+                    self.busy = False
+                    return
+                self.current = text
+                try:
+                    self.child = proc = self._start(self.command(text))
+                except OSError:
+                    self.child = proc = None
+            hits = []
+            if proc is not None:
+                timer = threading.Timer(self.timeout, self._stop, [proc])
+                timer.start()
+                for line in proc.stdout:
+                    hits.append(line.rstrip("\n")[:4096])
+                    if len(hits) >= self.limit:
+                        self._stop(proc)
+                        break
+                timer.cancel()
+                proc.stdout.close()
+                proc.wait()
+                if proc.returncode and proc.returncode < 0 and len(hits) < self.limit:
+                    hits = []                  # stopped (timeout or a newer query): a partial list would look complete
+            with self.lock:
+                self.child = None
+                fresh = self.current == text and self.pending is None
+            if fresh:
+                self.deliver(text, hits)
 
 
 def spawn(*cmd):

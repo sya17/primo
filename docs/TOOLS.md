@@ -32,7 +32,8 @@ A libadwaita app with these pages:
 
 One search box for everything: applications ranked by how often you open them, a calculator (`12*(3+4)`, `sqrt(16)`, `15% of 80`; Enter
 copies the result), system actions (lock, sleep, dark and light, night light, settings pages, modes, calendar, reminders, notes),
-your snippets, open windows, files under your home folder, and a web search fallback.
+your snippets, open windows, files under your home folder (five levels deep; hidden folders and `node_modules` are skipped), and a
+web search fallback.
 
 Type a command word and a space to ask one source only:
 

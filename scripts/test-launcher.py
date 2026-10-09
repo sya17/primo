@@ -128,6 +128,69 @@ assert [i.title for i in lc.collect("ws ", sample_ctx)] == ["Go to workspace 1",
 assert lc.collect("win ", sample_ctx) and {i.kind for i in lc.collect("win ", sample_ctx)} == {"window"}
 assert sf.snippets() == [] and sf.modes() == [] and sf.clipboard() == []
 
+# ---- file search: pruned before traversal, literal names, one child at a time, newest query only, bounded
+import subprocess, threading, time
+from pathlib import Path
+tree = Path(tempfile.mkdtemp())
+for rel in ["notes/report.txt", "notes/a*b [x].txt", "node_modules/pkg/report.js", ".cache/report.bin", "code/.git/report.pack", "deep/1/2/3/4/5/6/report.md"]:
+    (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+    (tree / rel).write_text("x")
+(tree / "node_modules" / "locked").mkdir()
+(tree / "node_modules" / "locked").chmod(0)                     # if find went inside, it would complain about this folder
+def find(q):
+    r = subprocess.run(lc.find_command(tree, q), capture_output=True, text=True)
+    return sorted(Path(line).relative_to(tree).as_posix() for line in r.stdout.splitlines()), r.stderr
+hits, err = find("report")
+assert hits == ["notes/report.txt"] and err == "", (hits, err)     # hidden folders and node_modules pruned, depth bounded
+assert find("b [x")[0] == ["notes/a*b [x].txt"] and find("*")[0] == ["notes/a*b [x].txt"] and find("?")[0] == []   # glob characters are literal
+assert find("-delete")[0] == [] and (tree / "notes/report.txt").exists()                                         # a query is never an option
+(tree / "node_modules" / "locked").chmod(0o700)
+
+delivered, children, alive_max = [], [], [0]
+def slow_child(text):                                            # stands in for find: prints after a while, or many lines at once
+    code = "import sys,time; time.sleep(float(sys.argv[1])); [print(f'/x/{sys.argv[2]}-{i}', flush=True) for i in range(int(sys.argv[3]))]; time.sleep(float(sys.argv[4]))"
+    delay, count, tail = {"slow": ("0.6", "1", "0"), "many": ("0", "50", "5"), "hang": ("9", "1", "0")}.get(text.split()[0], ("0.05", "1", "0"))
+    return [sys.executable, "-c", code, delay, text.replace(" ", "_"), count, tail]
+class Spy(lc.FileSearch):
+    def _start(self, cmd):
+        proc = super()._start(cmd)
+        children.append(proc)
+        alive_max[0] = max(alive_max[0], sum(1 for c in children if c.poll() is None))
+        return proc
+def wait_idle(fs, limit=8.0):
+    end = time.time() + limit
+    while fs.busy and time.time() < end:
+        time.sleep(0.02)
+    assert not fs.busy, "the search worker did not finish"
+
+fs = Spy(lambda q, hits: delivered.append((q, hits)), command=slow_child, limit=6, timeout=1.0)
+fs.search("slow one")
+time.sleep(0.15)
+fs.search("slow two")                                            # supersedes: the running child is stopped, only the newest result arrives
+fs.search("quick three")
+wait_idle(fs)
+assert delivered == [("quick three", ["/x/quick_three-0"])], delivered
+assert alive_max[0] == 1 and all(c.returncode is not None for c in children), "one child at a time, every child reaped"
+assert len(children) == 2 and children[0].returncode < 0, "the superseded child was stopped; the middle query never started"
+
+delivered.clear(); children.clear()
+fs.search("many lines")                                          # stops reading (and the child) once enough results are in
+wait_idle(fs)
+assert delivered == [("many lines", [f"/x/many_lines-{i}" for i in range(6)])] and children[0].returncode < 0, delivered
+
+delivered.clear(); children.clear()
+fs.search("hang forever")                                        # a child that takes too long is stopped; nothing stale is shown
+wait_idle(fs)
+assert delivered == [("hang forever", [])] and children[0].returncode < 0, delivered
+
+delivered.clear(); children.clear()
+fs.search("slow again")
+time.sleep(0.15)
+fs.cancel()                                                      # window closed or the query no longer searches files
+wait_idle(fs)
+assert delivered == [] and children[0].returncode < 0, delivered
+assert "pkill" not in Path(lc.__file__).read_text() and "killall" not in Path(lc.__file__).read_text()
+
 # a failing source is skipped, the rest still answer
 class Broken(lc.Provider):
     id, label, order, limit = "broken", "BROKEN", 1, 3

@@ -6,6 +6,8 @@
     scripts/perf-baseline.py activity [--expire 31]             the Activity collector: cold, warm, and after its 5/6/30 s caches expire
     scripts/perf-baseline.py launcher [--count 30]              launcher input-to-result latency: one call of launcher_core.collect()
                                                                 per typed query (no window, no file search, no painting)
+    scripts/perf-baseline.py files                              the launcher's file search in your home folder: time until the
+                                                                result is delivered, CPU of the find children, children started
 
 Prints JSON on stdout and writes nothing. Records the source revision, whether the tree has uncommitted changes, the machine, and which
 Primo windows were open (counts only). Never records window titles, command lines or file names: only the names of Primo's services.
@@ -20,6 +22,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -177,6 +180,25 @@ def cmd_launcher(args):
             "first_call_ms": walls[0] if walls else None, "next_calls_ms": spread(walls[1:])}
 
 
+FILE_QUERIES = ["readme", "config", "zzqx-no-such-name", "notes", "png"]
+
+
+def cmd_files(args):
+    sys.path.insert(0, str(SCRIPTS))
+    import launcher_core as lc
+    runs = []
+    for q in FILE_QUERIES:
+        done = threading.Event()
+        got = []
+        search = lc.FileSearch(lambda _t, hits: (got.append(len(hits)), done.set()))
+        started = []
+        real_start = search._start
+        search._start = lambda cmd: started.append(1) or real_start(cmd)
+        _r, wall, _own, kids = timed(lambda: (search.search(q), done.wait(10)))
+        runs.append({"query_length": len(q), "wall_ms": wall, "children_cpu_ms": kids, "results": got[0] if got else None, "children": len(started)})
+    return {"workload": "launcher file search: FileSearch.search(query) until the result is delivered (results counted, never listed)", "runs": runs}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="perf-baseline.py", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -190,6 +212,7 @@ def main(argv=None):
     sp = sub.add_parser("launcher")
     sp.add_argument("--count", type=int, default=30)
     sp.set_defaults(fn=cmd_launcher)
+    sub.add_parser("files").set_defaults(fn=cmd_files)
     args = p.parse_args(argv)
     print(json.dumps({"context": context(), **args.fn(args)}, indent=1))
     return 0
