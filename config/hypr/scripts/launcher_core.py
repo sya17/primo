@@ -18,6 +18,7 @@ A command word ("ws", "theme", "clip", "win") followed by a space sends the quer
 """
 import ast
 import json
+import logging
 import math
 import operator
 import re
@@ -35,6 +36,16 @@ import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 
 STATE_DIR = cc.state_home() / "hyprland-dotfiles"
+log = logging.getLogger("primo.launcher")
+_warned = set()
+
+
+def warn_once(what, exc):
+    """Log a failure once, not on every keystroke."""
+    key = (what, type(exc).__name__, str(exc))
+    if key not in _warned:
+        _warned.add(key)
+        log.warning("%s failed: %s: %s", what, type(exc).__name__, exc)
 HISTORY = STATE_DIR / "launcher-history.json"
 MAX_RESULTS = 9
 
@@ -208,7 +219,8 @@ class Facts:
             try:
                 import workflow_core
                 return workflow_core.load()["snippets"]
-            except Exception:
+            except Exception as exc:
+                warn_once("snippets", exc)
                 return []
         return self._cached("snippets", read, ttl=2.0)
 
@@ -217,7 +229,8 @@ class Facts:
             try:
                 import modes_core
                 return modes_core.load_modes()
-            except Exception:
+            except Exception as exc:
+                warn_once("modes", exc)
                 return []
         return self._cached("modes", read, ttl=2.0)
 
@@ -509,7 +522,8 @@ def collect(text, ctx, providers=PROVIDERS, cap=MAX_RESULTS + 3):
     for p in [provider] if provider else providers:
         try:
             got = p.query(q, ctx, args.strip() if provider else None)
-        except Exception:
+        except Exception as exc:          # a failing source is skipped; the others still answer
+            warn_once(f"source {p.id}", exc)
             continue
         got.sort(key=lambda i: -i.score)
         items.extend((p.order, i) for i in got[:p.limit])

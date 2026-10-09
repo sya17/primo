@@ -7,6 +7,7 @@ and notifies you when they are due. Everything it remembers is in the data folde
     hub.py --daemon        start the service (autostart does this)
     hub.sh toggle|calendar|reminders|clock|focus|notes|new-note     what the clock click and the keybinds call
 """
+import logging
 import os
 import re
 import subprocess
@@ -20,6 +21,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import config_core as cc  # noqa: E402
 import hub_core as hc  # noqa: E402
 import modes_core as mc  # noqa: E402
 import workflow_core as wf  # noqa: E402
@@ -1346,8 +1348,7 @@ class HubWindow(Adw.ApplicationWindow):
         return None
 
     def on_active_changed(self, *_):
-        if os.environ.get("PRIMO_HUB_DEBUG"):
-            print("active:", self.is_active(), "pinned", self.pinned, "holds", self.holds, file=sys.stderr)
+        log.debug("active %s, pinned %s, holds %s", self.is_active(), self.pinned, self.holds)
         if not self.is_active():
             GLib.timeout_add(250, lambda: (self.close() if self.alive and not self.is_active() and not self.pinned and not self.holds
                                            and not self.editing() else None, False)[1])
@@ -1502,7 +1503,7 @@ class Service(Adw.Application):
             for feed in self.wf["ics"]:
                 err = wf.fetch_feed(feed["url"])
                 if err:
-                    print("calendar feed", feed.get("name", ""), err, file=sys.stderr)
+                    log.warning("calendar feed %r: %s", feed.get("name", ""), err)
             GLib.idle_add(lambda: (self.load_events(), False)[1])
 
         threading.Thread(target=work, daemon=True).start()
@@ -1698,8 +1699,8 @@ class Service(Adw.Application):
             self.write_status()
             if self.visible():
                 self.window.tick()
-        except Exception as exc:   # one bad entry must not stop every alarm
-            print("hub tick:", exc, file=sys.stderr)
+        except Exception:          # one bad entry must not stop every alarm
+            log.exception("tick failed")
         return True
 
     def check_due(self, now, startup=False):
@@ -1855,5 +1856,8 @@ def json_dumps(obj):
     return json.dumps(obj, ensure_ascii=False)
 
 
+log = logging.getLogger("primo.hub")
+
 if __name__ == "__main__":
+    log = cc.setup_logging("hub")
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

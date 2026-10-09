@@ -48,6 +48,15 @@ The launcher (`launcher.py`), Alt+Tab switcher (`switcher.py`), overview (`overv
 D-Bus (`org.gtk.Actions.Activate`). The windows close themselves safely (focus loss, or an idle timeout). The hub also keeps timers, alarms
 and reminders running while its window is closed; the activity monitor only measures while its window is open.
 
+## Logs
+
+Each resident service calls `config_core.setup_logging("<name>")` once and logs through Python's `logging` (`primo.<name>`):
+`LEVEL name: message` on stderr, and the same lines with a time in `~/.local/state/hyprland-dotfiles/log/<name>.log` (at most two files
+of 256 KiB). The file is there because the desktop discards the stderr of the programs it starts today. Uncaught errors in GTK callbacks
+and worker threads are logged with their traceback; a failure that repeats (a broken launcher source, an unreadable settings file) is
+logged once. `PRIMO_DEBUG=1` adds debug lines. When the services become systemd user units (0.7.0), stderr goes to the journal
+(`journalctl --user -u <unit>`) and the files can go.
+
 ## Launcher sources and the health model
 
 `launcher_core.py` holds the launcher's logic without GTK: a registry of providers (calculator, applications, windows, actions, workspaces,

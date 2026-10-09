@@ -30,6 +30,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config_core as cc  # noqa: E402
 from launcher_core import KIND_LABEL, Context, Facts, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -292,6 +293,7 @@ class Service(Adw.Application):
 
 
 def main():
+    cc.setup_logging("launcher")
     return Service("--daemon" in sys.argv).run([sys.argv[0]])
 
 

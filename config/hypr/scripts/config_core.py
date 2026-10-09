@@ -8,10 +8,13 @@ Standard library only.
 """
 import itertools
 import json
+import logging
+import logging.handlers
 import os
 import stat
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 from pathlib import Path
@@ -135,14 +138,41 @@ def preserve(path, raw):
         return copy
 
 
+log = logging.getLogger("primo.config")
 _warned = set()
 
 
 def _warn(key, message):
-    """One line on stderr, once per problem: a resident service reads its files again and again."""
+    """One warning per problem: a resident service reads its files again and again."""
     if key not in _warned:
         _warned.add(key)
-        print("primo: " + message, file=sys.stderr)
+        log.warning(message)
+
+
+def setup_logging(service):
+    """The log of one service (call it once at start; returns its logger). `LEVEL name: message` goes to stderr, where a systemd unit
+    will hand it to the journal (0.7.0). The desktop discards the stderr of what it starts today, so the same lines also go to
+    <state>/hyprland-dotfiles/log/<service>.log, with a time, in at most two files of 256 KiB. Uncaught errors (a GTK callback, a worker
+    thread) are logged too. PRIMO_DEBUG=1 adds debug lines."""
+    root = logging.getLogger("primo")
+    if root.handlers:
+        return logging.getLogger(f"primo.{service}")
+    root.setLevel(logging.DEBUG if os.environ.get("PRIMO_DEBUG") else logging.INFO)
+    stream = logging.StreamHandler()
+    stream.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    root.addHandler(stream)
+    try:
+        folder = state_home() / "hyprland-dotfiles" / "log"
+        folder.mkdir(parents=True, exist_ok=True)
+        to_file = logging.handlers.RotatingFileHandler(folder / f"{service}.log", maxBytes=256 * 1024, backupCount=1, encoding="utf-8")
+        to_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
+        root.addHandler(to_file)
+    except OSError as e:
+        root.warning("no log file (%s): warnings go to stderr only", e.strerror)
+    service_log = logging.getLogger(f"primo.{service}")
+    sys.excepthook = lambda kind, value, tb: service_log.error("uncaught %s", kind.__name__, exc_info=(kind, value, tb))
+    threading.excepthook = lambda a: service_log.error("uncaught %s in a thread", a.exc_type.__name__, exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
+    return service_log
 
 
 def read_json(path, expect, default):

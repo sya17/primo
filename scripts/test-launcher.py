@@ -132,7 +132,13 @@ assert sf.snippets() == [] and sf.modes() == [] and sf.clipboard() == []
 class Broken(lc.Provider):
     id, label, order, limit = "broken", "BROKEN", 1, 3
     def query(self, q, ctx, args): raise RuntimeError("boom")
+import logging
+records = []
+catch = logging.Handler(); catch.emit = records.append
+logging.getLogger("primo.launcher").addHandler(catch)
 assert titles("fire", providers=[Broken()] + lc.PROVIDERS)[0] == "Firefox"
+assert titles("firef", providers=[Broken()] + lc.PROVIDERS)[0] == "Firefox"
+assert [r.getMessage() for r in records] == ["source broken failed: RuntimeError: boom"], "a failing source is logged once, not on every keystroke"
 
 # empty query: only apps you opened before (history), nothing else
 assert lc.collect("", ctx) == []

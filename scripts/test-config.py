@@ -4,6 +4,7 @@ import contextlib
 import errno
 import io
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -260,5 +261,29 @@ if os.geteuid() != 0:
     except cc.ConfigError as e:
         assert "cannot be read" in e.problem
     (d / "locked.json").chmod(0o600)
+
+# ---- the log convention: one setup per service, `LEVEL name: message` on stderr and in <state>/hyprland-dotfiles/log/<service>.log
+import logging
+import logging.handlers
+logs = Path(tempfile.mkdtemp())
+os.environ["XDG_STATE_HOME"] = str(logs)
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    log = cc.setup_logging("hub")
+    assert cc.setup_logging("hub") is log and len(logging.getLogger("primo").handlers) == 2, "a second setup adds nothing"
+    log.warning("calendar feed %s failed", "Work")
+    logging.getLogger("primo.config").warning("a config warning lands in the same files")
+    try:
+        raise RuntimeError("boom in a callback")
+    except RuntimeError:
+        sys.excepthook(*sys.exc_info())          # what PyGObject does with an exception in a GTK callback
+logfile = logs / "hyprland-dotfiles" / "log" / "hub.log"
+text = logfile.read_text()
+assert "WARNING primo.hub: calendar feed Work failed" in err.getvalue() and "WARNING primo.hub: calendar feed Work failed" in text, text
+assert "primo.config: a config warning" in text and "ERROR primo.hub: uncaught" in text and "boom in a callback" in text, text
+assert re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", text), "the file has a time stamp; stderr does not (the journal adds one)"
+assert not err.getvalue().startswith("20"), err.getvalue()
+handler = next(h for h in logging.getLogger("primo").handlers if isinstance(h, logging.handlers.RotatingFileHandler))
+assert handler.maxBytes == 256 * 1024 and handler.backupCount == 1, "the log stays small"
 
 print("ok")

@@ -20,6 +20,8 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
+import config_core as cc  # noqa: E402
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 APP_ID = "dev.primo.Overview"
@@ -234,4 +236,5 @@ class Service(Adw.Application):
 
 
 if __name__ == "__main__":
+    cc.setup_logging("overview")
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

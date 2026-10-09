@@ -11,6 +11,7 @@ the window is open (plus, if you turn it on, a slow check for busy apps while on
 """
 import html
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -825,10 +826,11 @@ class Service(Adw.Application):
                     subprocess.Popen(["notify-send", "-a", "Activity", "-i", "utilities-system-monitor",
                                       f"{g.name} is using the battery",
                                       f"About {g.cpu:.0f}% CPU for 5 minutes. Open Activity (Super+Shift+Esc) to quit or freeze it."])
-        except Exception as exc:   # a watcher must never take the service down
-            print("activity watch:", exc, file=sys.stderr)
+        except Exception:          # a watcher must never take the service down
+            logging.getLogger("primo.activity").exception("battery watch failed")
         return True
 
 
 if __name__ == "__main__":
+    cc.setup_logging("activity")
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

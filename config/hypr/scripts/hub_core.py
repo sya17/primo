@@ -9,8 +9,8 @@ import calendar
 import json
 import os
 import re
+import logging
 import stat
-import sys
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -19,6 +19,7 @@ from pathlib import Path
 import config_core as cc
 
 STATE_DIR = cc.state_home() / "hyprland-dotfiles" / "hub"
+log = logging.getLogger("primo.hub")
 NOTES_DIR = Path(os.environ.get("PRIMO_NOTES_DIR", Path.home() / "Notes"))
 
 DEFAULTS = {
@@ -79,7 +80,7 @@ def migrate(new=None, old=None):
     except FileNotFoundError:
         return new, None
     except OSError as e:
-        print(f"primo: cannot read {old} ({e.strerror}); the hub data stays there for now", file=sys.stderr)
+        log.warning("cannot read %s (%s); the hub data stays there for now", old, e.strerror)
         return old, None
     try:
         if os.path.samefile(old, new):
@@ -88,7 +89,7 @@ def migrate(new=None, old=None):
     except FileNotFoundError:
         current = None
     except OSError as e:
-        print(f"primo: cannot read {new} ({e.strerror}); still using {old}", file=sys.stderr)
+        log.warning("cannot read %s (%s); still using %s", new, e.strerror, old)
         return old, None
     notice = None
     if current is not None and current != raw:
@@ -103,7 +104,7 @@ def migrate(new=None, old=None):
         try:
             cc.atomic_write(new, raw, stat.S_IMODE(old.stat().st_mode))
         except OSError as e:
-            print(f"primo: cannot move the hub data to {new} ({e.strerror}); still using {old}", file=sys.stderr)
+            log.warning("cannot move the hub data to %s (%s); still using %s", new, e.strerror, old)
             return old, None
     _set_aside(old)
     return new, notice
