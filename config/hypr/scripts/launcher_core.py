@@ -572,7 +572,7 @@ ACTIONS = [
 
 # Actions that do nothing without a tool and are not listed until it is installed: a feature id (its required tools come from the doctor
 # registry, the same list `primo features` shows) or the name of a program.
-NEEDS = {"Lock screen": "hyprlock", "Toggle night light": "hyprsunset", "Pick a colour": "hyprpicker", "VPN": "vpn", "Clipboard history": "clipboard",
+NEEDS = {"Lock screen": "hyprlock", "Toggle night light": "nightlight", "Pick a colour": "colorpicker", "VPN": "vpn", "Clipboard history": "clipboard",
          "Take screenshot": "capture", "Modes": "modes", "End mode": "modes",
          **dict.fromkeys(["Calendar", "Reminders", "Timer", "Alarm", "Stopwatch", "World clock", "Standup note", "Time report", "Focus", "New note"], "hub")}
 

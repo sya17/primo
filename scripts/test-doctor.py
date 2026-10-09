@@ -95,6 +95,12 @@ states = {f["id"]: f for f in dc.feature_states(res)}
 assert states["hub"]["state"] == "stopped" and states["bar"]["state"] == "working"
 states = {f["id"]: f for f in dc.feature_states(dc.run_all(Fake(h, ALL_TOOLS - {"cliphist"}, ALL_PROCS, active=UNITS, repo=repo)))}
 assert states["clipboard"]["state"] == "unavailable"
+# a feature that is nothing without its one tool is unavailable without it (a warning with the package), not "working"
+res = dc.run_all(Fake(h, ALL_TOOLS - {"hyprsunset", "hyprpicker"}, ALL_PROCS, active=UNITS, repo=repo))
+states = {f["id"]: f for f in dc.feature_states(res)}
+assert states["nightlight"]["state"] == "unavailable" and states["colorpicker"]["state"] == "unavailable", (states["nightlight"], states["colorpicker"])
+dep = next(r for r in res if r.id == "dependency.nightlight")
+assert dep.status == "warning" and dep.fix == "sudo pacman -S hyprsunset" and dc.summary(res)["exit_code"] == 1
 
 # ---- outside a Hyprland session: one clear failure, runtime checks skipped
 res = dc.run_all(Fake(h, ALL_TOOLS, [], session=False, active=UNITS, repo=repo))
