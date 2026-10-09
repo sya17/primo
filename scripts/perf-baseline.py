@@ -8,6 +8,9 @@
                                                                 per typed query (no window, no file search, no painting)
     scripts/perf-baseline.py files                              the launcher's file search in your home folder: time until the
                                                                 result is delivered, CPU of the find children, children started
+    scripts/perf-baseline.py launcher-window [--cycles 30]      a launcher of its own, on a private D-Bus session: time from the
+                                                                request to the window being shown, and its PSS before and after the
+                                                                open/close cycles. SHOWS A WINDOW on your screen once per cycle.
 
 Prints JSON on stdout and writes nothing. Records the source revision, whether the tree has uncommitted changes, the machine, and which
 Primo windows were open (counts only). Never records window titles, command lines or file names: only the names of Primo's services.
@@ -199,6 +202,95 @@ def cmd_files(args):
     return {"workload": "launcher file search: FileSearch.search(query) until the result is delivered (results counted, never listed)", "runs": runs}
 
 
+def cmd_launcher_window(args):
+    if not os.environ.get("PERF_PRIVATE_BUS"):
+        # Our own session bus, so the launcher we start is not your running one and nothing of yours is asked to open. Services that
+        # bus starts (portals) print to its output, so the result comes back through a file.
+        result = Path(tempfile.mkdtemp()) / "result.json"
+        subprocess.run(["dbus-run-session", "--", sys.executable, __file__, "launcher-window", "--cycles", str(args.cycles)],
+                       env=dict(os.environ, PERF_PRIVATE_BUS="1", PERF_RESULT=str(result)), stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=60 + args.cycles * 8)
+        return json.loads(result.read_text())
+    tmp = tempfile.mkdtemp()
+    env = dict(os.environ, XDG_STATE_HOME=f"{tmp}/state", XDG_CONFIG_HOME=f"{tmp}/config", PRIMO_DEBUG="1", PRIMO_SHOT_MODE="1",
+               NO_AT_BRIDGE="1", GTK_A11Y="none")
+    proc = subprocess.Popen([sys.executable, str(SCRIPTS / "launcher.py"), "--daemon"], env=env, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.PIPE, text=True)
+    shown = []
+    seen = threading.Condition()
+
+    def follow():
+        for line in proc.stderr:
+            m = re.search(r"shown ([\d.]+) ms after it was asked for", line)
+            if m:
+                with seen:
+                    shown.append(float(m.group(1)))
+                    seen.notify_all()
+    threading.Thread(target=follow, daemon=True).start()
+
+    def gdbus(*a):
+        return subprocess.run(["gdbus", "call", "--session", *a], capture_output=True, text=True, timeout=5).stdout
+
+    def on_screen():
+        try:
+            return any(c.get("pid") == proc.pid for c in json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True,
+                                                                                    text=True, timeout=3).stdout or "[]"))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return False
+
+    def toggle():
+        gdbus("--dest", "dev.primo.Launcher", "--object-path", "/dev/primo/Launcher", "--method", "org.gtk.Actions.Activate", "toggle", "[]", "{}")
+
+    def pss():
+        rollup = read(f"/proc/{proc.pid}/smaps_rollup")
+        return parse_pss(rollup) if rollup else None
+
+    def cycle():
+        with seen:
+            before = len(shown)
+            toggle()
+            seen.wait_for(lambda: len(shown) > before, timeout=5)
+            ok = len(shown) > before
+        time.sleep(0.3)
+        closed_by_focus = not on_screen()
+        if not closed_by_focus:
+            toggle()
+        end = time.monotonic() + 3
+        while on_screen() and time.monotonic() < end:
+            time.sleep(0.05)
+        return ok, closed_by_focus
+
+    try:
+        end = time.monotonic() + 10
+        while "true" not in gdbus("--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method",
+                                  "org.freedesktop.DBus.NameHasOwner", "dev.primo.Launcher") and time.monotonic() < end:
+            time.sleep(0.05)
+        time.sleep(1.0)
+        first_ok, _ = cycle()                                   # the first open builds the window code paths
+        pss_before, warm, focus_closes, missing = pss(), [], 0, 0
+        for _ in range(args.cycles):
+            n = len(shown)
+            ok, by_focus = cycle()
+            missing += not ok
+            focus_closes += by_focus
+            if ok:
+                warm.append(shown[n] if len(shown) > n else shown[-1])
+        pss_after = pss()
+        time.sleep(10)
+        pss_settled = pss()
+    finally:
+        proc.terminate()                                         # the launcher this run started, by its own handle
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    return {"workload": "launcher window: org.gtk.Actions.Activate toggle until the window maps (GTK 'map', measured inside the launcher; "
+                        "the first frame can follow), then closed again; its own launcher on a private D-Bus session",
+            "first_open_ms": shown[0] if first_ok and shown else None, "warm_open_ms": spread(warm), "not_shown": missing,
+            "closed_by_focus_loss": focus_closes, "pss_kib": {"before": pss_before, "after_cycles": pss_after, "after_10s": pss_settled}}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="perf-baseline.py", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -213,8 +305,15 @@ def main(argv=None):
     sp.add_argument("--count", type=int, default=30)
     sp.set_defaults(fn=cmd_launcher)
     sub.add_parser("files").set_defaults(fn=cmd_files)
+    sp = sub.add_parser("launcher-window")
+    sp.add_argument("--cycles", type=int, default=30)
+    sp.set_defaults(fn=cmd_launcher_window)
     args = p.parse_args(argv)
-    print(json.dumps({"context": context(), **args.fn(args)}, indent=1))
+    text = json.dumps({"context": context(), **args.fn(args)}, indent=1)
+    if os.environ.get("PERF_RESULT"):
+        Path(os.environ["PERF_RESULT"]).write_text(text)
+    else:
+        print(text)
     return 0
 
 

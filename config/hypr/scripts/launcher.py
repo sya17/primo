@@ -15,8 +15,10 @@ word and a space to ask one source only:
 
 Up/Down move, Enter opens, Esc closes. Calculator results are copied with Enter. The sources live in launcher_core.py.
 """
+import logging
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -34,6 +36,7 @@ from launcher_core import KIND_LABEL, Context, Facts, FileSearch, SampleFacts, b
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 APP_ID = "dev.primo.Launcher"
+log = logging.getLogger("primo.launcher")
 USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"
 
 CSS = """
@@ -64,6 +67,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.alive = True
         self.search = FileSearch(lambda text, hits: GLib.idle_add(self.apply_file_hits, hits, text))
         self.connect("close-request", self.on_close)
+        self.connect("map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
 
         # The window is fixed-size and transparent; the visible card sits at its top and grows
         # downwards, so the search box never jumps while results appear (Hyprland keeps a floating
@@ -241,6 +245,7 @@ class Service(Adw.Application):
         self.daemon = daemon
         self.window = None
         self.css = None
+        self.asked = 0.0
         self.apps = []
         self.facts = SampleFacts() if os.environ.get("PRIMO_SHOT_MODE") else Facts()
         act = Gio.SimpleAction.new("toggle", None)
@@ -281,6 +286,7 @@ class Service(Adw.Application):
         if self.window is not None and self.window.get_visible():
             self.window.close()
             return
+        self.asked = time.monotonic()
         self.load_css()
         self.window = LauncherWindow(self)
         self.window.present()
