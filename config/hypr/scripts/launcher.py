@@ -31,7 +31,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_core as cc  # noqa: E402
-from launcher_core import KIND_LABEL, Context, Facts, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
+from launcher_core import KIND_LABEL, Context, Facts, FactsWorker, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -66,6 +66,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.query_token = 0
         self.alive = True
         self.search = FileSearch(lambda text, hits: GLib.idle_add(self.apply_file_hits, hits, text))
+        # Windows, clipboard and the like are read by a worker; typing only ever uses what is cached.
+        self.facts_worker = FactsWorker(app.facts, lambda _values: GLib.idle_add(self.apply_facts))
         self.connect("close-request", self.on_close)
         self.connect("map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
 
@@ -100,6 +102,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.add_controller(keys)
         self.connect("notify::is-active", self.on_active_changed)
         self.rebuild("")
+        self.facts_worker.request(("clients", "snippets", "modes"))      # what the first keystroke will want
         self.entry.grab_focus()
         preset = os.environ.get("PRIMO_LAUNCHER_QUERY")  # used to take documentation screenshots
         if preset:
@@ -136,11 +139,21 @@ class LauncherWindow(Adw.ApplicationWindow):
     def on_close(self, *_):
         self.alive = False
         self.search.cancel()
+        self.facts_worker.cancel()
         return False
 
     def collect(self, text):
         ctx = Context(apps=self.app.apps, file_hits=self.file_hits, history=load_history(), facts=self.app.facts, launch_app=self.launch_app)
-        return collect(text, ctx)
+        items = collect(text, ctx)
+        wanted = self.app.facts.take_wanted()      # what the providers used and the cache did not have fresh
+        if wanted and self.alive:
+            self.facts_worker.request(wanted)
+        return items
+
+    def apply_facts(self):
+        if self.alive:                              # not for a window that closed meanwhile
+            self.rebuild(self.entry.get_text(), keep_selection=True)
+        return False
 
     def rebuild(self, text, keep_selection=False):
         previous = None

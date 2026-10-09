@@ -9,6 +9,7 @@ import tempfile
 
 work = tempfile.mkdtemp()
 os.environ["XDG_STATE_HOME"] = os.path.join(work, "state")
+os.environ["XDG_CONFIG_HOME"] = os.path.join(work, "config")      # real Facts read snippets and modes from here: never the user's own
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "hypr", "scripts"))
 import launcher_core as lc
 
@@ -211,4 +212,134 @@ assert titles("") == ["Firefox"]
 # history is stored and read back
 lc.bump_history("a.desktop"); lc.bump_history("a.desktop")
 assert lc.load_history()["a.desktop"] == 2
+
+# ---- the typing path never waits for a tool: cached facts answer, a worker refreshes what a query used, and only that
+import json
+import threading
+import time
+import proc_core as pc
+
+gate, cancelled_runs, running, most = threading.Event(), [], [0], [0]
+CLIENTS = json.dumps([{"address": "0xa1", "class": "firefox", "title": "Sample page", "mapped": True, "workspace": {"id": 2, "name": "2"}}])
+
+
+def fake_run(cmd, cancel):
+    running[0] += 1
+    most[0] = max(most[0], running[0])
+    try:
+        if cmd[0] == "hyprctl":
+            end = time.monotonic() + 5
+            while not gate.is_set() and not cancel.is_set() and time.monotonic() < end:
+                time.sleep(0.01)
+            if cancel.is_set():
+                cancelled_runs.append(cmd[:2])
+                return pc.Run(reason="cancelled")
+            return pc.Run(code=0, out=CLIENTS if cmd[1] == "clients" else "[]")
+        if cmd[0] == "cliphist":
+            return pc.Run(code=0, out="7\tsample-secret\n")
+        return pc.Run(reason="missing")
+    finally:
+        running[0] -= 1
+
+
+facts = lc.Facts(run=fake_run)
+cold = lc.Context(apps=ctx.apps, facts=facts, launch_app=lambda i: None)
+t0 = time.monotonic()
+got = [i.title for i in lc.collect("fire", cold)]
+assert time.monotonic() - t0 < 0.3 and got[0] == "Firefox" and "Sample page" not in got, (got, time.monotonic() - t0)   # blocked hyprctl, instant answer
+assert facts.take_wanted() == ("clients", "modes", "snippets") and facts.take_wanted() == (), "it says what it still needs, once"
+assert facts.state("clients") is None and facts.peek("clients") is None
+
+# the worker: one refresh at a time, one latest pending request (the keys of the waiting requests are merged), results only while it is alive
+delivered = []
+worker = lc.FactsWorker(facts, delivered.append)
+worker.request(("clients",))
+time.sleep(0.1)
+worker.request(("snippets",))
+worker.request(("modes",))
+worker.request(("clients", "modes"))
+assert most[0] == 1 and worker.pending == {"snippets", "modes", "clients"}, (most, worker.pending)
+gate.set()
+end = time.monotonic() + 5
+while worker.busy and time.monotonic() < end:
+    time.sleep(0.01)
+assert not worker.busy and len(delivered) == 2 and most[0] == 1, (len(delivered), most)          # not one run per request
+assert "clients" in delivered[0] and set(delivered[1]) <= {"snippets", "modes", "clients"}
+assert "Sample page" in [i.title for i in lc.collect("fire", cold)], "the refreshed windows are in the next answer"
+assert facts.state("clients") == "ok" and facts.take_wanted() == ()                                  # fresh now: nothing more is asked
+
+# a new query asks only for what its providers used; the clipboard only inside its own namespace
+facts2 = lc.Facts(run=fake_run)
+cold2 = lc.Context(apps=ctx.apps, facts=facts2, launch_app=lambda i: None)
+lc.collect("fire", cold2)
+assert "clipboard" not in facts2.take_wanted()
+lc.collect("clip sample", cold2)
+assert facts2.take_wanted() == ("clipboard",)
+lc.collect("ws ", cold2)
+assert facts2.take_wanted() == ("workspaces",), "a namespace asks for its own facts only"
+
+# unavailable is not empty: a tool that times out keeps the last good value and says so; an empty answer is a good answer
+unreliable = {"fail": False}
+def flaky_run(cmd, cancel):
+    return pc.Run(reason="timeout") if unreliable["fail"] else pc.Run(code=0, out=CLIENTS)
+f3 = lc.Facts(run=flaky_run)
+f3.refresh(("clients",), threading.Event())
+assert f3.state("clients") == "ok" and f3.clients()[0]["class"] == "firefox"
+unreliable["fail"] = True
+f3._cache["clients"] = (0.0, f3._cache["clients"][1])           # expired
+f3.refresh(("clients",), threading.Event())
+assert f3.state("clients") == "unavailable" and f3.clients()[0]["class"] == "firefox", "the last good windows stay on screen"
+f3.take_wanted()
+assert f3.clients() and f3.take_wanted() == (), "a failure counts as an answer for its lifetime: no retry loop"
+empty = lc.Facts(run=lambda cmd, cancel: pc.Run(code=0, out="[]"))
+empty.refresh(("clients",), threading.Event())
+assert empty.state("clients") == "ok" and empty.clients() == []
+
+# closing the window: nothing is delivered afterwards, and the command in flight is stopped
+gate.clear()
+cancelled_runs.clear()
+late = []
+w2 = lc.FactsWorker(lc.Facts(run=fake_run), late.append)
+w2.request(("clients",))
+time.sleep(0.15)
+w2.cancel()
+end = time.monotonic() + 5
+while w2.busy and time.monotonic() < end:
+    time.sleep(0.01)
+assert not w2.busy and late == [] and cancelled_runs, (late, cancelled_runs)
+w3 = lc.FactsWorker(lc.Facts(run=fake_run), late.append)        # the next window starts clean
+gate.set()
+w3.request(("clients",))
+end = time.monotonic() + 5
+while (w3.busy or not late) and time.monotonic() < end:
+    time.sleep(0.01)
+assert len(late) == 1
+
+# a refresh that finishes after the window closed (a tool that ignores the stop) is dropped too
+gate2, after_close = threading.Event(), []
+def stubborn(cmd, cancel):
+    gate2.wait(5)
+    return pc.Run(code=0, out=CLIENTS)
+w4 = lc.FactsWorker(lc.Facts(run=stubborn), after_close.append)
+w4.request(("clients",))
+time.sleep(0.1)
+w4.cancel()
+gate2.set()
+end = time.monotonic() + 5
+while w4.busy and time.monotonic() < end:
+    time.sleep(0.01)
+assert not w4.busy and after_close == [], after_close
+
+# a provider that fails does not take the healthy results with it (here: every tool is missing)
+dead = lc.Context(apps=ctx.apps, facts=lc.Facts(run=lambda cmd, cancel: pc.Run(reason="missing")), launch_app=lambda i: None)
+assert [i.title for i in lc.collect("fire", dead)][0] == "Firefox"
+
+# history: read once, re-read only when the file changed (by us or by someone else)
+reads_before = lc.history_reads
+lc.bump_history("b.desktop")
+assert lc.load_history()["b.desktop"] == 1 and lc.load_history()["b.desktop"] == 1
+assert lc.history_reads - reads_before <= 1, "keystrokes do not re-read an unchanged file"
+lc.HISTORY.write_text(json.dumps({"c.desktop": 9}))
+os.utime(lc.HISTORY, ns=(1, 1))
+assert lc.load_history() == {"c.desktop": 9}
 print("launcher checks passed")

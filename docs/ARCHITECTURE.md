@@ -64,6 +64,10 @@ logged once. `PRIMO_DEBUG=1` adds debug lines. When the services become systemd 
 `launcher_core.py` holds the launcher's logic without GTK: a registry of providers (calculator, applications, windows, actions, workspaces,
 themes, clipboard, files, web) that each answer a query with results, and the command words that route a query to one of them. A provider
 that raises is skipped (and logged once).
+Typing never waits for a program: `Facts` returns what is cached (and remembers which keys it lacked), a `FactsWorker` per window
+refreshes exactly those (one refresh at a time, one pending request, nothing delivered after the window closes), and a tool that
+fails or times out is told apart from an empty answer while the last good value stays. Programs run through `proc_core.run_bounded`: a
+deadline, a 1 MiB output cap, a cancel switch, and the child is always stopped and reaped by its own handle.
 The file search runs `find` off the GTK thread through `launcher_core.FileSearch`: one child at a time and one waiting query, a newer
 query or closing the window stops the running child (by its own handle, never by name), hidden folders and `node_modules` are pruned
 before they are entered, and a result is shown only if it belongs to the text still in the box. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and

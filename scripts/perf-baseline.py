@@ -175,15 +175,15 @@ def cmd_launcher(args):
     sys.path.insert(0, str(SCRIPTS))
     os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp()      # history of a fresh profile, so ranking is the same everywhere
     import launcher_core as lc
-    ctx = lc.Context(facts=lc.Facts())
+    facts = lc.Facts()
+    # The typing path only reads cached facts; a worker fills the cache. Time both: the refresh (off the typing path) and the keystrokes.
+    _r, refresh_ms, _own, _kids = timed(lambda: facts.refresh(("clients", "workspaces", "themes", "snippets", "modes"), threading.Event()))
+    ctx = lc.Context(facts=facts)
     queries = (QUERIES * (args.count // len(QUERIES) + 1))[:args.count]
     walls = [timed(lambda q=q: lc.collect(q, ctx))[1] for q in queries]
     return {"workload": "launcher input-to-result: start = collect(query) called, end = it returns; providers only (no applications list, "
-                        "no window, no file search, no painting); system facts cached by the launcher for 1-30 s",
-            "first_call_ms": walls[0] if walls else None, "next_calls_ms": spread(walls[1:])}
-
-
-FILE_QUERIES = ["readme", "config", "zzqx-no-such-name", "notes", "png"]
+                        "no window, no file search, no painting); facts read from the cache, refreshed beforehand by the worker's call",
+            "facts_refresh_ms": refresh_ms, "first_call_ms": walls[0] if walls else None, "next_calls_ms": spread(walls[1:])}
 
 
 def cmd_files(args):

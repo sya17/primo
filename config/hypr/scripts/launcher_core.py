@@ -34,6 +34,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 import config_core as cc  # noqa: E402
+import proc_core as pc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 
 STATE_DIR = cc.state_home() / "hyprland-dotfiles"
@@ -118,11 +119,24 @@ def fuzzy(query, text):
     return 0
 
 
+history_reads = 0              # how many times the file was really read (a check counts them)
+_history = (None, {})         # (mtime of the file when read, its content)
+
+
 def load_history():
+    """The launch counts. The file is read again only when its modification time changed, so typing costs one stat, not a read."""
+    global history_reads, _history
     try:
-        return json.loads(HISTORY.read_text())
-    except (OSError, ValueError):
+        stamp = HISTORY.stat().st_mtime_ns
+    except OSError:
         return {}
+    if _history[0] != stamp:
+        history_reads += 1
+        try:
+            _history = (stamp, json.loads(HISTORY.read_text()))
+        except (OSError, ValueError):
+            _history = (stamp, {})
+    return dict(_history[1])
 
 
 def bump_history(key):
@@ -230,42 +244,107 @@ class Item:
 
 # --------------------------------------------------------------------------- what providers can know (the real machine; tests pass a fake)
 class Facts:
-    """Windows, workspaces, themes, clipboard entries, snippets and modes. Cached for a second so typing stays cheap."""
+    """Windows, workspaces, themes, clipboard entries, snippets and modes, for the providers.
 
-    def __init__(self, repo=None):
+    The typing path only reads the cache: a value that is missing or expired is returned as it is (an empty list when there is none yet)
+    and its name is remembered, so the window can ask `FactsWorker` to refresh exactly those (`take_wanted`). Nothing here waits for a
+    program while a key is being handled. `refresh` is what a worker calls; `state` tells "unavailable" (the tool failed or timed out,
+    the last good value stays) from a genuinely empty answer ("ok")."""
+
+    def __init__(self, repo=None, run=None):
         self.repo = Path(repo) if repo else SCRIPTS.parents[2]
-        self._cache = {}
+        self._run = run or (lambda cmd, cancel: pc.run_bounded(cmd, deadline=2.0, cancel=cancel))
+        self._cache = {}      # key -> (time of the last answer, value)
+        self._state = {}      # key -> "ok" | "unavailable"
+        self._wanted = set()
+        self._readers = {"clients": (self._read_clients, 1.0), "workspaces": (self._read_workspaces, 1.0), "themes": (self._read_themes, 5.0),
+                         "clipboard": (self._read_clipboard, 2.0), "snippets": (self._read_snippets, 2.0), "modes": (self._read_modes, 2.0)}
 
-    def _cached(self, key, fn, ttl=1.0):
-        now = time.monotonic()
+    # ---- the typing path: cache only
+    def _get(self, key):
         hit = self._cache.get(key)
-        if hit and now - hit[0] < ttl:
-            return hit[1]
-        value = fn()
-        self._cache[key] = (now, value)
-        return value
+        if hit is None or not self.fresh(key):
+            self._wanted.add(key)
+        return hit[1] if hit else []
 
-    @staticmethod
-    def _json(*cmd):
-        try:
-            return json.loads(subprocess.run(cmd, capture_output=True, text=True, timeout=2).stdout or "[]")
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return []
+    def fresh(self, key):
+        hit = self._cache.get(key)
+        return hit is not None and time.monotonic() - hit[0] < self._readers[key][1]
+
+    def peek(self, key):
+        """The cached value of `key`, or None when it was never read."""
+        hit = self._cache.get(key)
+        return hit[1] if hit else None
+
+    def state(self, key):
+        return self._state.get(key)
+
+    def take_wanted(self):
+        """The keys that were asked for and not fresh, since the last call."""
+        wanted, self._wanted = self._wanted, set()
+        return tuple(sorted(wanted))
 
     def clients(self):
-        return self._cached("clients", lambda: [c for c in self._json("hyprctl", "clients", "-j") if c.get("mapped") and c.get("class")])
+        return self._get("clients")
 
     def workspaces(self):
-        return self._cached("workspaces", lambda: sorted((w for w in self._json("hyprctl", "workspaces", "-j") if w.get("id", 0) > 0), key=lambda w: w["id"]))
+        return self._get("workspaces")
+
+    def themes(self):
+        return self._get("themes")
+
+    def clipboard(self):
+        return self._get("clipboard")
+
+    def snippets(self):
+        return self._get("snippets")
+
+    def modes(self):
+        return self._get("modes")
 
     def has(self, binary):
         """Is this program on PATH? Remembered for a while, so typing never runs `which` again."""
-        return self._cached(("has", binary), lambda: shutil.which(binary) is not None, ttl=30.0)
+        hit = self._cache.get(("has", binary))
+        if hit is None or time.monotonic() - hit[0] > 30.0:
+            hit = (time.monotonic(), shutil.which(binary) is not None)
+            self._cache[("has", binary)] = hit
+        return hit[1]
 
-    def themes(self):
-        return self._cached("themes", self._read_themes, ttl=5.0)
+    # ---- the worker's side: may wait, and can be cancelled
+    def refresh(self, keys, cancel):
+        """Read `keys` now (blocking: call from a worker). Returns {key: value} for those that were read; stops at `cancel`."""
+        out = {}
+        for key in keys:
+            if cancel.is_set():
+                break
+            try:
+                value, state = self._readers[key][0](cancel), "ok"
+            except FactsUnavailable as exc:
+                if cancel.is_set():
+                    break
+                value, state = self.peek(key) or [], "unavailable"
+                warn_once(f"facts {key}", exc)
+            self._cache[key] = (time.monotonic(), value)     # a failure also counts as an answer for its lifetime: no retry loop
+            self._state[key] = state
+            out[key] = value
+        return out
 
-    def _read_themes(self):
+    def _json(self, cmd, cancel):
+        run = self._run(cmd, cancel)
+        if not run.ok:
+            raise FactsUnavailable(run.reason or f"{cmd[0]} exited with {run.code}")
+        try:
+            return json.loads(run.out or "[]")
+        except ValueError:
+            raise FactsUnavailable(f"{cmd[0]} printed something that is not JSON") from None
+
+    def _read_clients(self, cancel):
+        return [c for c in self._json(["hyprctl", "clients", "-j"], cancel) if c.get("mapped") and c.get("class")]
+
+    def _read_workspaces(self, cancel):
+        return sorted((w for w in self._json(["hyprctl", "workspaces", "-j"], cancel) if w.get("id", 0) > 0), key=lambda w: w["id"])
+
+    def _read_themes(self, cancel):
         out = []
         for conf in sorted((self.repo / "themes").glob("*/theme.conf")):
             data = {}
@@ -276,41 +355,75 @@ class Facts:
             out.append({"id": conf.parent.name, "name": data.get("name", conf.parent.name), "mode": data.get("mode", "")})
         return out
 
-    def clipboard(self):
-        def read():
-            if not shutil.which("cliphist"):
-                return []
-            try:
-                text = subprocess.run(["cliphist", "list"], capture_output=True, text=True, timeout=2).stdout
-            except (OSError, subprocess.SubprocessError):
-                return []
-            rows = []
-            for line in text.splitlines()[:300]:
-                ident, _, preview = line.partition("\t")
-                if ident.isdigit():
-                    rows.append({"id": ident, "preview": preview})
-            return rows
-        return self._cached("clipboard", read, ttl=2.0)
+    def _read_clipboard(self, cancel):
+        if not self.has("cliphist"):
+            return []
+        run = self._run(["cliphist", "list"], cancel)
+        if not run.ok:
+            raise FactsUnavailable(run.reason or f"cliphist exited with {run.code}")
+        rows = []
+        for line in run.out.splitlines()[:300]:
+            ident, _, preview = line.partition("\t")
+            if ident.isdigit():
+                rows.append({"id": ident, "preview": preview})
+        return rows
 
-    def snippets(self):
-        def read():
-            try:
-                import workflow_core
-                return workflow_core.load()["snippets"]
-            except Exception as exc:
-                warn_once("snippets", exc)
-                return []
-        return self._cached("snippets", read, ttl=2.0)
+    def _read_snippets(self, cancel):
+        try:
+            import workflow_core
+            return workflow_core.load()["snippets"]
+        except Exception as exc:
+            raise FactsUnavailable(f"snippets: {exc}") from None
 
-    def modes(self):
-        def read():
-            try:
-                import modes_core
-                return modes_core.load_modes()
-            except Exception as exc:
-                warn_once("modes", exc)
-                return []
-        return self._cached("modes", read, ttl=2.0)
+    def _read_modes(self, cancel):
+        try:
+            import modes_core
+            return modes_core.load_modes()
+        except Exception as exc:
+            raise FactsUnavailable(f"modes: {exc}") from None
+
+
+class FactsUnavailable(Exception):
+    """A tool failed, timed out or printed nonsense: the answer is unknown, which is not the same as empty."""
+
+
+class FactsWorker:
+    """Refreshes facts for one window: one refresh at a time and one latest pending request (the keys of waiting requests are merged).
+    `deliver(values)` runs on the worker thread with what was read, and never after `cancel()` (the window closed)."""
+
+    def __init__(self, facts, deliver):
+        self.facts, self.deliver = facts, deliver
+        self.lock = threading.Lock()
+        self.pending = set()
+        self.busy = False
+        self.cancelled = threading.Event()
+
+    def request(self, keys):
+        with self.lock:
+            if self.cancelled.is_set():
+                return
+            self.pending |= set(keys)
+            if self.busy:
+                return
+            self.busy = True
+        threading.Thread(target=self._work, name="launcher-facts", daemon=True).start()
+
+    def cancel(self):
+        self.cancelled.set()
+        with self.lock:
+            self.pending.clear()
+
+    def _work(self):
+        while True:
+            with self.lock:
+                keys = sorted(k for k in self.pending if not self.facts.fresh(k))
+                self.pending.clear()
+                if not keys or self.cancelled.is_set():
+                    self.busy = False
+                    return
+            values = self.facts.refresh(keys, self.cancelled)
+            if values and not self.cancelled.is_set():
+                self.deliver(values)
 
 
 class SampleFacts(Facts):
