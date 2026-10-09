@@ -10,7 +10,8 @@ display layout, a power mode, a Bluetooth or VPN switch) runs in the background,
 system reports afterwards. If a tool is slow you see "it is taking too long" and the real state, not a success you were not given.
 
 - **Appearance**: dark and light switch, and theme cards with a live palette preview.
-- **Wallpaper**: a gallery of theme art and `~/Pictures`. A picture you choose survives theme switches until you press "Use the theme's
+- **Wallpaper**: a gallery of theme art and `~/Pictures` (previews appear as they are ready; a picture too big or broken to preview still
+  has its tile, and its tooltip says why). A picture you choose survives theme switches until you press "Use the theme's
   wallpaper". Also a slideshow from a folder (every minute to every three hours), animated transitions when `awww` is installed, GIFs
   (through `awww`), videos (through `mpvpaper`, paused on battery with a notification). Lock and login screens: the desktop
   wallpaper, blurred windows (lock only) or a picture, GIF or video of their own. When a GIF or video cannot play, its still

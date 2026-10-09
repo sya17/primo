@@ -56,6 +56,9 @@ for tool in ("hyprctl", "powerprofilesctl", "bluetoothctl", "nmcli", "pacman", "
     path = tools / tool
     path.write_text(FAKE % {"log": str(log), "slow": str(slow)})
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
+home = work / "home"
+(home / "Pictures" / "Wallpapers").mkdir(parents=True)
+os.environ["HOME"] = str(home)             # the wallpaper gallery lists ~/Pictures: sample pictures, never the user's own
 for var, sub in (("XDG_CONFIG_HOME", "config"), ("XDG_STATE_HOME", "state"), ("XDG_DATA_HOME", "data")):
     os.environ[var] = str(work / sub)
 os.environ["PATH"] = f"{tools}:{os.environ['PATH']}"      # the fakes come first; every tool a page may call has a fake (a real pkill or hyprctl would act on the live desktop)
@@ -160,6 +163,57 @@ assert win.power_rows and "Could not" in win.power_rows[0].get_title(), [r.get_t
 win.refresh_power()
 pump(3, until=lambda: "power/profile" not in win.incomplete)
 assert win.power_rows and win.power_rows[0].get_title() == "Mode"
+
+# ---- the wallpaper gallery: previews are made by owned children, two at a time, and a file that cannot be previewed still gets a tile
+import struct, zlib
+def _png(w, h, declared=None):
+    chunk = lambda k, d: struct.pack(">I", len(d)) + k + d + struct.pack(">I", zlib.crc32(k + d) & 0xFFFFFFFF)
+    dw, dh = declared or (w, h)
+    rows = b"".join(b"\x00" + bytes((30, 90, 200)) * w for _ in range(h))
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", dw, dh, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+pics = home / "Pictures" / "Wallpapers"
+(pics / "one.png").write_bytes(_png(800, 450))
+(pics / "two.png").write_bytes(_png(640, 360))
+(pics / "bomb.png").write_bytes(_png(8, 8, declared=(60000, 60000)))
+(pics / "junk.png").write_bytes(b"not a picture" * 50)
+slow.unlink(missing_ok=True)
+most_children, themes_count = [0], len(list((here.parent.parent.parent / "themes").glob("*/wallpaper.png")))
+win.select_page("wallpaper")
+t0 = time.monotonic()
+while time.monotonic() - t0 < 30 and (win.wp_queue or win.wp_inflight):
+    pump(0.1)
+    most_children[0] = max(most_children[0], int(os.popen("pgrep -fc '[t]humbnail_core.py --decode'").read().strip() or 0))
+assert not win.wp_queue and not win.wp_inflight, (len(win.wp_queue), len(win.wp_inflight))
+assert len(win.wp_buttons) == themes_count + 4, (len(win.wp_buttons), themes_count)
+assert most_children[0] <= 2, most_children
+tips = {Path(k).name: b.get_tooltip_text() for k, b in win.wp_buttons.items()}
+assert "No preview: the picture has too many pixels" in tips["bomb.png"] and "No preview: the picture is not readable" in tips["junk.png"], tips
+assert tips["one.png"] == str(pics / "one.png"), tips["one.png"]
+assert os.popen("pgrep -fc '[t]humbnail_core.py --decode'").read().strip() in ("0", ""), "no decoder child is left"
+assert not [p for p in Path(tempfile.gettempdir()).glob("primo-thumb-*")], "no preview folder is left"
+
+# leaving the page mid-way stops the decoders; coming back asks again for what was not delivered
+for extra in range(10):
+    (pics / f"more{extra}.png").write_bytes(_png(900, 500))
+win.wp_flow.remove_all() if hasattr(win.wp_flow, "remove_all") else None
+win.wp_buttons.clear()
+win.wp_queue = list(win.find_wallpapers())
+win.wp_inflight.clear()
+win.feed_thumbs()
+pump(0.15)
+win.select_page("appearance")
+pump(1.0)
+assert os.popen("pgrep -fc '[t]humbnail_core.py --decode'").read().strip() in ("0", ""), "the previews were stopped when the page was left"
+assert win.incomplete & {k for k in win.incomplete if k.startswith("wallpaper/")}, win.incomplete
+win.select_page("wallpaper")
+t0 = time.monotonic()
+while time.monotonic() - t0 < 40 and (win.wp_queue or win.wp_inflight):
+    pump(0.1)
+assert not win.wp_queue and not win.wp_inflight and len(win.wp_buttons) == themes_count + 14, (len(win.wp_queue), len(win.wp_inflight), len(win.wp_buttons))
+for extra in range(10):
+    (pics / f"more{extra}.png").unlink()
+win.select_page("appearance")
+pump(0.3)
 
 # ---- changes to the system (T023): off the UI thread, one at a time per resource, honest about failure, held until done
 def log_lines(tool, *first):

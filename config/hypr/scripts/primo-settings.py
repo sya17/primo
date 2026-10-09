@@ -20,6 +20,7 @@ from pathlib import Path
 import config_core as cc
 import idle_core
 import settings_jobs as sj
+import thumbnail_core as tc
 
 import gi
 
@@ -28,7 +29,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
 gi.require_version("Gsk", "4.0")
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # Gdk.Texture.new_for_pixbuf is fine for thumbnails
 REPO = Path(__file__).resolve().parents[3]
@@ -140,22 +141,6 @@ def rgb(hexstr):
 VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
 
 
-def load_still(path, w, h):
-    """A pixbuf for a picture, GIF or video (first frame via ffmpegthumbnailer); None if it cannot be read."""
-    path = str(path)
-    try:
-        if Path(path).suffix.lower() in VIDEO_EXTS:
-            out = Path(GLib.get_user_cache_dir()) / "primo-video-thumb.png"
-            r = subprocess.run(["ffmpegthumbnailer", "-i", path, "-o", str(out), "-s", "0", "-q", "6"],
-                               capture_output=True, timeout=15)
-            if r.returncode != 0:
-                return None
-            path = str(out)
-        return GdkPixbuf.Pixbuf.new_from_file_at_scale(path, w, h, True)
-    except (GLib.Error, OSError, subprocess.SubprocessError):
-        return None
-
-
 class Swatch(Gtk.Widget):
     """Mini window preview painted with the theme's colours (GTK snapshot, no cairo needed)."""
     __gtype_name__ = "PrimoSwatch"
@@ -231,6 +216,8 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.built = set()
         # Reads that call tools run on workers (settings_jobs); a page asks, shows "Loading…" or what it knew, and is told the result.
         self.jobs = sj.JobOwner(lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]))
+        # Previews (wallpaper grid and the large picture): decoded by an owned child under limits (thumbnail_core), two at a time.
+        self.thumbs = sj.JobOwner(lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]), workers=2, pending_limit=16)
         self.incomplete = set()              # keys whose read was asked for and not delivered (the page was left first)
         self.current_page = None
         self.refreshers = {}                 # page -> what refreshes it when it is shown again
@@ -278,6 +265,7 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def on_close_request(self, *_):
         self.jobs.close()
+        self.thumbs.close()
         self.ops.close()
         return False
 
@@ -315,6 +303,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         pid = row.page_id
         if self.current_page and self.current_page != pid:
             self.jobs.invalidate_prefix(self.current_page + "/")          # leaving a page cancels its reads
+            self.thumbs.invalidate_prefix(self.current_page + "/")        # and its previews
         returning = pid in self.built
         if pid not in self.built:
             self.stack.add_named(self.builders[pid](), pid)
@@ -461,8 +450,10 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.wp_group.add(self.wp_flow)
         page.add(self.wp_group)
 
-        self.wp_queue = list(self.find_wallpapers())
-        GLib.idle_add(self.load_next_thumb)
+        self.wp_queue = list(self.find_wallpapers())     # (path, label) still to be previewed
+        self.wp_inflight = {}                            # key -> (path, label) asked for and not delivered
+        self.refreshers["wallpaper"] = self.resume_thumbs
+        self.feed_thumbs()
         self.refresh_wallpaper_state()
         return page
 
@@ -561,27 +552,58 @@ class SettingsWindow(Adw.ApplicationWindow):
                         seen.add(p)
                         yield p, p.stem
 
-    def load_next_thumb(self):
-        if not self.wp_queue:
-            return False
-        path, label = self.wp_queue.pop(0)
-        pix = load_still(path, 420, 250)
-        if pix is None:
-            return True
-        pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pix))
-        pic.set_content_fit(Gtk.ContentFit.COVER)
+    THUMB_SIZE = (420, 250)
+    THUMBS_IN_FLIGHT = 6                                 # two decode, four wait; the rest of the folder waits here
+
+    def feed_thumbs(self):
+        """Ask for the next previews, a few at a time (the owner decodes two at once and keeps sixteen waiting at most)."""
+        while self.wp_queue and len(self.wp_inflight) < self.THUMBS_IN_FLIGHT:
+            path, label = self.wp_queue[0]
+            key = f"wallpaper/thumb:{path}"
+            request = tc.ThumbnailRequest(Path(path), *self.THUMB_SIZE)
+            self.incomplete.add(key)
+            if not self.thumbs.submit(key, lambda cancel, r=request: tc.render(r, cancel), lambda result, k=key: self.thumb_done(k, result)):
+                self.incomplete.discard(key)
+                return
+            self.wp_queue.pop(0)
+            self.wp_inflight[key] = (path, label)
+
+    def thumb_done(self, key, result):
+        self.incomplete.discard(key)
+        path, label = self.wp_inflight.pop(key, (None, None))
+        if path is not None:
+            self.add_thumb(path, label, result)
+        self.feed_thumbs()
+
+    def resume_thumbs(self):
+        """The page is shown again: what was asked for and not delivered when it was left is asked for again."""
+        self.wp_queue[:0] = list(self.wp_inflight.values())
+        for key in list(self.wp_inflight):
+            self.incomplete.discard(key)
+        self.wp_inflight.clear()
+        self.feed_thumbs()
+        self.refresh_wallpaper_state()
+
+    def add_thumb(self, path, label, result):
+        if isinstance(result, Exception) or result.status == "cancelled":
+            return
+        if result.status == "ok":
+            pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(result.png)))
+            pic.set_content_fit(Gtk.ContentFit.COVER)
+        else:                                            # no preview: the tile is still there, and says why in its tooltip
+            pic = Gtk.Image(icon_name="image-missing-symbolic", pixel_size=48, css_classes=["dim"])
         pic.set_size_request(190, 110)
         pic.set_overflow(Gtk.Overflow.HIDDEN)
         cap = Gtk.Label(label=label, xalign=0, ellipsize=3, css_classes=["caption", "dim"])
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         inner.append(pic)
         inner.append(cap)
-        btn = Gtk.Button(child=inner, css_classes=["flat", "wp-thumb"], tooltip_text=str(path))
+        tip = str(path) if result.status == "ok" else f"{path}\nNo preview: {result.reason}"
+        btn = Gtk.Button(child=inner, css_classes=["flat", "wp-thumb"], tooltip_text=tip)
         btn.connect("clicked", lambda _b, p=path: self.set_wallpaper(str(p)))
         self.wp_buttons[str(path)] = btn
         self.wp_flow.append(btn)
         self.mark_active_wallpaper()
-        return True
 
     def current_wallpaper(self):
         try:
@@ -600,9 +622,15 @@ class SettingsWindow(Adw.ApplicationWindow):
     def refresh_wallpaper_state(self):
         path = self.current_wallpaper()
         if path and Path(path).exists():
-            pix = load_still(path, 900, 520)
-            if pix is not None:
-                self.wp_preview.set_paintable(Gdk.Texture.new_for_pixbuf(pix))
+            request = tc.ThumbnailRequest(Path(path), 900, 520)
+
+            def show(result):
+                self.incomplete.discard("wallpaper/preview")
+                if not isinstance(result, Exception) and result.status == "ok":
+                    self.wp_preview.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(result.png)))
+            self.incomplete.add("wallpaper/preview")
+            if not self.thumbs.submit("wallpaper/preview", lambda cancel: tc.render(request, cancel), show):    # the latest request replaces a waiting one
+                self.incomplete.discard("wallpaper/preview")
         self.wp_reset.set_visible((STATE_DIR / "wallpaper").exists())
         self.mark_active_wallpaper()
 
