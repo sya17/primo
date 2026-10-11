@@ -13,7 +13,7 @@
 | `SUPER+P` / `SUPER+J` | Pseudotile / toggle split |
 | `SUPER+TAB` | Next layout for this workspace (dwindle, master, scrolling, monocle) |
 | `SUPER+1…0` / `SUPER+SHIFT+1…0` | Go to / move the window to a workspace |
-| `SUPER+O` | Overview: every workspace and its windows. Click to focus, drag to move |
+| `SUPER+O` | Overview: every workspace and its windows, grouped by monitor. Type to search, arrows and Enter to pick, `Alt+1`–`9` to jump, click to focus, drag to move, Esc closes |
 | `ALT+TAB` | Window switcher: hold Alt, tap Tab to move, release Alt to switch (a quick tap goes to the previous window) |
 | `` SUPER+` `` | Drop-down terminal (floating, on a hidden workspace) |
 | `SUPER+S` / `SUPER+ALT+S` | Toggle the scratchpad / move the window to it |

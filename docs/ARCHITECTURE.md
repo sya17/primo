@@ -114,7 +114,7 @@ one-line state files (`current`, `wallpaper`, …) stay plain text because bash 
 
 | Folder | Default | Holds |
 | --- | --- | --- |
-| config | `~/.config/primo/` | `modes.json`, `workflow.json` (private: mode 0600), `activity.json`, TOML definitions |
+| config | `~/.config/primo/` | `modes.json`, `workflow.json` (private: mode 0600), `activity.json`, `overview.json` (`close_after_select`), TOML definitions |
 | data | `~/.local/share/primo/` | `hub.json`: reminders, alarms, timers and the focus log |
 | state | `~/.local/state/hyprland-dotfiles/` | what the desktop is doing now: theme, wallpaper, the running mode, caches |
 

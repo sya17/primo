@@ -9,6 +9,7 @@ Click a window to focus it, drag a window onto another workspace to move it, cli
 """
 import os
 import sys
+import time
 import warnings
 
 import gi
@@ -34,6 +35,11 @@ window.primo-overview, window.primo-overview.background { background: transparen
 .ov-title { font-size: 15px; font-weight: 700; margin: 14px 18px 2px 18px; }
 .ov-hint { opacity: 0.55; font-size: 11px; margin: 4px 18px 14px 18px; }
 .ov-notice { font-size: 11px; margin: 0 18px 10px 18px; color: @warning_color; }
+.ov-group { font-weight: 700; font-size: 12px; opacity: 0.7; margin: 10px 18px 0 18px; }
+.ov-search { margin: 4px 18px 6px 18px; }
+.ov-keep { margin: 0 18px 10px 18px; font-size: 11px; }
+.win-tile.selected { background-color: alpha(@accent_bg_color, 0.35); outline: 2px solid @accent_bg_color; outline-offset: -2px; }
+.win-where { font-size: 10px; opacity: 0.55; }
 .ov-loading { opacity: 0.55; font-size: 13px; margin: 60px; }
 .ws-card { background-color: alpha(@card_bg_color, 0.7); border-radius: 14px; margin: 8px; padding: 10px; min-height: 150px; }
 .ws-card.current { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
@@ -71,13 +77,21 @@ class OverviewWindow(Adw.ApplicationWindow):
         self.view = oc.View(last)
         self.timer = None
         self.problem = ""                                # what the last action could not do, until the next one
+        self.prefs = oc.load_preferences()
+        self.query, self.matches, self.sel = "", [], 0
+        self.selected_at = None                          # when the last selection was sent: its focus loss must not close a kept-open overview
         post = lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1])
         self.jobs = sj.JobOwner(post, workers=2, pending_limit=4)
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["ov-card", "primo-card"], hexpand=True)
         card.append(Gtk.Label(label="Workspaces", xalign=0, css_classes=["ov-title"]))
-        self.grid = Gtk.Grid(column_homogeneous=True, margin_start=10, margin_end=10)
-        card.append(self.grid)
+        self.entry = Gtk.SearchEntry(placeholder_text="Search windows by title, app or workspace", css_classes=["ov-search"])
+        self.entry.connect("search-changed", self.on_search)
+        card.append(self.entry)
+        self.grid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=10, margin_end=10)
+        scroller = Gtk.ScrolledWindow(propagate_natural_height=True, max_content_height=560, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroller.set_child(self.grid)
+        card.append(scroller)
         notice = Gtk.Box(spacing=8)
         self.notice = Gtk.Label(xalign=0, hexpand=True, wrap=True, css_classes=["ov-notice"])
         self.retry = Gtk.Button(label="Try again", valign=Gtk.Align.CENTER, margin_end=18)
@@ -87,7 +101,10 @@ class OverviewWindow(Adw.ApplicationWindow):
         self.notice_row = notice
         notice.set_visible(False)
         card.append(notice)
-        card.append(Gtk.Label(label="Click a window to focus · drag it onto a workspace to move it · 1–9 jump · Esc close",
+        self.keep = Gtk.CheckButton(label="Close after choosing", active=self.prefs["close_after_select"], css_classes=["ov-keep"])
+        self.keep.connect("toggled", self.on_keep_toggled)
+        card.append(self.keep)
+        card.append(Gtk.Label(label="Type to search · click a window to focus · drag it onto a workspace to move it · Alt+1–9 jump · Esc close",
                               xalign=0, css_classes=["ov-hint"]))
         outer = Gtk.Box(valign=Gtk.Align.START)
         outer.append(card)
@@ -102,6 +119,7 @@ class OverviewWindow(Adw.ApplicationWindow):
         self.add_controller(keys)
         self.connect("notify::is-active", self.on_active_changed)
         self.connect("close-request", self.on_close_request)
+        self.set_focus(self.entry)
         self.render()
         self.refresh()
         self.timer = GLib.timeout_add_seconds(oc.REFRESH_SECONDS, self.tick)
@@ -141,30 +159,58 @@ class OverviewWindow(Adw.ApplicationWindow):
         return a.x <= x <= a.x + a.width and a.y <= y <= a.y + a.height
 
     # ---- content
-    def render(self):
-        snap = self.view.snapshot
+    def clear(self):
         child = self.grid.get_first_child()
         while child:
             nxt = child.get_next_sibling()
             self.grid.remove(child)
             child = nxt
-        if snap is None:
-            self.grid.attach(Gtk.Label(label="Loading workspaces…" if self.view.state == "loading" else "Nothing to show yet", css_classes=["ov-loading"]), 0, 0, COLUMNS, 1)
-            return
-        spaces = {w["id"]: w for w in snap.workspaces}
-        display = Gdk.Display.get_default()
-        for i, ws_id in enumerate(oc.workspace_ids(snap)):
-            wins = [c for c in snap.clients if c["workspace"]["id"] == ws_id]
-            layout = spaces.get(ws_id, {}).get("tiledLayout", "")
-            self.grid.attach(self.make_card(ws_id, wins, layout, ws_id == snap.active_workspace, snap.active_window, display),
-                             i % COLUMNS, i // COLUMNS, 1, 1)
 
-    def make_card(self, ws_id, wins, layout, current, active_win, display):
+    def render(self):
+        snap = self.view.snapshot
+        self.clear()
+        if snap is None:
+            self.grid.append(Gtk.Label(label="Loading workspaces…" if self.view.state == "loading" else "Nothing to show yet", css_classes=["ov-loading"]))
+            return
+        display = Gdk.Display.get_default()
+        if self.query:
+            self.render_matches(snap, display)
+        else:
+            self.render_groups(snap, display)
+
+    def render_groups(self, snap, display):
+        spaces = {w["id"]: w for w in snap.workspaces}
+        groups = oc.group_workspaces(snap)
+        for g in groups:
+            if len(groups) > 1:
+                self.grid.append(Gtk.Label(label=g["label"] or "Workspaces", xalign=0, css_classes=["ov-group"]))
+            grid = Gtk.Grid(column_homogeneous=True)
+            for i, w in enumerate(g["workspaces"]):
+                grid.attach(self.make_card(w["id"], w["windows"], spaces.get(w["id"], {}).get("tiledLayout", ""), w["id"] == snap.active_workspace,
+                                           snap.active_window, display, w["label"]), i % COLUMNS, i // COLUMNS, 1, 1)
+            self.grid.append(grid)
+
+    def render_matches(self, snap, display):
+        previous = self.matches[self.sel]["address"] if self.matches and self.sel < len(self.matches) else None
+        self.matches = oc.filter_clients(snap, self.query)
+        self.sel = next((i for i, c in enumerate(self.matches) if c["address"] == previous), 0)
+        if not self.matches:
+            self.grid.append(Gtk.Label(label=f"No window matches “{self.query[:60]}”", css_classes=["ov-loading"]))
+            return
+        names = {w["id"]: w.get("name") or str(w["id"]) for w in snap.workspaces}
+        for i, c in enumerate(self.matches):
+            ws = c["workspace"]["id"]
+            tile = self.make_tile(c, c["address"] == snap.active_window, display, f"Workspace {ws}" if names.get(ws, str(ws)) == str(ws) else names[ws])
+            if i == self.sel:
+                tile.add_css_class("selected")
+            self.grid.append(tile)
+
+    def make_card(self, ws_id, wins, layout, current, active_win, display, label):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["ws-card"])
         if current:
             card.add_css_class("current")
         head = Gtk.Box(spacing=8)
-        head.append(Gtk.Label(label=f"Workspace {ws_id}", xalign=0, css_classes=["ws-name"]))
+        head.append(Gtk.Label(label=label, xalign=0, css_classes=["ws-name"]))
         head.append(Gtk.Label(label=layout, xalign=0, hexpand=True, css_classes=["ws-layout"]))
         card.append(head)
         if not wins:
@@ -183,7 +229,7 @@ class OverviewWindow(Adw.ApplicationWindow):
         card.add_controller(drop)
         return card
 
-    def make_tile(self, w, focused, display):
+    def make_tile(self, w, focused, display, where=""):
         tile = Gtk.Box(spacing=10, css_classes=["win-tile"] + (["focused"] if focused else []))
         icon = Gtk.Image.new_from_icon_name(icon_name_for(display, w))
         icon.set_pixel_size(32)
@@ -193,6 +239,8 @@ class OverviewWindow(Adw.ApplicationWindow):
         col.append(Gtk.Label(label=name, xalign=0, ellipsize=3, css_classes=["win-name"]))
         col.append(Gtk.Label(label=w.get("title") or "", xalign=0, ellipsize=3, max_width_chars=34, css_classes=["win-title"]))
         tile.append(col)
+        if where:
+            tile.append(Gtk.Label(label=where, valign=Gtk.Align.CENTER, css_classes=["win-where"]))
 
         click = Gtk.GestureClick()
         click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -207,13 +255,17 @@ class OverviewWindow(Adw.ApplicationWindow):
     # ---- actions: checked against a fresh read, then sent, all on a worker; a target that vanished says so and the view refreshes
     def act(self, work, close_when_done):
         self.problem = ""
+        if close_when_done:
+            self.selected_at = time.monotonic()           # a selection: the focus it moves away from here is expected
         self.jobs.submit("overview/act", lambda cancel: work(sj.Budget(cancel)), lambda out: self.on_acted(out, close_when_done))
 
     def on_acted(self, outcome, close_when_done):
-        if isinstance(outcome, oc.Outcome) and outcome.ok and close_when_done:
+        done = isinstance(outcome, oc.Outcome) and outcome.ok
+        if done and close_when_done and self.prefs["close_after_select"]:
             self.close()
             return
-        if not (isinstance(outcome, oc.Outcome) and outcome.ok):
+        if not done:
+            self.selected_at = None
             self.problem = f"Could not do that: {outcome.reason if isinstance(outcome, oc.Outcome) else outcome}."
             self.show_notice()
         self.refresh()
@@ -228,18 +280,45 @@ class OverviewWindow(Adw.ApplicationWindow):
         self.act(lambda run: oc.move_window(address, ws, run), False)
         return True
 
-    def on_key(self, _c, keyval, _code, _state):
+    def on_search(self, entry):
+        self.query = entry.get_text().strip()
+        self.sel = 0
+        self.render()
+
+    def on_keep_toggled(self, button):
+        self.prefs["close_after_select"] = button.get_active()
+        data = dict(self.prefs)
+        self.jobs.submit("overview/prefs", lambda cancel: oc.save_preferences(data), self.on_saved)
+
+    def on_saved(self, result):
+        if isinstance(result, Exception):
+            self.problem = f"Could not save the setting: {result}."
+            self.show_notice()
+
+    def on_key(self, _c, keyval, _code, state):
         if keyval == Gdk.KEY_Escape:
             self.close()
             return True
-        if Gdk.KEY_1 <= keyval <= Gdk.KEY_9:
+        if self.query and keyval in (Gdk.KEY_Down, Gdk.KEY_Up) and self.matches:
+            self.sel = (self.sel + (1 if keyval == Gdk.KEY_Down else -1)) % len(self.matches)
+            self.render()
+            return True
+        if self.query and keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and self.matches:
+            self.focus_window(self.matches[self.sel]["address"])
+            return True
+        if Gdk.KEY_1 <= keyval <= Gdk.KEY_9 and state & Gdk.ModifierType.ALT_MASK:     # a plain digit is text for the search
             self.go_workspace(keyval - Gdk.KEY_0)
             return True
         return False
 
     def on_active_changed(self, *_):
         if not self.is_active():
-            GLib.timeout_add(150, lambda: (self.close() if not self.is_active() else None, False)[1])
+            GLib.timeout_add(150, self.close_if_left)
+
+    def close_if_left(self):
+        if not self.is_active() and oc.closes_on_focus_loss(self.prefs["close_after_select"], self.selected_at, time.monotonic()):
+            self.close()
+        return False
 
 
 class Service(Adw.Application):

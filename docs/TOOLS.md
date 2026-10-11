@@ -74,6 +74,18 @@ The clipboard history can hold passwords, so it is never mixed into a plain sear
 
 An action whose tool is not installed (night light without `hyprsunset`, the colour picker without `hyprpicker`, screenshots without `grim`) is not listed until the tool is installed.
 
+## Overview (`SUPER+O`)
+
+Every workspace as a card with its windows. With two monitors the cards are grouped under each monitor's name (a monitor that was unplugged
+keeps its group, marked "not connected", until its workspaces are gone), and the list scrolls when it is long. Workspace names are the
+ones Hyprland has. It opens at once with the last view it had and refreshes by itself every 2 seconds while it is open; if Hyprland does
+not answer it keeps what it showed and says so.
+
+Type to search by window title, app or workspace name (capital letters and accents do not matter); the arrows pick a result and Enter
+focuses it. Digits you type are part of the search, so jump to a workspace with `Alt+1`–`9`. "Close after choosing" is on by default; turn it
+off to keep the overview open after you pick a window (Esc, or clicking outside it, still closes it). The choice is saved in
+`~/.config/primo/overview.json`.
+
 ## Time hub (click the clock, or `SUPER+CTRL+H`)
 
 A floating panel under the bar clock. It does not push your windows around and it closes when you click elsewhere; the pin keeps it open

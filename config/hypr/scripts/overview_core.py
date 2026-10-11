@@ -5,11 +5,17 @@ import json
 import re
 from dataclasses import dataclass, field
 
+import config_core as cc
+
 OWN_CLASS = "dev.primo.Overview"
 MIN_WORKSPACES = 4
 REFRESH_SECONDS = 2                      # while the overview is open; nothing runs while it is hidden
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{1,16}$")
 JUMP = range(1, 10)                      # the number keys always work, even for a workspace nobody has used yet
+
+
+DEFAULTS = {"version": 1, "close_after_select": True}
+FOCUS_GRACE = 1.0                        # seconds after a selection in which the focus loss it causes is expected
 
 
 class OverviewError(Exception):
@@ -156,3 +162,74 @@ def move_window(address, n, run):
     if not validate_target(snap, workspace=n):
         return Outcome(False, "that workspace is not available")
     return _dispatch(run, f'hl.dsp.window.move({{ workspace = {n}, window = "address:{address}" }})')
+
+
+# ----------------------------------------------------------------------------- search and groups
+def _workspace_names(snap):
+    return {w["id"]: str(w.get("name") or w["id"]) for w in snap.workspaces}
+
+
+def filter_clients(snap, query):
+    """The windows whose title, class or workspace name contains every word of `query` (casefolded, plain text: no patterns)."""
+    words = query.casefold().split()
+    names = _workspace_names(snap)
+    out = []
+    for c in snap.clients:
+        ws = c["workspace"]["id"]
+        hay = " ".join(str(x) for x in (c.get("title") or "", c["class"], c.get("initialClass") or "", names.get(ws, ws), f"workspace {ws}")).casefold()
+        if all(w in hay for w in words):
+            out.append(c)
+    return sorted(out, key=lambda c: (c["workspace"]["id"], (c.get("title") or "").casefold()))
+
+
+def group_workspaces(snap):
+    """The workspaces to draw, grouped by the monitor Hyprland says they are on. A group is identified by the monitor's serial number
+    (its connector when it has none), so it stays the same group when a cable moves. A workspace whose monitor is no longer listed
+    keeps its own group, marked as not connected; a workspace nobody has used yet goes with the focused monitor. Every window is in one place."""
+    monitors = snap.monitors
+    ident = lambda m: str(m.get("serial") or m.get("name") or "")
+    by_name = {m.get("name"): m for m in monitors}
+    home = next((m for m in monitors if m.get("focused")), monitors[0] if monitors else None)
+    entries = {w["id"]: w for w in snap.workspaces}
+    names = _workspace_names(snap)
+    groups = {}
+
+    def group(key, label, connected):
+        return groups.setdefault(key, {"key": key, "label": label, "connected": connected, "workspaces": []})
+
+    for m in monitors:
+        group(ident(m), str(m.get("name") or ""), True)
+    for ws_id in workspace_ids(snap):
+        name = entries.get(ws_id, {}).get("monitor")
+        m = by_name.get(name) if name else home
+        if m is not None:
+            g = group(ident(m), str(m.get("name") or ""), True)
+        elif name:
+            g = group(name, f"{name} (not connected)", False)
+        else:
+            g = group("", "", True)
+        label = names.get(ws_id, str(ws_id))
+        g["workspaces"].append({"id": ws_id, "label": f"Workspace {ws_id}" if label == str(ws_id) else label,
+                                "windows": [c for c in snap.clients if c["workspace"]["id"] == ws_id]})
+    return [g for g in groups.values() if g["workspaces"]]
+
+
+# ----------------------------------------------------------------------------- preferences (through config_core only)
+def preferences_path():
+    return cc.config_home() / "primo" / "overview.json"
+
+
+def load_preferences(path=None):
+    """The saved preferences, with a default for anything missing or of the wrong kind. A file that cannot be used is kept aside by config_core."""
+    value = cc.read_json(path or preferences_path(), dict, {}).get("close_after_select")
+    return {"version": DEFAULTS["version"], "close_after_select": value if isinstance(value, bool) else DEFAULTS["close_after_select"]}
+
+
+def save_preferences(data, path=None):
+    """Save the known keys only. Raises config_core.ConfigError for a file from a newer Primo, which is never written over."""
+    cc.write_json(path or preferences_path(), {"version": DEFAULTS["version"], "close_after_select": bool(data.get("close_after_select", True))}, 0o600)
+
+
+def closes_on_focus_loss(close_after_select, selected_at, now):
+    """Should losing focus close the overview? Always, unless the preference keeps it open and this loss is the one a selection just caused."""
+    return close_after_select or selected_at is None or now - selected_at > FOCUS_GRACE

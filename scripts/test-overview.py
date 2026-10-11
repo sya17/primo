@@ -204,6 +204,101 @@ assert "source_remove" in src and "close-request" in src, "the refresh timer sto
 assert "def snapshot" not in src and "def hypr(" not in src
 check = (SCRIPTS.parent.parent.parent / "scripts" / "check.sh").read_text()
 assert "test-overview.py" in check
+
+# ---- search: title, class and workspace name, casefolded, every word must match
+two = json.loads(json.dumps(DESKTOP))
+two["monitors"] = [{"id": 0, "name": "eDP-1", "serial": "S1", "focused": True, "description": "Laptop panel"},
+                   {"id": 1, "name": "HDMI-A-1", "serial": "S2", "focused": False, "description": "Sample TV"}]
+two["workspaces"] = [{"id": 1, "name": "1", "monitor": "eDP-1", "tiledLayout": "dwindle"}, {"id": 2, "name": "web", "monitor": "HDMI-A-1"},
+                     {"id": 6, "name": "6", "monitor": "eDP-1"}]
+two["clients"] = [client("0xa1", "kitty", 1, title="Straße notes"), client("0xa2", "firefox", 2, title="Docs 2024"), client("0xa7", "code", 6, title="Ünïcode ÅNGSTRÖM")]
+tsnap = oc.snapshot(Fake(two))
+addrs = lambda q: [c["address"] for c in oc.filter_clients(tsnap, q)]
+assert addrs("") == ["0xa1", "0xa2", "0xa7"] and addrs("   ") == addrs(""), "no query: everything, in workspace order"
+assert addrs("STRASSE") == ["0xa1"] and addrs("straße") == ["0xa1"], "casefold, not lower"
+assert addrs("ångström") == ["0xa7"] and addrs("ÅNGSTRÖM") == ["0xa7"] and addrs("ünï") == ["0xa7"]
+assert addrs("fire") == ["0xa2"] and addrs("FireFox docs") == ["0xa2"] and addrs("firefox kitty") == [], "every word must match"
+assert addrs("web") == ["0xa2"], "the workspace name Hyprland gave it"
+assert addrs("workspace 6") == ["0xa7"] and addrs("2024") == ["0xa2"], "digits are text, not jumps"
+assert addrs("zzz") == [] and addrs("[") == [] and addrs(".*") == [], "no pattern language: brackets and dots are just text"
+assert addrs("0xa1") == [], "the address is not something to search"
+
+# ---- groups: windows by monitor, workspaces by Hyprland's own names, nothing twice
+def shape(groups):
+    return [(g["key"], g["connected"], [(w["id"], w["label"], [c["address"] for c in w["windows"]]) for w in g["workspaces"]]) for g in groups]
+
+
+groups = oc.group_workspaces(tsnap)
+assert shape(groups) == [("S1", True, [(1, "Workspace 1", ["0xa1"]), (3, "Workspace 3", []), (4, "Workspace 4", []), (5, "Workspace 5", []), (6, "Workspace 6", ["0xa7"])]),
+                         ("S2", True, [(2, "web", ["0xa2"])])], shape(groups)
+assert [g["label"] for g in groups] == ["eDP-1", "HDMI-A-1"]
+every = [c["address"] for g in groups for w in g["workspaces"] for c in w["windows"]]
+assert sorted(every) == ["0xa1", "0xa2", "0xa7"], "each window once"
+
+# one monitor: one group, no need for a header
+one = oc.group_workspaces(snap)
+assert len(one) == 1 and one[0]["label"] == "SAMPLE-1" and [w["id"] for w in one[0]["workspaces"]] == oc.workspace_ids(snap)
+# no monitor information at all: still one group, nothing lost
+bare = oc.group_workspaces(oc.Snapshot(clients=snap.clients, workspaces=snap.workspaces))
+assert len(bare) == 1 and bare[0]["label"] == "" and sorted(c["address"] for w in bare[0]["workspaces"] for c in w["windows"]) == ["0xa1", "0xa2", "0xa7"]
+
+# a monitor unplugged: its workspace still shows, once, under a name that says it is not connected
+gone = json.loads(json.dumps(two))
+gone["monitors"] = gone["monitors"][:1]
+g2 = oc.group_workspaces(oc.snapshot(Fake(gone)))
+assert [(g["label"], g["connected"]) for g in g2] == [("eDP-1", True), ("HDMI-A-1 (not connected)", False)], [(g["label"], g["connected"]) for g in g2]
+assert sorted(c["address"] for g in g2 for w in g["workspaces"] for c in w["windows"]) == ["0xa1", "0xa2", "0xa7"]
+# a window moved to the other monitor's workspace: it follows, and is still only in one place
+moved = json.loads(json.dumps(two))
+moved["clients"][0] = client("0xa1", "kitty", 2, title="Straße notes")
+g3 = oc.group_workspaces(oc.snapshot(Fake(moved)))
+assert [c["address"] for g in g3 for w in g["workspaces"] for c in w["windows"]].count("0xa1") == 1
+assert [(w["id"], [c["address"] for c in w["windows"]]) for w in g3[1]["workspaces"]] == [(2, ["0xa2", "0xa1"])] or [(w["id"], sorted(c["address"] for c in w["windows"])) for w in g3[1]["workspaces"]] == [(2, ["0xa1", "0xa2"])]
+# the same workspace name on two monitors is two workspaces, never merged
+dup = json.loads(json.dumps(two))
+dup["workspaces"].append({"id": 7, "name": "web", "monitor": "eDP-1"})
+dup["clients"].append(client("0xb1", "evince", 7))
+g4 = oc.group_workspaces(oc.snapshot(Fake(dup)))
+assert [(g["label"], w["id"]) for g in g4 for w in g["workspaces"] if w["label"] == "web"] == [("eDP-1", 7), ("HDMI-A-1", 2)]
+assert [c["address"] for w in g4[0]["workspaces"] if w["id"] == 7 for c in w["windows"]] == ["0xb1"]
+# two identical monitors with no serial are told apart by connector
+same = json.loads(json.dumps(two))
+for m in same["monitors"]:
+    m["serial"] = ""
+assert [g["key"] for g in oc.group_workspaces(oc.snapshot(Fake(same)))] == ["eDP-1", "HDMI-A-1"]
+
+# ---- preferences: through config_core only, defaults when absent, bad or newer files never overwritten by a read
+import config_core as cc
+prefs_path = work / "prefs" / "primo" / "overview.json"
+os.environ["XDG_CONFIG_HOME"] = str(work / "prefs")
+assert oc.preferences_path() == prefs_path
+assert oc.load_preferences() == {"version": 1, "close_after_select": True} == oc.DEFAULTS
+oc.save_preferences({"close_after_select": False})
+assert json.loads(prefs_path.read_text()) == {"version": 1, "close_after_select": False} and oc.load_preferences()["close_after_select"] is False
+assert oct(prefs_path.stat().st_mode & 0o777) == "0o600"
+oc.save_preferences({"close_after_select": True, "junk": 1, "version": 9})
+assert json.loads(prefs_path.read_text()) == {"version": 1, "close_after_select": True}, "only known keys, always the current version"
+prefs_path.write_text('{"version": 1, "close_after_select": "no"}')
+assert oc.load_preferences()["close_after_select"] is True, "a value of the wrong kind falls back to the default"
+prefs_path.write_text('{ broken')
+assert oc.load_preferences() == oc.DEFAULTS and list(prefs_path.parent.glob("overview.json.bad-*")), "a broken file is kept aside and defaults are used"
+prefs_path.write_text('{"version": 7, "close_after_select": false}')
+assert oc.load_preferences() == oc.DEFAULTS
+try:
+    oc.save_preferences({"close_after_select": False})
+    raise AssertionError("a file from a newer Primo must not be saved over")
+except cc.ConfigError as e:
+    assert e.newer
+assert json.loads(prefs_path.read_text())["version"] == 7
+src_core = (SCRIPTS / "overview_core.py").read_text()
+assert "open(" not in src_core and "read_text" not in src_core and "json.load(" not in src_core, "no raw file reads: config_core does that"
+
+# ---- keeping the overview open: a selection and the focus loss it causes
+assert oc.closes_on_focus_loss(True, None, 100.0) and oc.closes_on_focus_loss(True, 99.9, 100.0), "default: the overview goes away when you leave it"
+assert not oc.closes_on_focus_loss(False, 99.5, 100.0), "kept open: the focus loss caused by the selection itself does not close it"
+assert oc.closes_on_focus_loss(False, 90.0, 100.0), "kept open: but clicking away later still closes it"
+assert oc.closes_on_focus_loss(False, None, 100.0), "kept open: nothing was selected, so leaving closes it"
+
 print("overview core checks passed")
 
 # ---- the window (needs GTK and a display; never shown), with a slow, then failing, then working fake compositor
@@ -214,27 +309,34 @@ import importlib.machinery
 import importlib.util
 import gi
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 if not Gtk.init_check():
     print("skip: no display (window checks)")
     sys.exit(0)
 log = work / "hyprctl.log"
 mode = work / "mode"
-data = {k: json.dumps(v) for k, v in DESKTOP.items()}
+dd = work / "desktop"
+dd.mkdir()
+
+
+def show(desktop):
+    for k, v in desktop.items():
+        (dd / k).write_text(json.dumps(v))
+
+
+show(DESKTOP)
 (bin_dir / "hyprctl").write_text(f"""#!/bin/sh
 echo "$*" >> "{log}"
 m=$(cat "{mode}" 2>/dev/null)
 case "$m" in slow) sleep 1.5 ;; fail) echo "Error: no compositor" >&2; exit 1 ;; esac
 case "$1" in
-  clients) echo '{data["clients"]}' ;;
-  workspaces) echo '{data["workspaces"]}' ;;
-  monitors) echo '{data["monitors"]}' ;;
-  activeworkspace) echo '{data["activeworkspace"]}' ;;
-  activewindow) echo '{data["activewindow"]}' ;;
   dispatch) echo ok ;;
+  *) cat "{dd}/$1" ;;
 esac
 """)
+os.environ["XDG_CONFIG_HOME"] = str(work / "prefs-window")
 mode.write_text("slow")
 here = SCRIPTS
 loader = importlib.machinery.SourceFileLoader("overview_app", str(here / "overview.py"))
@@ -256,12 +358,19 @@ def pump(seconds, until=None):
         time.sleep(0.002)
 
 
-def cards(win):
-    n, child = 0, win.grid.get_first_child()
+def walk(widget):
+    child = widget.get_first_child()
     while child:
-        n += "ws-card" in child.get_css_classes()
+        yield child
+        yield from walk(child)
         child = child.get_next_sibling()
-    return n
+
+
+def count(win, css):
+    return sum(css in w.get_css_classes() for w in walk(win.grid))
+
+
+cards = lambda win: count(win, "ws-card")
 
 
 t0 = time.monotonic()
@@ -305,4 +414,72 @@ again = app_mod.OverviewWindow(app, app.last)
 assert cards(again) == 6 and again.view.state == "ok", "reopening shows the last valid desktop at once, while Hyprland is slow"
 again.on_close_request()
 pump(0.3)
+
+# ---- two monitors: groups with headers, search, keyboard, and the keep-open preference
+show(two)
+mode.write_text("ok")
+win = app_mod.OverviewWindow(app, None)
+closed = []
+win.close = lambda: (closed.append(1), win.on_close_request())
+pump(4, until=lambda: win.view.state == "ok")
+assert cards(win) == 6 and count(win, "ov-group") == 2, "two monitors: a header for each group"
+assert [w.get_label() for w in walk(win.grid) if "ov-group" in w.get_css_classes()] == ["eDP-1", "HDMI-A-1"]
+assert [w.get_label() for w in walk(win.grid) if "ws-name" in w.get_css_classes()].count("web") == 1, "Hyprland's own workspace name"
+
+win.entry.set_text("fire")
+pump(0.3)
+assert win.query == "fire" and [c["address"] for c in win.matches] == ["0xa2"] and count(win, "win-tile") == 1 and count(win, "selected") == 1 and cards(win) == 0
+win.entry.set_text("2024")
+pump(0.3)
+assert [c["address"] for c in win.matches] == ["0xa2"], "digits typed into the search are text"
+assert win.on_key(None, Gdk.KEY_2, 0, Gdk.ModifierType(0)) is False, "a plain digit goes on to the search entry"
+win.entry.set_text("zzz")
+pump(0.3)
+assert win.matches == [] and any("No window matches" in w.get_label() for w in walk(win.grid) if isinstance(w, Gtk.Label))
+win.entry.set_text("o")                                         # kitty? no: titles/classes with an o: firefox, code ("Straße notes" has o too)
+pump(0.3)
+found = [c["address"] for c in win.matches]
+assert len(found) >= 2 and win.sel == 0
+before = len(dispatched())
+assert win.on_key(None, Gdk.KEY_Down, 0, Gdk.ModifierType(0)) is True and win.sel == 1
+assert win.on_key(None, Gdk.KEY_Up, 0, Gdk.ModifierType(0)) is True and win.on_key(None, Gdk.KEY_Up, 0, Gdk.ModifierType(0)) is True and win.sel == len(found) - 1, "arrows wrap"
+win.sel = 1
+win.render()
+assert win.on_key(None, Gdk.KEY_Return, 0, Gdk.ModifierType(0)) is True
+pump(3, until=lambda: len(dispatched()) > before and closed)
+assert dispatched()[-1] == f'dispatch hl.dsp.focus({{ window = "address:{found[1]}" }})' and closed, "Enter focuses the selected window and closes"
+win = app_mod.OverviewWindow(app, None)
+win.close = lambda: (closed.append(1), win.on_close_request())
+pump(3, until=lambda: win.view.state == "ok")
+before = len(dispatched())
+assert win.on_key(None, Gdk.KEY_3, 0, Gdk.ModifierType.ALT_MASK) is True
+pump(3, until=lambda: len(dispatched()) > before)
+assert dispatched()[-1] == "dispatch hl.dsp.focus({ workspace = 3 })", "Alt+digit still jumps"
+assert win.on_key(None, Gdk.KEY_Escape, 0, Gdk.ModifierType(0)) is True
+
+# the preference: saved through config_core, and a kept-open overview survives its own selection and the focus loss it causes
+del closed[:]
+win = app_mod.OverviewWindow(app, None)
+win.close = lambda: (closed.append(1), win.on_close_request())
+pump(3, until=lambda: win.view.state == "ok")
+assert win.prefs["close_after_select"] is True and win.keep.get_active()
+win.keep.set_active(False)
+prefs = oc.preferences_path()
+pump(3, until=lambda: prefs.exists() and json.loads(prefs.read_text())["close_after_select"] is False)
+assert json.loads(prefs.read_text()) == {"version": 1, "close_after_select": False}
+before = len(dispatched())
+win.focus_window("0xa2")
+pump(3, until=lambda: len(dispatched()) > before)
+pump(0.3)
+assert not closed, "kept open: a successful selection does not close it"
+assert win.close_if_left() is False and not closed, "kept open: nor does the focus loss the selection caused"
+win.selected_at = time.monotonic() - 5
+win.close_if_left()
+assert closed, "kept open: leaving later still closes it"
+again = app_mod.OverviewWindow(app, None)
+assert again.prefs["close_after_select"] is False and not again.keep.get_active(), "the choice is remembered"
+again.on_close_request()
+# a kept-open window can still be closed on purpose
+again.close = lambda: closed.append(2)
+assert again.on_key(None, Gdk.KEY_Escape, 0, Gdk.ModifierType(0)) is True and closed[-1] == 2
 print("overview window checks passed")
