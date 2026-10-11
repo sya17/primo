@@ -71,13 +71,22 @@ A read that fails or comes back malformed keeps the last view and says so; an em
 the desktop and check the window and workspace before sending a single fixed dispatch, so a window that vanished is refused with a message
 instead of being sent to Hyprland.
 
-The launcher, switcher, overview and activity services each have an optional systemd user unit (`config/systemd/user/primo-<service>.service`,
-`Type=dbus` on the service's own bus name, bounded restarts, tied to the graphical session); the time hub does not yet. `scripts/install.sh --services`
+The launcher, switcher, overview, activity and hub services each have an optional systemd user unit (`config/systemd/user/primo-<service>.service`,
+`Type=dbus` on the service's own bus name, bounded restarts, tied to the graphical session). `scripts/install.sh --services`
 links and enables them, `--remove-services` undoes it. It also links a D-Bus activation file per service so the first request to the bus name starts
 the unit. Both accept `--dry-run`, leave any unit, activation file or drop-in of your own alone, and never start or stop a running service. While a
 unit is enabled the Hyprland autostart and the wrapper (`service-lib.sh`) leave that service's start to systemd; otherwise they start it as before, so a
 machine without a user manager behaves as it always did. A service that finds no session bus or no display (`service_core.require_session`) logs one
 line and exits with 69, which the unit does not retry; the wrapper then says the service is not available instead of reporting success.
+
+What the time hub does when it starts again (after a crash, a unit restart or a new login) is fixed and tested (`scripts/test-hub-service.py`):
+the data file is written at every change, so a restart reads what the last run saved. A reminder that was saved as fired never fires again; one
+that fired but was not yet saved (a kill in that moment) fires once more, because a repeat is better than a lost reminder. A reminder, alarm or
+timer that came due while the hub was not running is handled once at the start: reminders are shown as "Missed" (a repeating one skips the
+occurrences it missed), an alarm up to ten minutes late still rings and a later one is reported as missed, a finished timer says it is done.
+Running and paused timers keep their end and remaining time. A focus block that ended meanwhile is logged up to its own end and the next phase starts from
+the restart. Nothing runs while the session is stopped: a logout does not execute timers early. The Done and Snooze buttons of a notification shown
+before a restart no longer work, because the process that waited for the click is gone.
 
 ## Logs
 

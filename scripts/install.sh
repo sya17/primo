@@ -14,9 +14,9 @@ apps=(hypr waybar wofi dunst kitty swayosd swaync fontconfig)
 theme="catppuccin-mocha"
 dry=0
 services=""
-units=(primo-overview.service primo-launcher.service primo-switcher.service primo-activity.service)   # the services that have a unit (the time hub is not one yet)
+units=(primo-overview.service primo-launcher.service primo-switcher.service primo-activity.service primo-hub.service)   # the resident services that have a unit
 declare -A unit_bus=([primo-overview.service]=dev.primo.Overview.service [primo-launcher.service]=dev.primo.Launcher.service
-                    [primo-switcher.service]=dev.primo.Switcher.service [primo-activity.service]=dev.primo.Activity.service)   # each unit and its D-Bus activation file
+                    [primo-switcher.service]=dev.primo.Switcher.service [primo-activity.service]=dev.primo.Activity.service [primo-hub.service]=dev.primo.Hub.service)   # each unit and its D-Bus activation file
 
 while (( $# )); do
     case "$1" in

@@ -22,6 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import config_core as cc  # noqa: E402
+import service_core as sv  # noqa: E402
 import hub_core as hc  # noqa: E402
 import modes_core as mc  # noqa: E402
 import workflow_core as wf  # noqa: E402
@@ -1860,4 +1861,5 @@ log = logging.getLogger("primo.hub")
 
 if __name__ == "__main__":
     log = cc.setup_logging("hub")
+    sv.require_session(log)
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

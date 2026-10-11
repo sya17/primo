@@ -119,6 +119,85 @@ app.ics_events = [{"title": "Planning", "start": soon, "end": soon + timedelta(h
 sent.clear(); app.background_jobs(datetime.now()); app.background_jobs(datetime.now())
 assert [t for t in sent if "Planning" in t] == ["In 7 min: Planning"] and not any("Holiday" in t or "Far" in t for t in sent), sent
 
+# ---- restart continuity: what a service that starts again does with what the last one saved. Saved work is neither fired twice nor lost.
+def life(path):
+    """A new service process on the same data file (the old object is thrown away, as a crash or a restart would)."""
+    a = hub.Service(False)
+    a.store = hc.Store(path)
+    a.ring_alarm = lambda al: rang.append(al["time"])
+    a.write_status = lambda: None
+    a.wf = app.wf
+    return a
+
+path = os.path.join(work, "restart.json")
+first = life(path)
+first.store["reminders"] += [{"id": "r1", "title": "on time", "due": due(-1), "repeat": None, "done": False, "fired": False},
+                             {"id": "r2", "title": "later", "due": due(30), "repeat": None, "done": False, "fired": False}]
+first.save()
+sent.clear(); first.check_due(now)
+assert sent == ["on time"], sent
+second = life(path)                                           # restart after the reminder was saved as fired
+sent.clear(); second.check_due(now + timedelta(minutes=1), startup=True)
+assert sent == [], f"a fired reminder must not fire again after a restart: {sent}"
+assert [r["id"] for r in second.store["reminders"] if not r["fired"]] == ["r2"] and second.store["reminders"][1]["due"] == due(30)
+
+# a crash after the notification but before the save fires it again once (a repeat is chosen over a lost reminder), then never again
+crashing = life(path)
+crashing.store["reminders"].append({"id": "r3", "title": "crash window", "due": due(-1), "repeat": None, "done": False, "fired": False})
+crashing.save()
+crashing.save = lambda: None
+sent.clear(); crashing.check_due(now)
+assert sent == ["crash window"], sent
+again = life(path)
+sent.clear(); again.check_due(now + timedelta(minutes=2), startup=True)
+assert sent == ["crash window"], f"the unsaved reminder fires once on the next start: {sent}"
+sent.clear(); life(path).check_due(now + timedelta(minutes=3), startup=True)
+assert sent == [], sent
+
+# due while the service was not running: fires once, marked as missed; a repeating one skips the missed occurrences instead of replaying them
+down = life(path)
+down.store["reminders"] += [{"id": "r4", "title": "slept through", "due": due(-600), "repeat": None, "done": False, "fired": False},
+                            {"id": "r5", "title": "daily", "due": due(-60 * 24 * 3 - 5), "repeat": "daily", "done": False, "fired": False}]
+down.save()
+sent.clear(); life(path).check_due(now, startup=True)
+assert sorted(sent) == ["Missed: daily", "Missed: slept through"], sent
+sent.clear(); restarted = life(path); restarted.check_due(now + timedelta(minutes=1), startup=True)
+assert sent == [] and datetime.fromisoformat(next(r for r in restarted.store["reminders"] if r["id"] == "r5")["due"]) > now, sent
+
+# timers: a running one keeps its end across a restart, a paused one keeps its remaining time, one that ended while down fires once
+t = life(path)
+t.store["reminders"].clear()                                   # these sections run on the real clock
+t.store["timers"][:] = [{"id": "run", "total": 600, "end": time.time() + 300, "left": None}, {"id": "hold", "total": 60, "end": 0, "left": 30.0},
+                        {"id": "over", "total": 60, "end": time.time() - 3600, "left": None}]
+t.save()
+sent.clear(); back = life(path); back.check_due(datetime.now(), startup=True)
+assert sent == ["Timer done"], sent
+assert sorted(x["id"] for x in back.store["timers"]) == ["hold", "run"]
+assert abs(next(x for x in back.store["timers"] if x["id"] == "run")["end"] - time.time() - 300) < 5 and next(x for x in back.store["timers"] if x["id"] == "hold")["left"] == 30.0
+sent.clear(); life(path).check_due(datetime.now(), startup=True)
+assert sent == [], "the finished timer is gone for good"
+
+# alarms: a few minutes late still rings, long after is reported as missed and does not ring
+rang.clear(); sent.clear()
+al = life(path)
+al.store["alarms"][:] = [{"id": "x", "time": "08:55", "label": "soon", "days": [], "on": True, "next": datetime(2026, 10, 5, 8, 55).isoformat()},
+                         {"id": "y", "time": "08:40", "label": "long ago", "days": [], "on": True, "next": datetime(2026, 10, 5, 8, 40).isoformat()}]
+al.save()
+life(path).check_due(now, startup=True)
+assert rang == ["08:55"] and "Missed alarm" in sent, (rang, sent)
+
+# a focus block that ended while down is logged once, up to its own end, and the next phase starts from the restart
+sess = life(path)
+sess.store["log"].clear()
+sess.store["session"] = {"phase": "focus", "end": time.time() - 7200, "cycle": 1, "left": None, "label": "deep work", "category": "Work",
+                         "seg": time.time() - 7200 - 1500, "worked": 0.0}
+sess.save()
+after = life(path); after.check_due(datetime.now(), startup=True)
+assert len(after.store["log"]) == 1 and abs(after.store["log"][0]["min"] - 25.0) < 0.2, after.store["log"]
+assert after.store["session"]["phase"] == "short" and after.store["session"]["end"] > time.time()
+life(path).check_due(datetime.now(), startup=True)
+assert len(life(path).store["log"]) == 1, "restarting again must not log the block twice"
+
 # notes: typing is saved, an empty note is not kept
 page = hub.NotesPage(app)
 page.new_note(); page.buf.set_text("Title line\nbody text"); page.flush()

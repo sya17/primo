@@ -5,6 +5,7 @@ Everything runs against a temporary HOME with fake systemctl, gdbus, setsid and 
 PRIMO_SERVICES_REAL=1 adds one run of the real overview in a private D-Bus session (two simultaneous starts, a kill, a restart); it needs a
 display and reads Hyprland, so check.sh leaves it out."""
 import configparser
+import json
 import os
 import re
 import shutil
@@ -20,8 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "config" / "hypr" / "scripts"
 UNITS = ROOT / "config" / "systemd" / "user"
 BUSES = ROOT / "config" / "systemd" / "dbus-1" / "services"
-# service name -> bus name; the time hub has no unit yet (T056)
-SERVICES = {"overview": "dev.primo.Overview", "launcher": "dev.primo.Launcher", "switcher": "dev.primo.Switcher", "activity": "dev.primo.Activity"}
+# service name -> bus name
+SERVICES = {"overview": "dev.primo.Overview", "launcher": "dev.primo.Launcher", "switcher": "dev.primo.Switcher", "activity": "dev.primo.Activity",
+            "hub": "dev.primo.Hub"}
 
 
 def fake(bindir, name, body):
@@ -130,7 +132,6 @@ for name, busname in SERVICES.items():
     assert any(c.endswith(f"--user enable primo-{name}.service") for c in calls(log)), name
 assert any("daemon-reload" in c for c in calls(log))
 assert not any(" start " in c or " stop " in c for c in calls(log)), "installing must not start or stop a running service"
-assert not (home / ".config" / "systemd" / "user" / "primo-hub.service").exists(), "the time hub has no unit yet"
 before = len(calls(log))
 out = install(["--services"], env)
 assert out.returncode == 0 and out.stdout.count("already linked") == 2 * len(SERVICES)
@@ -196,7 +197,7 @@ for name in SERVICES:
         assert any(c.startswith("notify-send") for c in got) and not any("Activate" in c for c in got), got
         assert sum(c.startswith("setsid") for c in got) == (0 if enabled else 1), "an enabled unit that fails is reported, not started a second way"
 
-# ---- the autostart lines: skipped while the unit is enabled, the old command otherwise; the time hub is untouched
+# ---- the autostart lines: skipped while the unit is enabled, the old command otherwise
 lua = (ROOT / "config" / "hypr" / "modules" / "autostart.lua").read_text()
 for name in SERVICES:
     line = re.search(r'hl\.exec_cmd\("(sh -c \'systemctl --user is-enabled -q primo-%s\.service[^"]*)"\)' % name, lua)
@@ -207,7 +208,6 @@ for name in SERVICES:
         subprocess.run(["/usr/bin/sh", "-c", command], env=env, capture_output=True, text=True, timeout=20)
         started = [c for c in calls(log) if c.startswith("python3")]
         assert bool(started) == (not enabled) and (not started or f"{name}.py --daemon" in started[0]), (name, enabled, calls(log))
-assert 'hl.exec_cmd("python3 ~/.config/hypr/scripts/hub.py --daemon")' in lua, "the time hub still starts from autostart"
 
 # ---- service_core: no bus and no display are reported with status 69, not hidden behind 0
 probe = "import sys; sys.path.insert(0, %r); import logging, service_core; service_core.require_session(logging.getLogger('t'))" % str(SCRIPTS)
@@ -269,7 +269,7 @@ def concurrent_child():
     every = {name: start(name, 1)[0] for name in SERVICES}
     time.sleep(4)
     try:
-        assert all(owned(b) for b in SERVICES.values()), "all four own their names"
+        assert all(owned(b) for b in SERVICES.values()), "all of them own their names"
         every["launcher"].kill()
         every["launcher"].wait()
         time.sleep(0.5)
@@ -282,6 +282,60 @@ def concurrent_child():
     print("child ok")
 
 
+# ---- the real time hub: reminders fire with no window open, a killed hub restarts without repeating or losing any (needs a display)
+def hub_child():
+    tmp = Path(tempfile.mkdtemp(prefix="primo-services-"))
+    shim = tmp / "bin"
+    shim.mkdir()
+    shots = tmp / "notifications.log"
+    fake(shim, "notify-send", f'echo "$*" >> "{shots}"\n')   # what a notification daemon would have been asked to show
+    env = dict(os.environ, XDG_STATE_HOME=str(tmp / "s"), XDG_CONFIG_HOME=str(tmp / "c"), XDG_CACHE_HOME=str(tmp / "ca"), XDG_DATA_HOME=str(tmp / "d"),
+               PRIMO_HUB_MUTE="1", PRIMO_NOTES_DIR=str(tmp / "notes"), NO_AT_BRIDGE="1", GTK_A11Y="none", GTK_USE_PORTAL="0",
+               PATH=f"{shim}:{os.environ['PATH']}")
+    env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+    store = tmp / "d" / "primo" / "hub.json"
+    store.parent.mkdir(parents=True)
+    from datetime import datetime, timedelta
+    soon = (datetime.now() + timedelta(seconds=3)).isoformat(timespec="seconds")
+    rem = lambda i, title, due: {"id": i, "title": title, "due": due, "repeat": None, "done": False, "fired": False}
+    store.write_text(json.dumps({"reminders": [rem("a", "due soon", soon)], "timers": [{"id": "t", "total": 600, "end": time.time() + 600, "left": None}]}))
+
+    def hub():
+        return subprocess.Popen([sys.executable, str(SCRIPTS / "hub.py"), "--daemon"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def shown(title):
+        return sum(title in line for line in shots.read_text().splitlines()) if shots.exists() else 0
+
+    first = hub()
+    try:
+        time.sleep(8)                                             # no window was ever opened
+        assert first.poll() is None and shown("due soon") == 1, shots.read_text() if shots.exists() else "nothing shown"
+        assert json.loads(store.read_text())["reminders"][0]["fired"] is True, "the fired state is saved when it happens"
+    finally:
+        first.kill()
+        first.wait()
+    data = json.loads(store.read_text())                          # a kill leaves a whole, readable file with the timer still in it
+    assert [t["id"] for t in data["timers"]] == ["t"]
+    data["reminders"].append(rem("b", "while down", (datetime.now() - timedelta(minutes=30)).isoformat(timespec="seconds")))
+    store.write_text(json.dumps(data))
+    for round_ in (1, 2):                                         # the second start finds everything already handled
+        again = hub()
+        try:
+            time.sleep(5)
+            assert again.poll() is None
+            assert shown("due soon") == 1, f"round {round_}: a fired reminder came back"
+            assert shown("while down") == 1, f"round {round_}: the missed reminder was shown {shown('while down')} times"
+        finally:
+            again.kill()
+            again.wait()
+    assert [t["id"] for t in json.loads(store.read_text())["timers"]] == ["t"], "the running timer survived two kills"
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("hub child ok")
+
+
+if "--hub-child" in sys.argv:
+    hub_child()
+    sys.exit(0)
 if "--concurrent-child" in sys.argv:
     concurrent_child()
     sys.exit(0)
@@ -290,6 +344,8 @@ if not os.environ.get("PRIMO_SERVICES_REAL"):
 elif has_run_session and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and shutil.which("gdbus"):
     r = run_owned(["dbus-run-session", "--", sys.executable, __file__, "--concurrent-child"], os.environ.copy(), timeout=120)
     assert r.returncode == 0 and "child ok" in r.stdout, (r.stdout[-300:], r.stderr[-600:])
+    r = run_owned(["dbus-run-session", "--", sys.executable, __file__, "--hub-child"], os.environ.copy(), timeout=120)
+    assert r.returncode == 0 and "hub child ok" in r.stdout, (r.stdout[-300:], r.stderr[-800:])
 else:
     print("skipped: concurrent start and restart need a display, dbus-run-session and gdbus")
 
