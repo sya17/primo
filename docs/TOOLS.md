@@ -23,7 +23,8 @@ system reports afterwards. If a tool is slow you see "it is taking too long" and
 - **Network** (needs `nmcli`): the Wi-Fi networks your card heard, with signal and security, a search box, and your saved Wi-Fi and wired
   connections (VPNs have their own page). A network is told apart by its card and hardware address, not its name, so two with the same name
   stay two rows. The list refreshes every five seconds without scanning; **Refresh** scans. If nothing is running that can ask for a
-  Wi-Fi password (`nm-applet`), the page says so; saved networks still work. Connecting from this page comes in a later change.
+  Wi-Fi password (`nm-applet`), the page says so; saved networks still work. Click a network to connect (a password is asked by `nm-applet`, never by Primo; company or school sign-in networks offer the
+  advanced editor), **Disconnect** and the Wi-Fi switch ask first, and the list shows what NetworkManager did, not what was requested.
 - **Displays**: resolution, refresh rate, scale, rotation and arrangement for each monitor. Changes apply live and revert by themselves
   after 10 seconds unless you press Keep. Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored). It replaces
   `nwg-displays`, which writes hyprlang files the Lua config does not read.

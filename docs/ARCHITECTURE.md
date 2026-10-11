@@ -88,7 +88,9 @@ Audio (`audio_core`) reads `pactl` JSON and changes one thing at a time by devic
 are coalesced per device, a change is followed by a fresh read, and a read that began before a change cannot overwrite what the change
 confirmed.
 Network (`network_core`) reads `nmcli` in the C locale with explicit fields and `--rescan no`; access points are identified by interface and
-BSSID and profiles by UUID, escaped delimiters are handled, and only the Refresh button scans.
+BSSID and profiles by UUID, escaped delimiters are handled, and only the Refresh button scans. Changes (connect a saved profile by UUID or an access point by interface and BSSID, disconnect, Wi-Fi
+on or off) are checked against a fresh read, passed as argv with `nmcli --wait 60`, one per device (65 s outer deadline), and Primo never
+handles a password: NetworkManager's own program asks for it.
 The file search runs `find` off the GTK thread through `launcher_core.FileSearch`: one child at a time and one waiting query, a newer
 query or closing the window stops the running child (by its own handle, never by name), hidden folders and `node_modules` are pruned
 before they are entered, and a result is shown only if it belongs to the text still in the box. `doctor_core.py` holds the feature registry (what each feature needs, which process or service shows it runs) and

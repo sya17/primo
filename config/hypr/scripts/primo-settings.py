@@ -1464,6 +1464,10 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.net_refresh_btn.connect("clicked", lambda *_: self.on_net_rescan())
         self.net_summary.add_suffix(self.net_refresh_btn)
         self.net_status.add(self.net_summary)
+        self.net_radio = Adw.SwitchRow(title="Wi-Fi", sensitive=False)
+        self.net_radio_h = self.net_radio.connect("notify::active", self.on_net_radio)
+        self.net_status.add(self.net_radio)
+        self.net_connecting = {}                     # key -> what is being connected, until the system confirms
         self.net_agent = Adw.ActionRow(title="No program to ask for Wi-Fi passwords", subtitle="Start nm-applet to connect to a network that needs one. Saved networks still work.",
                                        visible=False)
         self.net_agent.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
@@ -1527,6 +1531,10 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.net_summary.set_title("Wi-Fi is on" if snap.wifi_enabled else "Wi-Fi is off")
         self.net_summary.set_subtitle(GLib.markup_escape_text(("Connected: " + ", ".join(c.name for c in active)) if active else "Not connected"))
         self.net_refresh_btn.set_sensitive(bool(snap.wifi_enabled and snap.wifi_interfaces))
+        self.net_radio.handler_block(self.net_radio_h)
+        self.net_radio.set_active(snap.wifi_enabled)
+        self.net_radio.set_sensitive(bool(snap.wifi_interfaces) or not snap.wifi_enabled)
+        self.net_radio.handler_unblock(self.net_radio_h)
         self.net_agent.set_visible(not agent)
         self.render_network()
 
@@ -1549,8 +1557,16 @@ class SettingsWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle=GLib.markup_escape_text(
                 f"{ap.signal}% · {ap.security or 'Open'} · {ap.interface}" + (" · connected" if ap.active else "")), tooltip_text=f"{ap.interface} {ap.bssid}")
             row.add_prefix(Gtk.Image.new_from_icon_name(f"network-wireless-signal-{level}-symbolic"))
+            key = f"ap:{ap.interface}:{ap.bssid}"
+            if key in self.net_connecting:
+                row.set_subtitle(GLib.markup_escape_text(f"{ap.signal}% · connecting…"))
             if ap.security:
                 row.add_suffix(Gtk.Image.new_from_icon_name("changes-prevent-symbolic"))
+            if ap.active:
+                row.add_suffix(self.net_button("Disconnect", lambda *_a, i=ap.interface, n=name: self.confirm_net_disconnect(i, n)))
+            else:
+                row.set_activatable(True)
+                row.connect("activated", lambda *_a, a=ap, n=name: self.net_connect_ap(a, n))
             self.net_aps_group.add(row)
             self.net_rows["aps"].append(row)
             shown += 1
@@ -1567,6 +1583,12 @@ class SettingsWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=GLib.markup_escape_text(c.name), subtitle=("Wi-Fi" if c.kind == "wifi" else "Wired") + (f" · connected on {c.interface}" if c.active else ""),
                                 tooltip_text=c.uuid)
             row.add_prefix(Gtk.Image.new_from_icon_name("network-wireless-symbolic" if c.kind == "wifi" else "network-wired-symbolic"))
+            if c.uuid in self.net_connecting:
+                row.set_subtitle(("Wi-Fi" if c.kind == "wifi" else "Wired") + " · connecting…")
+            if c.active:
+                row.add_suffix(self.net_button("Disconnect", lambda *_a, i=c.interface, n=c.name: self.confirm_net_disconnect(i, n)))
+            else:
+                row.add_suffix(self.net_button("Connect", lambda *_a, k=c: self.net_connect_saved(k)))
             self.net_saved_group.add(row)
             self.net_rows["saved"].append(row)
             shown += 1
@@ -1574,6 +1596,106 @@ class SettingsWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title="No saved connection matches your search" if words else "No saved connections")
             self.net_saved_group.add(row)
             self.net_rows["saved"].append(row)
+
+    def net_button(self, label, handler):
+        button = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+        button.connect("clicked", handler)
+        return button
+
+    def net_device_for(self, kind):
+        snap = self.net_snapshot
+        if not snap:
+            return None
+        wanted = "wifi" if kind == "wifi" else "ethernet"
+        return next((d.name for d in snap.devices if d.kind == wanted), None)
+
+    def net_done(self, key, what, result):
+        """An activation finished (or failed): say so, and read the real state; the "connecting" mark goes away either way."""
+        self.net_connecting.pop(key, None)
+        if isinstance(result, Exception):
+            self.toast(failure_text(f"Could not {what}", result))
+        elif not result:
+            self.toast(f"Could not {what}: {result.reason}")
+            if result.advice == "editor":
+                self.offer_net_editor(result.reason)
+        else:
+            self.toast(f"Asked NetworkManager to {what}. The list shows what it did.")
+        self.refresh_network()
+
+    def offer_net_editor(self, why):
+        dialog = Adw.AlertDialog(heading="Advanced setup needed", body=why)
+        dialog.add_response("close", "Close")
+        if shutil.which("nm-connection-editor"):
+            dialog.add_response("open", "Open the editor")
+            dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        else:
+            dialog.set_body(why + " The connection editor (nm-connection-editor) is not installed: sudo pacman -S network-manager-applet")
+        dialog.set_default_response("close")
+        dialog.set_close_response("close")
+        dialog.connect("response", lambda _d, r: spawn("nm-connection-editor") if r == "open" else None)
+        dialog.present(self)
+
+    def net_connect_saved(self, c):
+        interface = self.net_device_for(c.kind)
+        if not interface:
+            self.toast("No device for this connection")
+            return
+        self.net_connecting[c.uuid] = c.name
+        self.render_network()
+        if not self.operate(f"network:{interface}", lambda budget: nc.activate_saved(c.uuid, interface, lambda argv, **k: budget(argv, **k)),
+                            lambda r: self.net_done(c.uuid, f"connect to {c.name}", r), deadline=sj.ACTIVATION, busy=f"Still working on {interface}"):
+            self.net_connecting.pop(c.uuid, None)
+            self.render_network()
+
+    def net_connect_ap(self, ap, name):
+        key = f"ap:{ap.interface}:{ap.bssid}"
+        self.net_connecting[key] = name
+        self.render_network()
+        if not self.operate(f"network:{ap.interface}", lambda budget: nc.connect_ap(ap.interface, ap.bssid, lambda argv, **k: budget(argv, **k)),
+                            lambda r: self.net_done(key, f"connect to {name}", r), deadline=sj.ACTIVATION, busy=f"Still working on {ap.interface}"):
+            self.net_connecting.pop(key, None)
+            self.render_network()
+
+    def confirm_net_disconnect(self, interface, name):
+        dialog = Adw.AlertDialog(heading=f"Disconnect from {name}?", body="Anything using this connection stops until you connect again.")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("disconnect", "Disconnect")
+        dialog.set_response_appearance("disconnect", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _d, r: self.net_disconnect_answered(r, interface, name))
+        dialog.present(self)
+
+    def net_disconnect_answered(self, response, interface, name):
+        if response != "disconnect":
+            return                                              # Cancel: nothing runs
+        self.operate(f"network:{interface}", lambda budget: nc.disconnect(interface, lambda argv, **k: budget(argv, **k)),
+                     lambda r: self.net_done(f"off:{interface}", f"disconnect from {name}", r), busy=f"Still working on {interface}")
+
+    def on_net_radio(self, row, _p):
+        want = row.get_active()
+        if want:
+            self.net_set_radio(True)
+            return
+        dialog = Adw.AlertDialog(heading="Turn Wi-Fi off?", body="Every Wi-Fi connection stops until you turn it on again.")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("off", "Turn off")
+        dialog.set_response_appearance("off", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _d, r: self.net_radio_answered(r))
+        dialog.present(self)
+
+    def net_radio_answered(self, response):
+        if response == "off":
+            self.net_set_radio(False)
+        else:                                                   # Cancel: put the switch back to what the system has
+            self.refresh_network()
+
+    def net_set_radio(self, enabled):
+        if not self.operate("network:radio", lambda budget: nc.set_wifi(enabled, lambda argv, **k: budget(argv, **k)),
+                            lambda r: self.net_done("radio", "turn Wi-Fi " + ("on" if enabled else "off"), r), busy="Still changing Wi-Fi"):
+            self.refresh_network()
 
     def on_net_rescan(self):
         snap = self.net_snapshot

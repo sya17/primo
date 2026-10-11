@@ -8,6 +8,9 @@ import re
 from dataclasses import dataclass, field
 
 ENV = {"LC_ALL": "C"}
+UUID = re.compile(r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+BSSID = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
+WAIT = "60"                                                           # seconds nmcli waits for an activation; the caller's deadline is a little longer
 IFACE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:@-]{0,31}$")        # an interface name never starts with "-"
 AGENTS = {"nm-applet", "nm-tray", "plasma-nm", "gnome-shell"}        # programs that can ask for a Wi-Fi password
 
@@ -56,6 +59,7 @@ class NetworkSnapshot:
 class Outcome:
     ok: bool
     reason: str = ""
+    advice: str = ""           # "editor": needs the advanced connection editor; "agent": needs a program that asks for the password
 
     def __bool__(self):
         return self.ok
@@ -138,3 +142,88 @@ def secret_agent_running(proc="/proc"):
     except OSError:
         pass
     return False
+
+
+# ----------------------------------------------------------------------------- changes
+def _words(result):
+    """NetworkManager's refusal in words for the person, and what could help."""
+    if result.reason == "timeout":
+        return "NetworkManager is taking too long to finish. What is shown is the real state.", ""
+    if result.reason == "missing":
+        return "nmcli is not installed", ""
+    if result.reason:
+        return f"nmcli was stopped ({result.reason})", ""
+    text = (result.err.strip().splitlines() or ["nmcli failed"])[-1].removeprefix("Error: ")
+    low = text.lower()
+    if "secrets were required" in low or "no secrets" in low:
+        return ("The network needs a password and none was given. Start a program that can ask for it (nm-applet) and try again, "
+                "or use Advanced setup."), "agent"
+    if "not authorized" in low or "not authorised" in low or "permission" in low:
+        return "You do not have permission to change the network from here.", ""
+    if "timeout expired" in low:
+        return "The connection took too long (60 seconds).", ""
+    if "no carrier" in low:
+        return "The cable is not connected (no carrier).", ""
+    if "no suitable device" in low:
+        return "No device can make this connection right now.", ""
+    return text[:140], ""
+
+
+def _apply(run, argv):
+    result = run(argv, env=ENV)
+    if result.ok:
+        return Outcome(True)
+    reason, advice = _words(result)
+    return Outcome(False, reason, advice)
+
+
+def _interface_ok(snap, interface, kinds=("wifi", "ethernet")):
+    return isinstance(interface, str) and bool(IFACE.match(interface)) and any(d.name == interface and d.kind in kinds for d in snap.devices)
+
+
+def _fresh(run):
+    try:
+        return snapshot(run), None
+    except NetworkError as error:
+        return None, Outcome(False, str(error))
+
+
+def activate_saved(uuid, interface, run):
+    """Bring up a saved Wi-Fi or wired profile on an interface, by its UUID. A VPN profile is not touched from here."""
+    snap, error = _fresh(run)
+    if error:
+        return error
+    if not isinstance(uuid, str) or not UUID.match(uuid) or not any(c.uuid == uuid for c in snap.connections):
+        return Outcome(False, "that saved connection is no longer there")
+    if not _interface_ok(snap, interface):
+        return Outcome(False, "that network device is no longer there")
+    return _apply(run, ["nmcli", "--wait", WAIT, "connection", "up", "uuid", uuid, "ifname", interface])
+
+
+def connect_ap(interface, bssid, run):
+    """Connect to a network that is in the list (no password handling: NetworkManager asks its own program when one is needed)."""
+    snap, error = _fresh(run)
+    if error:
+        return error
+    ap = next((a for a in snap.access_points if a.interface == interface and a.bssid == str(bssid).upper()), None) \
+        if isinstance(bssid, str) and BSSID.match(bssid.upper()) else None
+    if ap is None or not _interface_ok(snap, interface, ("wifi",)):
+        return Outcome(False, "that network is no longer in the list")
+    if "802.1X" in ap.security or "EAP" in ap.security:
+        return Outcome(False, "This network needs company or school sign-in settings. Use Advanced setup.", "editor")
+    return _apply(run, ["nmcli", "--wait", WAIT, "device", "wifi", "connect", ap.bssid, "ifname", interface, "bssid", ap.bssid])
+
+
+def disconnect(interface, run):
+    snap, error = _fresh(run)
+    if error:
+        return error
+    if not _interface_ok(snap, interface):
+        return Outcome(False, "that network device is no longer there")
+    return _apply(run, ["nmcli", "device", "disconnect", interface])
+
+
+def set_wifi(enabled, run):
+    if not isinstance(enabled, bool):
+        return Outcome(False, "not a valid Wi-Fi state")
+    return _apply(run, ["nmcli", "radio", "wifi", "on" if enabled else "off"])

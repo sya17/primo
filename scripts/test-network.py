@@ -36,6 +36,11 @@ elif "device wifi list" in text:
         open(path + ".scan", "a").write("scan\\n")
     sys.stdout.write(st["aps"])
 elif "connection show" in text: sys.stdout.write(st["connections"])
+elif a[:3] == ["--wait", "60", "connection"] or a[:2] == ["--wait", "60"] or a[:2] == ["device", "disconnect"] or a[:2] == ["radio", "wifi"]:
+    open(path + ".muts", "a").write(text + "\\n")
+    if st.get("mut_fail"): sys.stderr.write(st["mut_fail"] + "\\n"); sys.exit(4)
+    if st.get("mut_slow"):
+        import time; time.sleep(float(st["mut_slow"]) if st["mut_slow"] is not True else 30)
 elif "device wifi rescan" in text:
     open(path + ".scan", "a").write("scan " + a[-1] + "\\n")
     if st.get("rescan_fail"): sys.stderr.write("Error: Scanning not allowed immediately following previous scan.\\n"); sys.exit(1)
@@ -48,12 +53,16 @@ def put(**kw):
     base = {"radio": "enabled", "devices": "", "aps": "", "connections": ""}
     base.update(kw)
     state.write_text(json.dumps(base))
-    for suffix in (".log", ".scan"):
+    for suffix in (".log", ".scan", ".muts"):
         Path(str(state) + suffix).write_text("")
 
 
 def log():
     return Path(str(state) + ".log").read_text().splitlines()
+
+
+def muts():
+    return Path(str(state) + ".muts").read_text().splitlines()
 
 
 def scans():
@@ -152,6 +161,60 @@ for pid, comm in ((10, "bash"), (11, "nm-applet")):
 assert nc.secret_agent_running(str(proc)) is True
 (proc / "11" / "comm").write_text("firefox\n")
 assert nc.secret_agent_running(str(proc)) is False
+
+# ---- changes: validated against the current snapshot, passed as argv, with the wait the design asks for
+put(devices="wlan0:wifi:connected:Home\\:Net\nenp1s0:ethernet:disconnected:\n",
+    aps=("*:AA\\:BB\\:CC\\:DD\\:EE\\:01:Home\\:Net:WPA2:71:wlan0\n"
+         " :77\\:88\\:99\\:AA\\:BB\\:CC:Open Cafe:--:55:wlan0\n"
+         " :12\\:12\\:12\\:12\\:12\\:12:Office:WPA2 802.1X:60:wlan0\n"),
+    connections="Home\\:Net:aaaaaaaa-0000-0000-0000-000000000001:802-11-wireless:wlan0\nOld Cafe:aaaaaaaa-0000-0000-0000-000000000002:802-11-wireless:\n"
+                "Wired one:aaaaaaaa-0000-0000-0000-000000000003:802-3-ethernet:\nWork VPN:aaaaaaaa-0000-0000-0000-000000000004:vpn:\n")
+out = nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000002", "wlan0", run)
+assert out and muts() == ["--wait 60 connection up uuid aaaaaaaa-0000-0000-0000-000000000002 ifname wlan0"], muts()
+out = nc.connect_ap("wlan0", "77:88:99:AA:BB:CC", run)
+assert out and muts()[-1] == "--wait 60 device wifi connect 77:88:99:AA:BB:CC ifname wlan0 bssid 77:88:99:AA:BB:CC", muts()
+assert nc.disconnect("wlan0", run) and muts()[-1] == "device disconnect wlan0"
+assert nc.set_wifi(False, run) and muts()[-1] == "radio wifi off" and nc.set_wifi(True, run) and muts()[-1] == "radio wifi on"
+before = len(muts())
+for bad in (nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000004", "wlan0", run),      # a VPN profile is never touched from here
+            nc.activate_saved("not-a-uuid; rm -rf /", "wlan0", run),
+            nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000002", "--help", run),
+            nc.activate_saved("aaaaaaaa-0000-0000-0000-00000000ffff", "wlan0", run),
+            nc.connect_ap("wlan0", "00:00:00:00:00:00", run),                              # an access point that is not in the list any more
+            nc.connect_ap("wlan0", "-h", run), nc.connect_ap("wlan9", "77:88:99:AA:BB:CC", run),
+            nc.disconnect("lo", run), nc.disconnect("--help", run), nc.disconnect("wlan9", run)):
+    assert not bad and bad.reason, bad
+assert len(muts()) == before, "nothing was sent for any of them"
+assert "no longer" in nc.connect_ap("wlan0", "00:00:00:00:00:00", run).reason
+out = nc.connect_ap("wlan0", "12:12:12:12:12:12", run)                                       # enterprise Wi-Fi needs the advanced editor
+assert not out and out.advice == "editor" and len(muts()) == before, out
+assert not nc.set_wifi("yes", run), "the radio state is a real boolean"
+
+# NetworkManager's words, in ours
+for said, expect in (("Error: Connection activation failed: Secrets were required, but not provided.", "password"),
+                     ("Error: Connection activation failed: (5) Connection 'x' is not available on device wlan0 because device has no carrier", "no carrier"),
+                     ("Error: Failed to add/activate new connection: Not authorized to control networking.", "permission"),
+                     ("Error: Timeout expired (60 seconds)", "too long"),
+                     ("Error: Connection activation failed: No suitable device found", "device")):
+    state_data = json.loads(state.read_text())
+    state_data["mut_fail"] = said
+    state.write_text(json.dumps(state_data))
+    out = nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000002", "wlan0", run)
+    assert not out and expect in out.reason.lower(), (said, out)
+state_data["mut_fail"] = "Error: Connection activation failed: Secrets were required, but not provided."
+state.write_text(json.dumps(state_data))
+out = nc.connect_ap("wlan0", "77:88:99:AA:BB:CC", run)
+assert out.advice == "agent" and "password" in out.reason.lower(), out
+
+# a slow activation is bounded by the caller's deadline
+state_data["mut_fail"] = ""
+state_data["mut_slow"] = True
+state.write_text(json.dumps(state_data))
+slow = lambda argv, **k: pc.run_bounded(argv, deadline=0.4, **k)
+out = nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000002", "wlan0", slow)
+assert not out and "too long" in out.reason.lower(), out
+joined = " ".join(muts()).lower()
+assert "password" not in joined and "--ask" not in joined and "secret" not in joined, "Primo never carries a password"
 print("network core checks passed")
 
 # ---- the Settings page (needs GTK and a display; the window is never shown)
@@ -243,5 +306,92 @@ put(radio="enabled", devices="enp1s0:ethernet:connected:Wired one\n", aps="", co
 win.refresh_network()
 pump(5, until=lambda: win.net_snapshot is not None and win.net_snapshot.wifi_enabled)
 assert titles(win, "aps") == ["No Wi-Fi card found"]
+
+# ---- changes from the page (the real window, fake nmcli, nothing real changes)
+def mutate(**kw):
+    data = json.loads(state.read_text())
+    data.update(kw)
+    state.write_text(json.dumps(data))
+
+put(devices="wlan0:wifi:connected:Home\\:Net\nenp1s0:ethernet:disconnected:\n",
+    aps=("*:AA\\:BB\\:CC\\:DD\\:EE\\:01:Home\\:Net:WPA2:71:wlan0\n :77\\:88\\:99\\:AA\\:BB\\:CC:Open Cafe:--:55:wlan0\n"
+         " :12\\:12\\:12\\:12\\:12\\:12:Office:WPA2 802.1X:60:wlan0\n"),
+    connections="Home\\:Net:aaaaaaaa-0000-0000-0000-000000000001:802-11-wireless:wlan0\nOld Cafe:aaaaaaaa-0000-0000-0000-000000000002:802-11-wireless:\n"
+                "Wired one:aaaaaaaa-0000-0000-0000-000000000003:802-3-ethernet:\n")
+win.refresh_network()
+pump(5, until=lambda: win.net_snapshot is not None and win.net_snapshot.access_points)
+toasts.clear()
+offered = []
+win.offer_net_editor = offered.append
+rows = {r.get_title(): r for r in win.net_rows["aps"]}
+
+# connecting shows "connecting…" until the system answers; a second click on the same device is refused; the result is read back
+mutate(mut_slow=1.2)
+rows["Open Cafe"].emit("activated")
+pump(0.4)
+assert any("connecting…" in r.get_subtitle() for r in win.net_rows["aps"]), [r.get_subtitle() for r in win.net_rows["aps"]]
+rows2 = {r.get_title(): r for r in win.net_rows["aps"]}
+rows2["Office"].emit("activated")
+assert any("Still working on wlan0" in t for t in toasts) and len(muts()) == 1, (toasts, muts())
+pump(6, until=lambda: not win.net_connecting and any("Asked NetworkManager" in t for t in toasts))
+assert muts() == ["--wait 60 device wifi connect 77:88:99:AA:BB:CC ifname wlan0 bssid 77:88:99:AA:BB:CC"], muts()
+assert not win.net_connecting
+mutate(mut_slow=False)
+pump(3, until=lambda: not win.net_reading)
+
+# an enterprise network offers the advanced editor and sends nothing
+Path(str(state) + ".muts").write_text("")
+{r.get_title(): r for r in win.net_rows["aps"]}["Office"].emit("activated")
+pump(4, until=lambda: offered)
+assert offered and "Advanced setup" in offered[0] and not muts(), (offered, muts())
+
+# a password that nobody asked for: the words say what to do
+Path(str(state) + ".muts").write_text("")
+mutate(mut_fail="Error: Connection activation failed: Secrets were required, but not provided.")
+toasts.clear()
+{r.get_title(): r for r in win.net_rows["aps"]}["Open Cafe"].emit("activated")
+pump(4, until=lambda: any("Could not" in t for t in toasts))
+assert any("needs a password" in t for t in toasts), toasts
+mutate(mut_fail="")
+pump(3, until=lambda: not win.net_reading)
+
+# a saved profile is brought up by its id on the right device
+Path(str(state) + ".muts").write_text("")
+win.net_connect_saved(next(c for c in win.net_snapshot.connections if c.name == "Old Cafe"))
+pump(4, until=lambda: muts())
+assert muts() == ["--wait 60 connection up uuid aaaaaaaa-0000-0000-0000-000000000002 ifname wlan0"], muts()
+pump(3, until=lambda: not win.net_connecting)
+
+# disconnecting asks first: Cancel sends nothing, Disconnect sends it; the radio asks too
+Path(str(state) + ".muts").write_text("")
+win.net_disconnect_answered("cancel", "wlan0", "Home:Net")
+pump(0.4)
+assert not muts()
+win.net_disconnect_answered("disconnect", "wlan0", "Home:Net")
+pump(4, until=lambda: muts())
+assert muts() == ["device disconnect wlan0"], muts()
+pump(3, until=lambda: not win.net_reading)
+win.net_radio_answered("cancel")
+pump(3, until=lambda: not win.net_reading)
+assert not [m for m in muts() if m.startswith("radio")] and win.net_radio.get_active(), muts()
+win.net_set_radio(False)
+pump(4, until=lambda: "radio wifi off" in muts())
+assert "radio wifi off" in muts()
+
+# closing the window while an activation runs: it is not cancelled, the application stays held until it ends
+mutate(mut_slow=1.0)
+holds = []
+real_hold, real_release = app.hold, app.release
+app.hold = lambda: (holds.append("hold"), real_hold())
+app.release = lambda: (holds.append("release"), real_release())
+win2 = ps.SettingsWindow(app, "network")
+win2.toast = lambda t: holds.append("toast")
+pump(4, until=lambda: win2.net_snapshot is not None)
+win2.net_set_radio(True)
+pump(0.2)
+win2.on_close_request()
+assert holds.count("hold") > holds.count("release"), holds
+pump(4, until=lambda: holds.count("hold") == holds.count("release"))
+assert holds.count("hold") == holds.count("release") and "toast" not in holds, holds
 win.on_close_request()
 print("network page checks passed")
