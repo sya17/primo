@@ -15,6 +15,7 @@ window.primo-launcher .primo-control:selected, window.primo-settings .primo-cont
 window.primo-launcher .primo-control:selected label, window.primo-settings .primo-control:selected label { color: @window_fg_color; }
 window.primo-launcher .primo-control:focus-visible, window.primo-settings .primo-control:focus-visible,
 window.primo-launcher .primo-selected:focus-visible, window.primo-settings .primo-selected:focus-visible { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
+window.primo-launcher .primo-active, window.primo-settings .primo-active { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
 window.primo-launcher .primo-control:disabled, window.primo-settings .primo-control:disabled,
 window.primo-launcher .primo-disabled, window.primo-settings .primo-disabled { opacity: 0.45; }
 window.primo-launcher .primo-error, window.primo-settings .primo-error { color: @window_fg_color; outline: 1px solid @error_color; outline-offset: -1px; }

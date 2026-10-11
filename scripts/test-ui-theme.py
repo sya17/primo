@@ -88,7 +88,7 @@ body = re.sub(r"/\*.*?\*/", "", section, flags=re.S)
 selectors = [s.strip() for block in body.split("}") if "{" in block for s in block.split("{")[0].split(",")]
 assert selectors and all(re.match(r"^window\.(primo-launcher|primo-settings|primo-opaque|primo-reduce-motion)\b", s) for s in selectors), \
     [s for s in selectors if not s.startswith("window.primo-")]
-for state in ("selected", "disabled", "error", "muted", "popup", "surface", "control"):
+for state in ("selected", "disabled", "error", "muted", "popup", "surface", "control", "active"):
     assert f".primo-{state}" in section, state
 assert ":focus-visible" in section and "primo-opaque" in section and "primo-reduce-motion" in section
 

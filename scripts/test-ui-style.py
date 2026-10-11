@@ -75,6 +75,22 @@ try:
         b = style.PolicyBinding(w, load=lambda: ui.UiPreferences())
         b.close()
         assert b.handler is None
+    # a stack gets a crossfade, or no transition at all; the binding tells its owner when the policy changes
+    stack = Gtk.Stack()
+    style.set_page_transition(stack, ui.UiPolicy(True, False))
+    assert stack.get_transition_type() == Gtk.StackTransitionType.CROSSFADE and stack.get_transition_duration() == 180
+    style.set_page_transition(stack, ui.UiPolicy(False, False))
+    assert stack.get_transition_type() == Gtk.StackTransitionType.NONE and stack.get_transition_duration() == 0
+    seen = []
+    settings.set_property("gtk-enable-animations", True)
+    w = Gtk.Window()
+    b = style.PolicyBinding(w, load=lambda: ui.UiPreferences(), on_change=seen.append)
+    assert seen == [ui.UiPolicy(True, False)], "the owner hears the first policy at once"
+    settings.set_property("gtk-enable-animations", False)
+    assert seen[-1] == ui.UiPolicy(False, False) and len(seen) == 2
+    b.close()
+    settings.set_property("gtk-enable-animations", True)
+    assert len(seen) == 2, "a closed binding tells nobody"
     # a setting that cannot be read means the quiet fallback
     assert style.system_animations(display=object()) is False
 finally:

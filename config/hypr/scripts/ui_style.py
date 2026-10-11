@@ -26,6 +26,13 @@ def page_transition_ms(policy):
     return ui_core.transition_ms(policy)
 
 
+def set_page_transition(stack, policy):
+    """A stack's own page transition for this policy: a 180 ms crossfade, or none at all when custom motion is off."""
+    ms = page_transition_ms(policy)
+    stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE if ms else Gtk.StackTransitionType.NONE)
+    stack.set_transition_duration(ms)
+
+
 def _settings(display=None):
     return Gtk.Settings.get_for_display(display or Gdk.Display.get_default())
 
@@ -43,8 +50,8 @@ class PolicyBinding:
     """Resolves the policy for one window when it opens and again when the toolkit's animation setting changes, until `close()`.
     Holds the window weakly and disconnects its one signal handler, so a closed window is never kept alive or touched."""
 
-    def __init__(self, window, load=ui_core.load_preferences, display=None):
-        self.window, self.load, self.display = weakref.ref(window), load, display
+    def __init__(self, window, load=ui_core.load_preferences, display=None, on_change=None):
+        self.window, self.load, self.display, self.on_change = weakref.ref(window), load, display, on_change
         self.policy = None
         self.handler = None
         try:
@@ -60,6 +67,8 @@ class PolicyBinding:
             return None
         self.policy = ui_core.resolve_policy(prefs or self.load(), system_animations(self.display))
         apply_policy(window, self.policy)
+        if self.on_change:
+            self.on_change(self.policy)
         return self.policy
 
     def _changed(self, *_):
@@ -69,6 +78,7 @@ class PolicyBinding:
         if self.settings is not None and self.handler is not None:
             self.settings.disconnect(self.handler)
         self.handler = None
+        self.on_change = None
 
 
 # Used only when the generated stylesheet has no shared roles (never rendered, or deleted): the pilots stay readable with the toolkit's own
@@ -78,6 +88,7 @@ FALLBACK_CSS = """
 .primo-surface { background-color: @card_bg_color; border-radius: 12px; }
 .primo-control { border-radius: 9px; }
 .primo-control:selected { background-color: alpha(@accent_bg_color, 0.30); }
+.primo-active { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
 """
 
 

@@ -303,6 +303,8 @@ assert confirmed == [] and any("Could not apply the display settings: it is taki
 assert not ps.DISPLAYS_LUA.exists(), "nothing was saved for a change that was never applied"
 
 # the window closes while a change runs: the application stays held until it ends, nothing is shown afterwards
+pump(15, until=lambda: not win.ops.jobs.active)                 # an earlier change still running would make this one "busy" and release at once
+assert not win.ops.jobs.active
 holds.clear()
 toasts.clear()
 (slow.parent / "slow-set").write_text("1")
@@ -343,4 +345,54 @@ pump(0.3)
 win2.on_close_request()                    # what GTK's close-request runs (an unshown window ignores close())
 pump(1.5)
 assert win2.jobs.closed and not any(p for p in subprocess.run(["pgrep", "-f", str(tools)], capture_output=True, text=True).stdout.split()), "no fake tool left running"
+# ---- the shared roles and the interface policy (T038): page transition, classes, styles made once, nothing left behind
+import json as _json
+prefs_file = work / "config" / "primo" / "ui.json"
+gsettings = Gtk.Settings.get_default()
+animations_before = gsettings.get_property("gtk-enable-animations")
+try:
+    gsettings.set_property("gtk-enable-animations", True)
+    pw = ps.SettingsWindow(app, "appearance")
+    assert "primo-settings" in pw.get_css_classes() and not ({"primo-reduce-motion", "primo-opaque"} & set(pw.get_css_classes()))
+    assert pw.stack.get_transition_type() == Gtk.StackTransitionType.CROSSFADE and pw.stack.get_transition_duration() == 180
+    gsettings.set_property("gtk-enable-animations", False)                     # the system turns animation off while Settings is open
+    assert pw.stack.get_transition_type() == Gtk.StackTransitionType.NONE and pw.stack.get_transition_duration() == 0
+    assert "primo-reduce-motion" in pw.get_css_classes()
+    gsettings.set_property("gtk-enable-animations", True)
+    assert pw.stack.get_transition_duration() == 180, "and back when it is allowed again"
+    # latest page wins: twenty quick switches in a row end on the last one, with its title, and without an old page showing
+    order = ["wallpaper", "displays", "power", "bluetooth", "audio", "network", "vpn", "health", "modes", "workflow"] * 2
+    for pid in order:
+        pw.select_page(pid)
+    assert pw.stack.get_visible_child_name() == order[-1] == pw.current_page and pw.content_page.get_title() == "Workflow"
+    pump(0.5)
+    assert pw.stack.get_visible_child_name() == "workflow", "an old page does not flash back"
+    # the role classes are on the cards, and their old local values are gone
+    pw.select_page("appearance")
+    assert pw.theme_buttons and all("primo-card" in b.get_css_classes() for b in pw.theme_buttons.values())
+    assert sum("primo-active" in b.get_css_classes() for b in pw.theme_buttons.values()) <= 1
+    for needle in ("border-radius", "outline", "@accent_bg_color", "@window_bg_color", "alpha("):
+        assert needle not in ps.APP_CSS, f"Settings' own CSS must not define shared values: {needle}"
+    # the preferences reach a new window; a broken file never stops it; no preferences file is created by opening
+    assert not prefs_file.exists()
+    pw.on_close_request()
+    assert pw.policy.handler is None, "the window's handler is released on close"
+    prefs_file.parent.mkdir(parents=True, exist_ok=True)
+    prefs_file.write_text(_json.dumps({"version": 1, "reduce_motion": True, "reduce_transparency": True}))
+    pw2 = ps.SettingsWindow(app, "appearance")
+    assert {"primo-reduce-motion", "primo-opaque"} <= set(pw2.get_css_classes()) and pw2.stack.get_transition_duration() == 0
+    pw2.on_close_request()
+    prefs_file.write_text("{ broken")
+    pw3 = ps.SettingsWindow(app, "appearance")
+    assert pw3.stack.get_transition_duration() == 180 and prefs_file.read_text() == "{ broken"
+    pw3.on_close_request()
+    # the style providers belong to the process: opening more windows adds none
+    assert app.styles is not None
+    first = app.styles
+    pw4 = ps.SettingsWindow(app, "appearance")
+    assert app.styles is first
+    pw4.on_close_request()
+finally:
+    gsettings.set_property("gtk-enable-animations", animations_before)
+
 print("settings window checks passed (longest main-loop gap %.0f ms)" % (max(b - a for a, b in zip(beats, beats[1:])) * 1000))

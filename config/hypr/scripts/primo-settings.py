@@ -25,6 +25,7 @@ import audio_core as sj_audio
 import network_core as nc
 import settings_jobs as sj
 import thumbnail_core as tc
+import ui_style
 
 import gi
 
@@ -42,7 +43,7 @@ THEMES_DIR = REPO / "themes"
 STATE_DIR = cc.state_home() / "hyprland-dotfiles"
 HYPR_DIR = Path.home() / ".config" / "hypr"
 DISPLAYS_LUA = HYPR_DIR / "displays.lua"
-USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"
+USER_CSS = cc.config_home() / "gtk-4.0" / "gtk.css"
 
 PAGES = [
     ("appearance", "Appearance", "preferences-desktop-theme-symbolic"),
@@ -60,11 +61,8 @@ PAGES = [
 ]
 
 APP_CSS = """
-.wp-preview { border-radius: 14px; }
-.wp-thumb { padding: 6px; border-radius: 12px; }
-.wp-thumb.active { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
-.theme-card { padding: 10px; border-radius: 14px; }
-.theme-card.active { outline: 2px solid @accent_bg_color; outline-offset: -2px; }
+.wp-thumb { padding: 6px; }
+.theme-card { padding: 10px; }
 .theme-name { font-weight: 700; }
 .dim { opacity: 0.65; }
 """
@@ -206,7 +204,9 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.split.set_sidebar(Adw.NavigationPage(title="Settings", child=side_view))
 
         # Content
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=180)
+        self.stack = Gtk.Stack()
+        # The interface preferences and the toolkit's animation setting decide the page transition (a crossfade, or none) while the window is open.
+        self.policy = ui_style.PolicyBinding(self, on_change=lambda policy: ui_style.set_page_transition(self.stack, policy))
         self.builders = {
             "appearance": self.build_appearance,
             "wallpaper": self.build_wallpaper,
@@ -243,21 +243,15 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.split.set_min_sidebar_width(210)
         self.split.set_max_sidebar_width(230)
 
-        self.user_css = None
         self.load_user_css()
         self.select_page(page)
 
     # ---- css that follows the theme live
     def load_user_css(self):
-        display = Gdk.Display.get_default()
-        if self.user_css is None:
-            self.user_css = Gtk.CssProvider()
-            Gtk.StyleContext.add_provider_for_display(display, self.user_css, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
-            app_css = Gtk.CssProvider()
-            app_css.load_from_string(APP_CSS)
-            Gtk.StyleContext.add_provider_for_display(display, app_css, Gtk.STYLE_PROVIDER_PRIORITY_USER + 2)
-        if USER_CSS.exists():
-            self.user_css.load_from_path(str(USER_CSS))
+        app = self.get_application()
+        if getattr(app, "styles", None) is None:       # made once per process; each window only re-reads the generated stylesheet
+            app.styles = ui_style.Styles(APP_CSS)
+        app.styles.reload_user(USER_CSS)
 
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=2, use_markup=False))     # text from tools and networks is shown as it is
@@ -276,6 +270,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if self.pending_revert is not None:
             self.revert_displays_after_close(self.pending_revert)    # an unconfirmed display change never outlives the window
             self.pending_revert = None
+        self.policy.close()
         self.jobs.close()
         self.thumbs.close()
         self.ops.close()
@@ -402,7 +397,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         inner.append(area)
         inner.append(title)
         inner.append(sub)
-        btn = Gtk.Button(child=inner, css_classes=["card", "theme-card"])
+        btn = Gtk.Button(child=inner, css_classes=["card", "theme-card", "primo-card"])
         btn.connect("clicked", lambda _b, tid=t["_id"], nm=t.get("name", t["_id"]): self.apply_theme(tid, nm))
         btn.theme_mode = t.get("mode", "dark")
         self.theme_buttons[t["_id"]] = btn
@@ -412,7 +407,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         cur = current_theme()
         cur_mode = next((t.get("mode") for t in themes() if t["_id"] == cur), "dark")
         for tid, btn in self.theme_buttons.items():
-            (btn.add_css_class if tid == cur else btn.remove_css_class)("active")
+            (btn.add_css_class if tid == cur else btn.remove_css_class)("primo-active")
         for h, b in zip(self.mode_handlers, (self.dark_btn, self.light_btn)):
             b.handler_block(h)
         self.dark_btn.set_active(cur_mode == "dark")
@@ -450,7 +445,7 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         cur_group = Adw.PreferencesGroup(title="Current wallpaper")
         self.wp_preview = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, height_request=230,
-                                      css_classes=["wp-preview"], overflow=Gtk.Overflow.HIDDEN)
+                                      css_classes=["primo-card"], overflow=Gtk.Overflow.HIDDEN)
         cur_group.add(self.wp_preview)
         page.add(cur_group)
 
@@ -648,7 +643,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         inner.append(pic)
         inner.append(cap)
         tip = str(path) if result.status == "ok" else f"{path}\nNo preview: {result.reason}"
-        btn = Gtk.Button(child=inner, css_classes=["flat", "wp-thumb"], tooltip_text=tip)
+        btn = Gtk.Button(child=inner, css_classes=["flat", "wp-thumb", "primo-control"], tooltip_text=tip)
         btn.connect("clicked", lambda _b, p=path: self.set_wallpaper(str(p)))
         self.wp_buttons[str(path)] = btn
         self.wp_flow.append(btn)
@@ -686,7 +681,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     def mark_active_wallpaper(self):
         cur = self.current_wallpaper()
         for p, btn in self.wp_buttons.items():
-            (btn.add_css_class if p == cur else btn.remove_css_class)("active")
+            (btn.add_css_class if p == cur else btn.remove_css_class)("primo-active")
 
     def set_wallpaper(self, path):
         if Path(path).suffix.lower() in VIDEO_EXTS and not shutil.which("mpvpaper"):
