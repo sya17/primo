@@ -7,8 +7,10 @@
     primo config path         the folders and files Primo reads
     primo config show         the settings in effect and where each comes from (private links and snippet texts hidden)
     primo config validate     check every settings file; exit 2 naming the file and line of the first problem in each
+    primo snapshot            copy your Primo settings into a private snapshot (--dry-run lists what it would take); also: list, show ID, remove ID
 
-Nothing here changes the system: a fix is only ever printed as a command for you to run.
+Only `primo snapshot` writes anything, and only under ~/.local/share/primo/snapshots; everything else is read-only: a fix is only ever
+printed as a command for you to run.
 Exit codes: 0 healthy, 1 warnings, 2 at least one failure, 64 usage error.
 Colours are off when NO_COLOR is set, when the output is not a terminal, or with --no-color.
 """
@@ -23,6 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
 import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
+import recovery_core as rc  # noqa: E402
 
 MARK = {dc.PASS: "ok", dc.WARNING: "!!", dc.FAIL: "XX", dc.SKIPPED: "--"}
 COLOUR = {dc.PASS: "32", dc.WARNING: "33", dc.FAIL: "31", dc.SKIPPED: "2"}
@@ -89,6 +92,71 @@ def cmd_doctor(args):
     print(f"\nHealth: {out.c(COLOUR[dc.PASS] if sm['health'] == 'HEALTHY' else COLOUR[dc.WARNING] if sm['health'] == 'DEGRADED' else COLOUR[dc.FAIL], sm['health'])}"
           f"  ({c[dc.PASS]} ok, {c[dc.WARNING]} warnings, {c[dc.FAIL]} failures, {c[dc.SKIPPED]} skipped)")
     return sm["exit_code"]
+
+
+def _size(n):
+    return "" if n is None else f"{n} B" if n < 1024 else f"{n / 1024:.1f} KiB"
+
+
+def cmd_snapshot(args):
+    action = args.action or "create"
+    out = make_out(args)
+    if action in ("show", "remove") and not args.id:
+        print(f"primo snapshot {action}: needs a snapshot id (see `primo snapshot list`)", file=sys.stderr)
+        return 64
+    if action not in ("create", "list", "show", "remove"):
+        print("primo snapshot: use create (the default), list, show ID or remove ID", file=sys.stderr)
+        return 64
+    try:
+        if action == "list":
+            rows = rc.list_snapshots()
+            if args.json:
+                print(json.dumps({"version": 1, "snapshots": [r.__dict__ for r in rows]}, indent=2))
+                return 0
+            for r in rows:
+                print(f"  {r.id}  {r.created or '-':19}  {r.count} files  {_size(r.bytes):>9}  {'complete' if r.complete else out.c('33', r.problem or 'incomplete')}")
+            if not rows:
+                print("  no snapshots yet; `primo snapshot` takes one")
+            elif len([r for r in rows if r.id[0].isdigit()]) > rc.SOFT_LIMIT:
+                print(f"  {len(rows)} snapshots (more than {rc.SOFT_LIMIT}): remove old ones with `primo snapshot remove ID`")
+            return 0
+        if action == "show":
+            manifest, problems = rc.read_manifest(args.id), []
+            if args.json:
+                print(json.dumps({"version": 1, "manifest": manifest.to_dict(), "problems": problems}, indent=2))
+            else:
+                print(f"{manifest.id}  {manifest.created}  {'complete' if manifest.complete else 'INCOMPLETE'}")
+                for name, cls, state, size in rc.plan_rows(manifest):
+                    print(f"  {state:20} {name:26} {cls:10} {_size(size)}")
+                for p_ in problems:
+                    print(f"  problem: {p_}")
+            return 2 if problems else 0
+        if action == "remove":
+            rc.remove_snapshot(args.id)
+            print(f"removed {args.id}")
+            return 0
+        plan = rc.plan_snapshot(include_sensitive=args.include_sensitive)
+        if args.dry_run:
+            rows, done, code = rc.plan_rows(plan), None, 0
+        else:
+            done = rc.create_snapshot(plan, revision=version())
+            rows, code = rc.plan_rows(done), 0 if done.complete else 2
+        if args.json:
+            print(json.dumps({"version": 1, "dry_run": bool(args.dry_run), "snapshot": done.id if done else None, "complete": done.complete if done else None,
+                              "rows": [dict(zip(("name", "class", "state", "size"), r)) for r in rows]}, indent=2))
+            return code
+        print(out.c("1", "Snapshot preview" if args.dry_run else f"Snapshot {done.id}" + ("" if done.complete else "  INCOMPLETE")))
+        for name, cls, state, size in rows:
+            print(f"  {state:20} {name:26} {cls:10} {_size(size)}")
+        left = [r for r in rows if r[2] == "sensitive-skipped"]
+        if left and not args.include_sensitive:
+            print(f"\n  {len(left)} file(s) with possible secrets left out; add --include-sensitive to take them too")
+        if not args.dry_run and not done.complete:
+            print("  this snapshot cannot be restored: a file kept changing while it was copied; take another one")
+        return code
+    except rc.RecoveryError as e:
+        print(f"primo snapshot: {e}", file=sys.stderr)
+        return 2
 
 
 def cmd_status(args):
@@ -260,6 +328,17 @@ def main(argv=None):
     sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
     sp.add_argument("--no-color", action="store_true", help="never use colours")
     sp.set_defaults(fn=cmd_config)
+    sp = sub.add_parser("snapshot", help="copy your Primo settings into a private snapshot",
+                        description="create (the default): copy the settings Primo owns into ~/.local/share/primo/snapshots/<id>. --dry-run lists what it would take. "
+                                    "Files that may hold secrets (calendar links, snippets, launcher history) are left out unless --include-sensitive. "
+                                    "list, show ID and remove ID manage the snapshots. Writes nothing outside the snapshots folder.")
+    sp.add_argument("action", nargs="?", metavar="create|list|show|remove")
+    sp.add_argument("id", nargs="?", help="a snapshot id, for show and remove")
+    sp.add_argument("--include-sensitive", action="store_true", help="also take files that may hold secrets")
+    sp.add_argument("--dry-run", action="store_true", help="only list what would be taken")
+    sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+    sp.add_argument("--no-color", action="store_true", help="never use colours")
+    sp.set_defaults(fn=cmd_snapshot)
     args = p.parse_args(argv)
     if not getattr(args, "fn", None):
         p.print_help(sys.stderr)
