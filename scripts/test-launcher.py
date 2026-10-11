@@ -371,4 +371,160 @@ assert lc.history_reads - reads_before <= 1, "keystrokes do not re-read an uncha
 lc.HISTORY.write_text(json.dumps({"c.desktop": 9}))
 os.utime(lc.HISTORY, ns=(1, 1))
 assert lc.load_history() == {"c.desktop": 9}
+
+# ---- system namespaces: audio network vpn capture display power doctor (explicit prefix only, fixed argv, nothing runs while typing)
+SYSTEM = ("audio", "network", "vpn", "capture", "display", "power", "doctor")
+SETTINGS = str(lc.SCRIPTS / "primo-settings.py")
+spawned = []
+real_spawn, real_shell = lc.spawn, lc.shell
+lc.spawn = lambda *cmd: spawned.append(cmd)
+lc.shell = lambda cmd: spawned.append(("sh", "-c", cmd))
+
+
+class QuietFacts(FakeFacts):
+    """Only tool lookups are allowed: a namespace never reads windows, the clipboard or anything else to answer."""
+    def __init__(self):
+        self.asked = []
+    def has(self, binary):
+        self.asked.append(binary)
+        return binary not in self.missing
+    def clipboard(self): raise AssertionError("clipboard read for a system namespace")
+    def clients(self): raise AssertionError("windows read for a system namespace")
+
+
+def system(q, missing=()):
+    qf = QuietFacts()
+    qf.missing = set(missing)
+    c = lc.Context(apps=ctx.apps, facts=qf, launch_app=lambda i: None, file_hits=["/home/sample/audio-notes.txt"])
+    got = lc.collect(q, c)
+    assert not spawned, ("typing started something", q, spawned)
+    return got
+
+
+def argv_of(item):
+    spawned.clear()
+    item.run()
+    out = spawned[:]
+    spawned.clear()
+    return out
+
+
+# every word routes to its own provider, only with a space after it
+for word in SYSTEM:
+    provider, args = lc.route(word + " ")
+    assert provider is not None and provider.commands[0] == word and args == "", word
+    assert lc.route(word)[0] is None, "a bare word is a normal search, so it does not duplicate the actions"
+    assert {i.kind for i in system(word + " ")} == {word}, (word, "other sources must not answer an explicit namespace (no file hits, no apps)")
+assert lc.route("health ")[0] is lc.route("doctor ")[0], "health is the same namespace as doctor"
+assert len({lc.route(w + " ")[0].id for w in SYSTEM}) == 7
+
+# the table: each namespace, its results, and the exact argv they run
+expected = {
+    "audio": [("Open Audio settings", [("python3", SETTINGS, "--page", "audio")]),
+              ("Open the sound mixer", [("pavucontrol",)]),
+              ("Mute or unmute the microphone", [("pactl", "set-source-mute", "@DEFAULT_SOURCE@", "toggle")])],
+    "network": [("Open Network settings", [("python3", SETTINGS, "--page", "network")]),
+                ("Open the advanced connection editor", [("nm-connection-editor",)])],
+    "vpn": [("Open VPN settings", [("python3", SETTINGS, "--page", "vpn")])],
+    "display": [("Open Displays settings", [("python3", SETTINGS, "--page", "displays")]),
+                ("Toggle night light", [(str(lc.SCRIPTS / "nightlight.sh"), "toggle")])],
+    "power": [("Open Power settings", [("python3", SETTINGS, "--page", "power")]),
+              ("Open the session menu", [(str(lc.SCRIPTS / "power-menu.sh"),)]),
+              ("Log out", [(str(lc.SCRIPTS / "power-menu.sh"), "logout")])],
+    "doctor": [("Open Health", [("python3", SETTINGS, "--page", "health")])],
+    "capture": [("Screenshot an area", [(str(lc.SCRIPTS / "screenshot.sh"), "area")]),
+                ("Screenshot the whole screen", [(str(lc.SCRIPTS / "screenshot.sh"), "full")]),
+                ("Screenshot an area and annotate it", [(str(lc.SCRIPTS / "screenshot.sh"), "edit")]),
+                ("Record an area", [(str(lc.SCRIPTS / "record.sh"), "toggle", "area")]),
+                ("Record the whole screen", [(str(lc.SCRIPTS / "record.sh"), "toggle", "full")])],
+}
+assert set(expected) == set(SYSTEM)
+for word, rows in expected.items():
+    got = system(word + " ")
+    assert [(i.title, argv_of(i)) for i in got] == rows, (word, [i.title for i in got])
+    assert all(i.run is not None and i.subtitle for i in got)
+
+# a word after the command filters inside the namespace
+assert [i.title for i in system("audio mic")] == ["Mute or unmute the microphone"]
+assert [i.title for i in system("capture record")] == ["Record an area", "Record the whole screen"]
+assert [i.title for i in system("health ")] == ["Open Health"]
+assert [i.title for i in system("display night")] == ["Toggle night light"]
+
+# labels: opening something says Open, changing a setting says what it changes
+for word in SYSTEM:
+    for i in system(word + " "):
+        assert i.title.split()[0] in ("Open", "Mute", "Toggle", "Log", "Screenshot", "Record"), i.title
+assert all(i.title.startswith("Open") for i in system("audio ") if "settings" in i.title.lower() or "mixer" in i.title.lower())
+
+# per-action requirements, from the doctor registry and program names: unavailable actions are not shown
+assert [i.title for i in system("audio ", missing={"pavucontrol"})] == ["Open Audio settings", "Mute or unmute the microphone"]
+assert [i.title for i in system("network ", missing={"nm-connection-editor"})] == ["Open Network settings"]
+assert [i.title for i in system("capture ", missing={"satty"})] == [t for t, _ in expected["capture"] if "annotate" not in t]
+assert [i.title for i in system("capture ", missing={"wf-recorder"})][-1] == "Screenshot an area and annotate it"
+assert "Open the session menu" not in [i.title for i in system("power ", missing={"wofi"})]
+assert "Open Power settings" not in [i.title for i in system("power ", missing={"powerprofilesctl"})]
+assert "Log out" in [i.title for i in system("power ", missing={"powerprofilesctl"})]
+
+# an empty namespace says why instead of falling to files or apps; the note changes nothing
+for word, tools in (("audio", {"pactl"}), ("network", {"nmcli", "nm-connection-editor"}), ("vpn", {"nmcli"}), ("capture", {"grim", "slurp", "wf-recorder"})):
+    got = system(word + " ", missing=tools)
+    assert [i.kind for i in got] == [word] * len(got), (word, "no file or app falls through")
+    if word != "audio":
+        assert len(got) == 1 and "not available" in got[0].title.lower(), (word, [i.title for i in got])
+all_gone = system("vpn ", missing={"nmcli"})
+assert len(all_gone) == 1 and "nmcli" in all_gone[0].subtitle and "Health" in all_gone[0].subtitle and "not available" in all_gone[0].title.lower(), (all_gone[0].title, all_gone[0].subtitle)
+assert argv_of(all_gone[0]) == [], "the explanation does nothing when chosen"
+nothing_matches = system("power zzz-nothing")
+assert len(nothing_matches) == 1 and "zzz-nothing" in nothing_matches[0].title and argv_of(nothing_matches[0]) == []
+assert system("doctor ") and system("doctor ")[0].title == "Open Health", "doctor needs nothing, so it is never empty"
+
+# querying never reads anything but tool names, whatever the namespace and whatever is typed
+for word in SYSTEM:
+    qf = QuietFacts()
+    lc.collect(word + " ", lc.Context(apps=ctx.apps, facts=qf, launch_app=lambda i: None))
+    assert not spawned
+    assert set(qf.asked) <= {"grim", "slurp", "wl-copy", "satty", "wf-recorder", "pactl", "pavucontrol", "nmcli", "nm-connection-editor", "hyprsunset", "wofi", "powerprofilesctl"}, qf.asked
+
+# the typed text is data: it never reaches an argv or a shell
+for hostile in ("; touch /tmp/pwned", "$(touch /tmp/pwned)", "`touch /tmp/pwned`", "'; rm -rf ~ #", "--page ../../etc", "\n&& reboot", "audio\0x"):
+    for word in SYSTEM:
+        for i in system(f"{word} {hostile}"):
+            ran = argv_of(i)
+            assert all(hostile not in part and "touch" not in part for cmd in ran for part in cmd), (word, hostile, ran)
+            assert not any(cmd[0] == "sh" for cmd in ran), (word, hostile, ran)
+assert not Path("/tmp/pwned").exists()
+
+# nothing here can reach restart or poweroff directly
+every = [argv for w in SYSTEM for i in system(w + " ") for argv in argv_of(i)]
+flat = [part for cmd in every for part in cmd]
+assert not any(w in flat for w in ("reboot", "poweroff", "shutdown", "systemctl", "hyprshutdown")), flat
+assert str(lc.SCRIPTS / "power-menu.sh") in flat and not any(c[:2] == (str(lc.SCRIPTS / "power-menu.sh"), "reboot") for c in every)
+
+# the clipboard stays opt-in: no system word and no plain search shows it
+assert "clipboard" not in {i.kind for w in SYSTEM for i in system(w + " ")} and "clipboard" not in kinds("audio") and "clipboard" not in kinds("sample")
+assert "clipboard" in kinds("clip ")
+
+# rapid switching: only the newest word answers, and file search is only for text that is not a command word
+for first, second in zip(SYSTEM, SYSTEM[1:] + SYSTEM[:1]):
+    a, b = {i.kind for i in system(first + " ")}, {i.kind for i in system(second + " ")}
+    assert a == {first} and b == {second}
+assert not lc.wants_file_search("audio ") and not lc.wants_file_search("capture area") and not lc.wants_file_search("2+2")
+assert lc.wants_file_search("audio") and lc.wants_file_search("report") and not lc.wants_file_search("ab")
+
+# the same entries through the real Facts, with only fake tools on PATH
+bin_real = Path(tempfile.mkdtemp())
+for tool in ("pactl", "grim", "slurp", "wl-copy"):
+    (bin_real / tool).write_text("#!/bin/sh\n")
+    (bin_real / tool).chmod(0o755)
+saved_path = os.environ["PATH"]
+os.environ["PATH"] = str(bin_real)
+try:
+    live_titles = [i.title for i in lc.collect("audio ", lc.Context(apps=[], facts=lc.Facts(), launch_app=lambda i: None))]
+    assert live_titles == ["Open Audio settings", "Mute or unmute the microphone"], live_titles          # pavucontrol is not there
+    live_capture = [i.title for i in lc.collect("capture ", lc.Context(apps=[], facts=lc.Facts(), launch_app=lambda i: None))]
+    assert live_capture == ["Screenshot an area", "Screenshot the whole screen"], live_capture
+finally:
+    os.environ["PATH"] = saved_path
+lc.spawn, lc.shell = real_spawn, real_shell
+
 print("launcher checks passed")

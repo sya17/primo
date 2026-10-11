@@ -59,6 +59,14 @@ Type a command word and a space to ask one source only:
 | `theme dusk` | Switch theme. `theme` alone lists them. |
 | `win firefox` | Find an open window and focus it. Windows also show up in a plain search. |
 | `clip token` | Search the clipboard history; Enter copies the entry again. |
+| `audio `, `network `, `vpn ` | Open that Settings page. `audio` also offers the sound mixer and microphone mute, `network` the advanced connection editor. |
+| `display `, `power `, `doctor ` (or `health `) | Open the Displays, Power or Health page. `display` also has night light; `power` the session menu and log out. |
+| `capture ` | Screenshot an area or the whole screen, annotate it, or start and stop a recording. |
+
+The last three rows need the word and a space (`audio `), and a word after it narrows the list (`capture record`). Each entry is hidden when its
+tool is missing (the same list Settings > Health shows); if nothing is left, one line says what is missing. "Open …" opens a page or program;
+"Mute", "Toggle" and "Record" change something when you press Enter. Typing never changes anything, and restart and shut down stay behind the
+session menu's confirmation.
 
 <img src="screenshots/dusk-launcher-ws.webp" alt="The launcher with ws typed: a Workspaces list with Go to workspace 1, 2 and 3, each showing how many windows it holds and the title of the last one, and the command words ws, theme, win and clip in the footer. Sample windows." width="46%">
 

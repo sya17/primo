@@ -547,6 +547,18 @@ class WindowProvider(Provider):
         return out
 
 
+def needed_tools(need):
+    """The programs an action needs: a feature id (its required tools come from the doctor registry) or the name of a program."""
+    feature = dc.FEATURES_BY_ID.get(need)
+    return [b for b, _pkg in feature.requires] if feature else [need]
+
+
+def missing_tools(needs, facts):
+    """Which programs are not installed, for one need or a tuple of them. Empty means the action can run."""
+    needs = (needs,) if isinstance(needs, str) else tuple(needs or ())
+    return [b for need in needs for b in needed_tools(need) if not facts.has(b)]
+
+
 class ActionProvider(Provider):
     id, label, order, limit = "action", "ACTIONS", 20, 4
 
@@ -554,11 +566,7 @@ class ActionProvider(Provider):
         self.actions, self.needs = actions, needs or {}
 
     def available(self, title, facts):
-        need = self.needs.get(title)
-        if not need:
-            return True
-        feature = dc.FEATURES_BY_ID.get(need)
-        return all(facts.has(b) for b in ([b for b, _pkg in feature.requires] if feature else [need]))
+        return not missing_tools(self.needs.get(title), facts)
 
     def query(self, q, ctx, args):
         out = []
@@ -648,6 +656,79 @@ class ClipboardProvider(Provider):
         return out
 
 
+class NamespaceProvider(Provider):
+    """A group of daily system actions behind one command word (`audio `, `network `, ...). Only an explicit word and a space asks for it, so
+    a plain search never lists these twice. Every entry is a fixed argument list (a Settings page, or an existing script): the typed text
+    only filters the titles and never reaches a command. Entries whose tools are missing are left out; if none are left, one note says why."""
+    order, limit = 24, 8
+
+    def __init__(self, id, label, commands, entries):
+        self.id, self.label, self.commands, self.entries = id, label, commands, entries
+
+    def query(self, q, ctx, args):
+        if args is None:
+            return []
+        text = args.strip()
+        out, missing = [], []
+        for title, sub, icon, keywords, needs, argv in self.entries:
+            gone = missing_tools(needs, ctx.facts)
+            missing += gone
+            best = fuzzy(text, f"{title} {keywords}") if text else 50
+            if not gone and best > 0:
+                out.append(Item(self.id, title, sub, icon=icon, score=best, run=lambda a=argv: spawn(*a)))
+        if out:
+            return out
+        if missing and not text:
+            title, sub = f"{self.label.capitalize()} is not available here", f"Missing: {', '.join(dict.fromkeys(missing))}. Settings > Health says how to install it."
+        else:
+            title, sub = f"Nothing in {self.label.lower()} matches “{text[:40]}”", "Type just the word and a space to see everything here."
+        return [Item(self.id, title, sub, icon="dialog-information", score=1, run=lambda: None)]
+
+
+def _page(name):
+    return ("python3", str(SCRIPTS / "primo-settings.py"), "--page", name)
+
+
+NAMESPACES = [
+    ("audio", "AUDIO", ("audio",), [
+        ("Open Audio settings", "Output and input devices, volume", "audio-card", "devices volume speakers", "audio", _page("audio")),
+        ("Open the sound mixer", "The full mixer, per program", "multimedia-volume-control", "mixer pavucontrol programs", "pavucontrol", ("pavucontrol",)),
+        ("Mute or unmute the microphone", "Changes the setting now", "microphone-sensitivity-muted", "microphone mic mute", "audio",
+         ("pactl", "set-source-mute", "@DEFAULT_SOURCE@", "toggle")),
+    ]),
+    ("network", "NETWORK", ("network",), [
+        ("Open Network settings", "Wi-Fi networks and saved connections", "network-wireless", "wifi wi-fi wireless connection internet", "network", _page("network")),
+        ("Open the advanced connection editor", "Company or school sign-in, static addresses", "preferences-system-network", "advanced editor nm-connection-editor",
+         "nm-connection-editor", ("nm-connection-editor",)),
+    ]),
+    ("vpn", "VPN", ("vpn",), [
+        ("Open VPN settings", "Connect, disconnect, import a .ovpn profile", "network-vpn", "openvpn tunnel connect", "vpn", _page("vpn")),
+    ]),
+    ("capture", "CAPTURE", ("capture",), [
+        ("Screenshot an area", "Select an area; it is copied and saved", "applets-screenshooter", "screenshot select", "capture", (str(SCRIPTS / "screenshot.sh"), "area")),
+        ("Screenshot the whole screen", "Copied and saved", "applets-screenshooter", "screenshot full screen", "capture", (str(SCRIPTS / "screenshot.sh"), "full")),
+        ("Screenshot an area and annotate it", "Opens the annotation editor", "applets-screenshooter", "screenshot annotate draw edit", ("capture", "satty"),
+         (str(SCRIPTS / "screenshot.sh"), "edit")),
+        ("Record an area", "Press again to stop", "media-record", "record video screencast area", "wf-recorder", (str(SCRIPTS / "record.sh"), "toggle", "area")),
+        ("Record the whole screen", "Press again to stop", "media-record", "record video screencast screen", "wf-recorder", (str(SCRIPTS / "record.sh"), "toggle", "full")),
+    ]),
+    ("display", "DISPLAY", ("display",), [
+        ("Open Displays settings", "Resolution, scale, arrangement", "preferences-desktop-display", "monitor resolution scale arrangement", None, _page("displays")),
+        ("Toggle night light", "Changes the setting now: warms the screen colours", "preferences-system-brightness", "night light warm", "nightlight",
+         (str(SCRIPTS / "nightlight.sh"), "toggle")),
+    ]),
+    ("power", "POWER", ("power",), [
+        ("Open Power settings", "Power Saver, Balanced, Performance", "preferences-system-power", "profile battery performance saver", "power", _page("power")),
+        ("Open the session menu", "Lock, suspend, log out, restart, shut down. Restart and shut down ask first", "system-shutdown", "session lock suspend restart shutdown",
+         "wofi", (str(SCRIPTS / "power-menu.sh"),)),
+        ("Log out", "Asks for confirmation", "system-log-out", "logout exit session", None, (str(SCRIPTS / "power-menu.sh"), "logout")),
+    ]),
+    ("doctor", "HEALTH", ("doctor", "health"), [
+        ("Open Health", "Is everything installed and running? Features and checks", "emblem-default", "doctor health check status features diagnose", None, _page("health")),
+    ]),
+]
+
+
 class FileProvider(Provider):
     id, label, order, limit = "file", "FILES", 30, 4
 
@@ -707,7 +788,7 @@ NEEDS = {"Lock screen": "hyprlock", "Toggle night light": "nightlight", "Pick a 
          "Take screenshot": "capture", "Modes": "modes", "End mode": "modes",
          **dict.fromkeys(["Calendar", "Reminders", "Timer", "Alarm", "Stopwatch", "World clock", "Standup note", "Time report", "Focus", "New note"], "hub")}
 
-PROVIDERS = [CalculatorProvider(), AppProvider(), WindowProvider(), ActionProvider(ACTIONS, NEEDS), WorkspaceProvider(), ThemeProvider(), ClipboardProvider(), FileProvider(), WebProvider()]
+PROVIDERS = [CalculatorProvider(), AppProvider(), WindowProvider(), ActionProvider(ACTIONS, NEEDS), WorkspaceProvider(), ThemeProvider(), ClipboardProvider(), *[NamespaceProvider(*n) for n in NAMESPACES], FileProvider(), WebProvider()]
 KIND_LABEL = {p.id: p.label for p in PROVIDERS}
 
 
@@ -720,6 +801,11 @@ def route(q, providers=PROVIDERS):
         if first.lower() in p.commands:
             return p, rest
     return None, None
+
+
+def wants_file_search(text):
+    """File search is for plain words: not a calculation and not a command word (`ws `, `audio `, ...), which ask one source only."""
+    return len(text.strip()) >= 3 and not calculate(text) and route(text.lstrip())[0] is None
 
 
 def collect(text, ctx, providers=PROVIDERS, cap=MAX_RESULTS + 3):

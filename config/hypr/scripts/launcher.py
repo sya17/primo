@@ -31,7 +31,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_core as cc  # noqa: E402
-from launcher_core import KIND_LABEL, Context, Facts, FactsWorker, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, route  # noqa: E402
+from launcher_core import KIND_LABEL, Context, Facts, FactsWorker, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, wants_file_search  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -122,7 +122,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.query_token += 1
         token = self.query_token
         self.file_hits = []
-        if len(text.strip()) >= 3 and not calculate(text) and route(text.lstrip())[0] is None:
+        if wants_file_search(text):
             GLib.timeout_add(260, self.start_file_search, text.strip(), token)
         else:
             self.search.cancel()        # shorter query, a calculation or a command word: obsolete file work stops
