@@ -152,8 +152,10 @@ def redact(value, key=""):
 
 def config_defaults():
     import modes_core
+    import overview_core
     import workflow_core
-    return {"modes": modes_core.DEFAULT_MODES, "workflow": workflow_core.DEFAULTS, "activity": {}}
+    return {"modes": modes_core.DEFAULT_MODES, "workflow": workflow_core.DEFAULTS, "activity": {}, "overview": overview_core.DEFAULTS,
+            "ui": {"version": 1, "reduce_motion": False, "reduce_transparency": False}}
 
 
 def config_files():

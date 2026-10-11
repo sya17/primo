@@ -16,6 +16,7 @@ os.environ.pop("PRIMO_WORKFLOW_CONFIG", None)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "hypr", "scripts"))
 import activity_collect as ac
 import overview_core as ovc
+import ui_core
 import config_core as cc
 import hub_core
 import modes_core
@@ -53,6 +54,8 @@ WRITERS = {
             lambda got: got == hub_core.merged(hub_core.DEFAULTS, {}), "[1]"),
     "activity": (Path(os.environ["XDG_CONFIG_HOME"]) / "primo" / "activity.json", ac._local, None,
                  lambda got: got == {}, "[1]"),
+    "ui": (Path(os.environ["XDG_CONFIG_HOME"]) / "primo" / "ui.json", ui_core.load_preferences, lambda: ui_core.save_preferences(ui_core.UiPreferences(True, False)),
+           lambda got: got == ui_core.UiPreferences(), "[1]"),
     "overview": (Path(os.environ["XDG_CONFIG_HOME"]) / "primo" / "overview.json", ovc.load_preferences, lambda: ovc.save_preferences({"close_after_select": False}),
                  lambda got: got == ovc.DEFAULTS, "[1]"),
 }

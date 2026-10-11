@@ -231,7 +231,7 @@ code, text = run_cli("config", "validate")
 assert code == 0 and "absent" in text, text                                      # nothing written yet: every file absent, all fine
 code, data = run_cli("config", "path", "--json")
 data = json.loads(data)
-assert code == 0 and data["folders"]["config"] == str(cfg_home / "config") and {f["name"] for f in data["files"]} >= {"modes", "workflow", "activity", "hub", "overview"}
+assert code == 0 and data["folders"]["config"] == str(cfg_home / "config") and {f["name"] for f in data["files"]} >= {"modes", "workflow", "activity", "hub", "overview", "ui"}
 primo_dir = cfg_home / "config" / "primo"
 primo_dir.mkdir(parents=True)
 (primo_dir / "workflow.json").write_text(json.dumps({"ics": [{"name": "Work", "url": "https://calendar.example/private-token.ics"}],

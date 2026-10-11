@@ -50,6 +50,7 @@ FILES = [
     ("workflow", "config", "primo/workflow.json", dict),
     ("activity", "config", "primo/activity.json", dict),
     ("overview", "config", "primo/overview.json", dict),
+    ("ui", "config", "primo/ui.json", dict),
     ("hub", "data", "primo/hub.json", dict),
 ]
 
