@@ -18,7 +18,11 @@ def py(code, *args, **kw):
 def alive(pid):
     try:
         os.kill(pid, 0)
-        return True
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[0] != "Z"      # a zombie is dead; a container's init may not reap it
+        except OSError:
+            return True
     except ProcessLookupError:
         return False
     except PermissionError:
