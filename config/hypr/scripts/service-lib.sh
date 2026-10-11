@@ -1,4 +1,5 @@
-# Sourced by the service wrappers (launcher.sh, switcher.sh, overview.sh, activity.sh).
+# shellcheck shell=bash
+# Sourced by the service wrappers (launcher.sh, switcher.sh, overview.sh, activity.sh, hub.sh).
 #   ensure_service NAME DEST SCRIPT   make sure the service that owns the bus name DEST is running; otherwise exit 69 with a reason.
 # The unit primo-NAME.service owns the start when it is enabled (install.sh --services); without it the service is started here, as before.
 # Never both: an enabled unit that fails is reported, not followed by a second kind of start.
