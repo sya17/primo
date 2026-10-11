@@ -49,6 +49,11 @@ D-Bus (`org.gtk.Actions.Activate`). The windows close themselves safely (focus l
 Activity's measurements run on one worker thread that owns the sampler (`activity_collect.Collector`): the window and the battery
 watcher only ask for a collection, requests made while one runs are merged into one, and a result reaches a window only if it is still open. The hub also keeps timers, alarms
 and reminders running while its window is closed; the activity monitor only measures while its window is open.
+The overview reads Hyprland the same way (`overview_core.py`, run by `settings_jobs.JobOwner`): the window opens at once with the last valid
+desktop or a loading note, one read runs at a time with the latest waiting, every 2 seconds while it is open and never while it is hidden.
+A read that fails or comes back malformed keeps the last view and says so; an empty desktop is a valid answer. Focus, go and move re-read
+the desktop and check the window and workspace before sending a single fixed dispatch, so a window that vanished is refused with a message
+instead of being sent to Hyprland.
 
 ## Logs
 
