@@ -75,8 +75,11 @@ def pump(seconds):
     while time.monotonic() < end:
         ctx.iteration(False); time.sleep(0.002)
 def pss():
+    """PSS and the anonymous (private, heap) memory in KiB. PSS also moves when other processes start or stop sharing a library; the anonymous
+    figure is this process alone, so it is the one to read growth from."""
     import re
-    return int(re.search(r"Pss:\s+(\d+) kB", open("/proc/self/smaps_rollup").read()).group(1))
+    text = open("/proc/self/smaps_rollup").read()
+    return {"pss": int(re.search(r"Pss:\s+(\d+) kB", text).group(1)), "anonymous": int(re.search(r"Anonymous:\s+(\d+) kB", text).group(1))}
 def spread(v):
     v = sorted(v)
     return {"count": len(v)} if not v else {"count": len(v), "median": round(v[len(v)//2], 3), "p95": round(v[min(len(v)-1, int(len(v)*0.95))], 3), "max": round(v[-1], 3)}

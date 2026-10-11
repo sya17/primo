@@ -3,6 +3,7 @@
 generated stylesheet, the preferences and the toolkit's animation setting on the root classes, and nothing delivered to a closed window.
 Needs GTK and a display (skipped without one). Windows are built but never shown; sample facts, temporary XDG folders, this process's own
 Gtk.Settings only."""
+import gc
 import importlib.machinery
 import importlib.util
 import json
@@ -113,8 +114,12 @@ try:
         assert w.policy.handler is None and w.alive is False
         refs.append(weakref.ref(w))
         del w
-    # Whether a destroyed window is garbage-collected is not asserted here: a window that was never shown stays referenced from GTK's side in this
-    # harness, also in v0.4.0. Growth over repeated real open/close cycles is measured by the 100-cycle run (T041), not guessed from this.
+    # A closed launcher window is freed: its handlers are disconnected on close (a closure on a child widget that calls back into the window
+    # would otherwise keep every window ever opened in memory, a resident service growing with each opening).
+    for _ in range(50):
+        GLib.MainContext.default().iteration(False)
+    gc.collect()
+    assert all(r() is None for r in refs), ("closed launcher windows are released", sum(r() is not None for r in refs))
     assert len({threading.get_ident() for _ in refs}) == 1 and threading.active_count() <= threads_before + 1, "no worker thread outlives its window"
 
     # ---- a closed window receives nothing, and typing and Esc work in an open one

@@ -67,21 +67,22 @@ class LauncherWindow(Adw.ApplicationWindow):
         # Windows, clipboard and the like are read by a worker; typing only ever uses what is cached.
         self.facts_worker = FactsWorker(app.facts, lambda values: GLib.idle_add(self.apply_facts, set(values)))
         self.policy = ui_style.PolicyBinding(self)       # reads the preferences now; follows the toolkit's animation setting until closed
-        self.connect("close-request", self.on_close)
-        self.connect("map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
+        self.handlers = []                              # signal handlers that call back into this window: all disconnected on close (see on_close)
+        self.on(self, "close-request", self.on_close)
+        self.on(self, "map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
 
         # The window is fixed-size and transparent; the visible card sits at its top and grows
         # downwards, so the search box never jumps while results appear (Hyprland keeps a floating
         # window's centre fixed when it resizes).
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["ln-card", "primo-card", "primo-popup"], valign=Gtk.Align.START)
         self.entry = Gtk.SearchEntry(placeholder_text="Search apps, files, math, actions…", css_classes=["ln-entry", "primo-control", "primo-title"])
-        self.entry.connect("search-changed", self.on_changed)
-        self.entry.connect("activate", lambda *_: self.activate_selected())
+        self.on(self.entry, "search-changed", self.on_changed)
+        self.on(self.entry, "activate", lambda *_: self.activate_selected())
         root.append(self.entry)
 
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, activate_on_single_click=True)
         self.listbox.set_header_func(self.header_func)
-        self.listbox.connect("row-activated", lambda _lb, row: self.run_item(row.item))
+        self.on(self.listbox, "row-activated", lambda _lb, row: self.run_item(row.item))
         self.scroller = Gtk.ScrolledWindow(child=self.listbox, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                            propagate_natural_height=True, max_content_height=430)
         root.append(self.scroller)
@@ -91,15 +92,15 @@ class LauncherWindow(Adw.ApplicationWindow):
         outer.set_hexpand(True)
         root.set_hexpand(True)
         click = Gtk.GestureClick()
-        click.connect("pressed", lambda _g, _n, x, y: self.close() if not self.card_contains(root, x, y) else None)
+        self.on(click, "pressed", lambda _g, _n, x, y: self.close() if not self.card_contains(root, x, y) else None)
         outer.add_controller(click)
         self.set_content(outer)
 
         keys = Gtk.EventControllerKey()
         keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        keys.connect("key-pressed", self.on_key)
+        self.on(keys, "key-pressed", self.on_key)
         self.add_controller(keys)
-        self.connect("notify::is-active", self.on_active_changed)
+        self.on(self, "notify::is-active", self.on_active_changed)
         self.rebuild("")
         if not isinstance(app.facts, SampleFacts):
             self.facts_worker.request(("clients", "snippets", "modes"))   # what the first keystroke will want
@@ -136,9 +137,18 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.rebuild(self.entry.get_text(), keep_selection=True)
         return False
 
+    def on(self, obj, signal, callback):
+        """connect() that remembers the handler. A callback that refers to this window, connected on a widget the window owns, makes a cycle the
+        garbage collector cannot see through (the widget's closure holds the window), so a closed window would stay in memory for good."""
+        self.handlers.append((obj, obj.connect(signal, callback)))
+
     def on_close(self, *_):
         self.alive = False
         self.policy.close()
+        for obj, handler in self.handlers:
+            obj.disconnect(handler)
+        self.handlers.clear()
+        self.listbox.set_header_func(None)
         self.search.cancel()
         self.facts_worker.cancel()
         self.app.facts.forget("clipboard")          # previews of what you copied do not stay in memory after the window closes
