@@ -162,4 +162,6 @@ for before/after comparisons on one machine. `perf-baseline.py render-context` l
 libadwaita versions, monitor size, refresh and scale, GPU driver, animation switches); what it cannot observe is null with a reason, and it
 never records serial numbers, connector names, titles or paths. `perf-baseline.py frame-probe` shows one small window of its own for a
 few seconds and reports the frame pace and whether the compositor reports when each frame was presented (GTK's frame timings): the
-instrument for judging motion, as opposed to the launcher's toggle-to-map time.
+instrument for judging motion, as opposed to the launcher's toggle-to-map time. `scripts/test-ui-foundation.py --visual --cycles 100` is
+the opt-in workload for the launcher and Settings: it really opens and closes both on a private D-Bus session (windows appear on screen),
+including ten rapid reversals each, and prints errors, frame intervals from the windows' own frame clock and memory before and after.
