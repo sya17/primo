@@ -58,6 +58,27 @@ Log out and in once after the first install (Qt apps read `QT_QPA_PLATFORMTHEME=
 Delete the links in `~/.config` and move your `<app>.bak-<timestamp>` folders back. Files the theme tools changed outside the links are
 backed up once as `*.bak-primo` the first time they are touched. Each optional script below has its own `--uninstall` or `--remove`.
 
+## Optional: run the services under systemd
+
+By default Hyprland starts the resident services (launcher, switcher, overview, activity, time hub) at login and nothing restarts one that
+crashes until you use its shortcut. With systemd user units a crashed service comes back (at most three starts a minute), and Doctor shows how each one is doing.
+
+```bash
+./scripts/install.sh --services --dry-run     # prints what it would link and enable
+./scripts/install.sh --services               # links the units, enables them for the next login
+./scripts/install.sh --remove-services        # disables them and removes the links
+```
+
+- It links `config/systemd/user/primo-*.service` into `~/.config/systemd/user` and a D-Bus activation file per service into `~/.local/share/dbus-1/services`.
+  A file or drop-in of yours with the same name is left alone and reported. It never starts or stops a running service; the units take over at the next login.
+- While a unit is enabled, the Hyprland autostart and the shortcut wrappers do not start that service themselves; without a unit they start it as before.
+  A machine without a systemd user manager keeps working exactly as it did.
+- After `git pull` the units are the updated files (they are links), but systemd reads them again only after `systemctl --user daemon-reload`.
+- Where to look: `systemctl --user status primo-launcher.service`, `journalctl --user -u primo-launcher.service`, `primo doctor --category services`,
+  and the service's own log in `~/.local/state/hyprland-dotfiles/log/<service>.log`.
+- A service that finds no display or session bus exits with status 69 and is not restarted; fix the session, then use its shortcut or `systemctl --user start`.
+- The time hub keeps reminders, alarms and timers in its data file, so a restart loses none of them; see "Resident services" in `docs/ARCHITECTURE.md`.
+
 ## Optional extras
 
 | What | Command | Notes |
