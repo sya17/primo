@@ -65,6 +65,9 @@ def blend(top, bottom, alpha):
     return "".join(f"{round(int(top[i:i + 2], 16) * alpha + int(bottom[i:i + 2], 16) * (1 - alpha)):02x}" for i in (0, 2, 4))
 
 
+(work / "config" / "primo").mkdir()
+UI_JSON = work / "config" / "primo" / "ui.json"
+UI_JSON.write_text('{"version": 1, "reduce_motion": true, "reduce_transparency": false}')
 themes = sorted(p.name for p in (repo / "themes").iterdir() if (p / "theme.conf").exists())
 assert {"primo-dusk", "primo-dawn"} <= set(themes), themes
 rendered = {}
@@ -81,6 +84,8 @@ for theme in themes:
     rendered[theme] = css4
     again = render(theme)
     assert again.returncode == 0 and GTK4.read_text() == css4, (theme, "rendering twice gives the same file")
+
+assert UI_JSON.read_text() == '{"version": 1, "reduce_motion": true, "reduce_transparency": false}', "rendering a theme never touches the interface preferences"
 
 # ---- selectors stay inside the two pilots (and their policy classes)
 section = rendered["primo-dusk"][rendered["primo-dusk"].index("/* ---- " + HEAD):]

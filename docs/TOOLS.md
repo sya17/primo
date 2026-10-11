@@ -9,7 +9,12 @@ A libadwaita app with these pages. Pages open at once and fill in as the system 
 display layout, a power mode, a Bluetooth or VPN switch) runs in the background, one at a time per item, and the page shows what the
 system reports afterwards. If a tool is slow you see "it is taking too long" and the real state, not a success you were not given.
 
-- **Appearance**: dark and light switch, and theme cards with a live palette preview.
+- **Appearance**: dark and light switch, and theme cards with a live palette preview. Two switches, **Reduce interface motion** and
+  **Reduce interface transparency**, apply to Settings and the launcher only: the page change in Settings stays still, and selections and cards
+  are solid colours. Settings changes at once; the launcher uses your choice the next time it opens. They do not touch Hyprland's window and
+  workspace animations, the bar, notifications or other applications, and if animation is already off in your system settings it stays off
+  whatever you choose. The choice is kept in `~/.config/primo/ui.json`, which a theme change never rewrites; if it cannot be saved, the
+  switch goes back and says why.
 - **Wallpaper**: a gallery of theme art and `~/Pictures` (previews appear as they are ready; a picture too big or broken to preview still
   has its tile, and its tooltip says why). A picture you choose survives theme switches until you press "Use the theme's
   wallpaper". Also a slideshow from a folder (every minute to every three hours), animated transitions when `awww` is installed, GIFs

@@ -25,6 +25,7 @@ import audio_core as sj_audio
 import network_core as nc
 import settings_jobs as sj
 import thumbnail_core as tc
+import ui_core
 import ui_style
 
 import gi
@@ -206,7 +207,8 @@ class SettingsWindow(Adw.ApplicationWindow):
         # Content
         self.stack = Gtk.Stack()
         # The interface preferences and the toolkit's animation setting decide the page transition (a crossfade, or none) while the window is open.
-        self.policy = ui_style.PolicyBinding(self, on_change=lambda policy: ui_style.set_page_transition(self.stack, policy))
+        self.effects_rows = None
+        self.policy = ui_style.PolicyBinding(self, on_change=self.on_policy)
         self.builders = {
             "appearance": self.build_appearance,
             "wallpaper": self.build_wallpaper,
@@ -382,11 +384,60 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.theme_flow.append(self.make_theme_card(t))
         group.add(self.theme_flow)
         page.add(group)
+        page.add(self.build_effects())
 
         self.mode_handlers = (self.dark_btn.connect("toggled", self.on_mode_toggled),
                               self.light_btn.connect("toggled", self.on_mode_toggled))
         self.refresh_theme_state()
         return page
+
+    # ---- interface effects: two independent preferences (ui.json), applied to this window at once and to the launcher when it next opens
+    EFFECTS_SCOPE = ("Applies to the transitions and see-through surfaces inside Settings and the launcher. Window and workspace animations belong "
+                     "to Hyprland and are set there; the bar, notifications and other applications are not affected.")
+
+    def on_policy(self, policy):
+        ui_style.set_page_transition(self.stack, policy)
+        if self.effects_rows:
+            self.effects_rows["note"].set_visible(not policy.animate and not self.policy.prefs.reduce_motion)
+
+    def build_effects(self):
+        prefs = self.policy.prefs or ui_core.UiPreferences()
+        self.saved_ui = prefs                                  # what is on disk and in effect: a failed save puts the switches back to it
+        group = Adw.PreferencesGroup(title="Interface effects", description=self.EFFECTS_SCOPE)
+        motion = Adw.SwitchRow(title="Reduce interface motion", subtitle="Page changes in Settings and the launcher's own effects stay still.", active=prefs.reduce_motion)
+        transparency = Adw.SwitchRow(title="Reduce interface transparency", subtitle="Selections and cards in Settings and the launcher are solid colours.",
+                                     active=prefs.reduce_transparency)
+        note = Adw.ActionRow(title="Animation is off in your system settings", subtitle="Settings and the launcher follow it, whatever is chosen here.")
+        note.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
+        note.set_visible(not self.policy.policy.animate and not prefs.reduce_motion)
+        self.ui_updating = False
+        for row in (motion, transparency):
+            row.connect("notify::active", self.on_effect_toggled)
+            group.add(row)
+        group.add(note)
+        self.effects_rows = {"motion": motion, "transparency": transparency, "note": note}
+        return group
+
+    def on_effect_toggled(self, _row, _param):
+        if self.ui_updating:                                   # a switch moved by the program (a failed save putting it back) saves nothing
+            return
+        wanted = ui_core.UiPreferences(self.effects_rows["motion"].get_active(), self.effects_rows["transparency"].get_active())
+        self.operate("ui/prefs", lambda budget: ui_core.save_preferences(wanted), lambda result: self.on_effects_saved(wanted, result), coalesce=True)
+
+    def on_effects_saved(self, wanted, result):
+        if not isinstance(result, Exception):
+            self.saved_ui = wanted
+            self.policy.refresh(wanted)                        # this window now; the launcher reads the file when it next opens
+            return
+        self.ui_updating = True                                # keep what is really saved and in effect, and say why
+        self.effects_rows["motion"].set_active(self.saved_ui.reduce_motion)
+        self.effects_rows["transparency"].set_active(self.saved_ui.reduce_transparency)
+        self.ui_updating = False
+        if isinstance(result, cc.ConfigError) and result.newer:
+            self.toast("These choices were saved by a newer Primo. Update Primo, or move ~/.config/primo/ui.json away.")
+        else:
+            reason = result.strerror if isinstance(result, OSError) and result.strerror else str(result)
+            self.toast(f"Could not save: {reason}. Check that ~/.config/primo can be written.")
 
     def make_theme_card(self, t):
         colors = {k: t.get(k, "000000") for k in ("base", "mantle", "surface0", "text", "accent", "accent2")}

@@ -53,6 +53,7 @@ class PolicyBinding:
     def __init__(self, window, load=ui_core.load_preferences, display=None, on_change=None):
         self.window, self.load, self.display, self.on_change = weakref.ref(window), load, display, on_change
         self.policy = None
+        self.prefs = None
         self.handler = None
         try:
             self.settings = _settings(display)
@@ -65,7 +66,8 @@ class PolicyBinding:
         window = self.window()
         if window is None:
             return None
-        self.policy = ui_core.resolve_policy(prefs or self.load(), system_animations(self.display))
+        self.prefs = prefs or self.load()
+        self.policy = ui_core.resolve_policy(self.prefs, system_animations(self.display))
         apply_policy(window, self.policy)
         if self.on_change:
             self.on_change(self.policy)

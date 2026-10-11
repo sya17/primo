@@ -395,4 +395,90 @@ try:
 finally:
     gsettings.set_property("gtk-enable-animations", animations_before)
 
+# ---- the two interface switches (T039): each alone and together, saved, restored on restart, failures shown and undone
+try:
+    gsettings.set_property("gtk-enable-animations", True)
+    for old in prefs_file.parent.glob("ui.json*"):
+        old.unlink()
+    saves = []
+    real_save = ps.ui_core.save_preferences
+    ps.ui_core.save_preferences = lambda prefs, path=None: (saves.append(prefs), real_save(prefs, path))[1]
+    ew = ps.SettingsWindow(app, "appearance")
+    rows = ew.effects_rows
+    assert rows["motion"].get_title() == "Reduce interface motion" and rows["transparency"].get_title() == "Reduce interface transparency"
+    assert not rows["motion"].get_active() and not rows["transparency"].get_active() and not rows["note"].get_visible()
+    assert "Hyprland" in ew.EFFECTS_SCOPE and "Settings and the launcher" in ew.EFFECTS_SCOPE, "the scope is stated: two apps, not the compositor"
+    assert not prefs_file.exists(), "showing the switches writes nothing"
+    flags = lambda: {k: v for k, v in _json.loads(prefs_file.read_text()).items() if k != "version"}
+    classes_now = lambda: set(ew.get_css_classes())
+
+    rows["motion"].set_active(True)                                            # motion alone
+    pump(3, until=lambda: ew.saved_ui == ps.ui_core.UiPreferences(True, False))
+    assert flags() == {"reduce_motion": True, "reduce_transparency": False} and ew.stack.get_transition_duration() == 0
+    assert "primo-reduce-motion" in classes_now() and "primo-opaque" not in classes_now()
+    pump(0.5, until=lambda: not ew.ops.jobs.active)
+    rows["transparency"].set_active(True)                                      # both
+    pump(3, until=lambda: ew.saved_ui == ps.ui_core.UiPreferences(True, True))
+    assert flags() == {"reduce_motion": True, "reduce_transparency": True} and {"primo-reduce-motion", "primo-opaque"} <= classes_now()
+    pump(0.5, until=lambda: not ew.ops.jobs.active)
+    rows["motion"].set_active(False)                                           # transparency alone
+    pump(3, until=lambda: ew.saved_ui == ps.ui_core.UiPreferences(False, True))
+    assert flags() == {"reduce_motion": False, "reduce_transparency": True} and ew.stack.get_transition_duration() == 180
+    assert "primo-reduce-motion" not in classes_now() and "primo-opaque" in classes_now()
+    pump(0.5, until=lambda: not ew.ops.jobs.active)
+    before_saves = len(saves)
+    assert before_saves == 3, ("one save per change, no echo from programmatic updates", before_saves)
+
+    # the system setting wins, and the window says so
+    gsettings.set_property("gtk-enable-animations", False)
+    assert rows["note"].get_visible() and ew.stack.get_transition_duration() == 0, "animation off in the system: no custom transition, explained"
+    rows["motion"].set_active(True)
+    pump(3, until=lambda: ew.saved_ui == ps.ui_core.UiPreferences(True, True))
+    assert not rows["note"].get_visible(), "once the user reduces motion too, the note is not needed"
+    pump(0.5, until=lambda: not ew.ops.jobs.active)
+    rows["motion"].set_active(False)
+    pump(3, until=lambda: ew.saved_ui == ps.ui_core.UiPreferences(False, True))
+    assert ew.stack.get_transition_duration() == 0 and ew.policy.policy.animate is False, "switching the preference off cannot turn system-disabled motion on"
+    gsettings.set_property("gtk-enable-animations", True)
+    pump(0.5, until=lambda: not ew.ops.jobs.active)
+
+    # restart: a new window shows what was saved
+    ew.on_close_request()
+    pump(0.5)
+    ew2 = ps.SettingsWindow(app, "appearance")
+    assert not ew2.effects_rows["motion"].get_active() and ew2.effects_rows["transparency"].get_active() and "primo-opaque" in set(ew2.get_css_classes())
+
+    # a failed save: a message that says what to do, the switch goes back, nothing is written, no loop of saves
+    toasts2 = []
+    ew2.toast = toasts2.append
+    good = prefs_file.read_bytes()
+    count = len(saves)
+    def refuse(prefs, path=None):
+        saves.append(prefs)
+        raise OSError(30, "Read-only file system")
+    ps.ui_core.save_preferences = refuse
+    ew2.effects_rows["motion"].set_active(True)
+    pump(3, until=lambda: toasts2)
+    pump(0.3)
+    assert not ew2.effects_rows["motion"].get_active(), "the switch shows what is really saved"
+    assert toasts2 and "Read-only file system" in toasts2[0] and "~/.config/primo" in toasts2[0], toasts2
+    assert prefs_file.read_bytes() == good and len(saves) == count + 1, "one attempt, no retry loop"
+    assert "primo-reduce-motion" not in set(ew2.get_css_classes()) and ew2.stack.get_transition_duration() == 180, "the window did not change either"
+
+    # a file from a newer Primo: refused with its own message, kept as it was
+    ps.ui_core.save_preferences = real_save
+    prefs_file.write_text(_json.dumps({"version": 9, "reduce_motion": False}))
+    newer = prefs_file.read_bytes()
+    pump(0.5, until=lambda: not ew2.ops.jobs.active)
+    del toasts2[:]
+    ew2.effects_rows["transparency"].set_active(False)
+    pump(3, until=lambda: toasts2)
+    assert prefs_file.read_bytes() == newer and "newer Primo" in toasts2[0], toasts2
+    assert ew2.effects_rows["transparency"].get_active(), "put back to what was in effect"
+    ew2.on_close_request()
+    ew.policy.close()
+finally:
+    ps.ui_core.save_preferences = real_save if "real_save" in dir() else ps.ui_core.save_preferences
+    gsettings.set_property("gtk-enable-animations", animations_before)
+
 print("settings window checks passed (longest main-loop gap %.0f ms)" % (max(b - a for a, b in zip(beats, beats[1:])) * 1000))
