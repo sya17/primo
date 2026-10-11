@@ -16,6 +16,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 import config_core as cc
 import idle_core
@@ -223,6 +225,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.refreshers = {}                 # page -> what refreshes it when it is shown again
         # Changes to the system (apply, connect, remove) run on their own owner: one per resource, not stopped by leaving a page, the
         # application is held until they end or reach their deadline, and nothing is shown for a window that closed meanwhile.
+        self.pending_revert = None           # display settings to put back if the window closes before Keep is pressed
         self.ops = sj.Operations(lambda fn, *args: GLib.idle_add(lambda: (fn(*args), False)[1]), app.hold, app.release)
         self.connect("close-request", self.on_close_request)
         self.content_page = Adw.NavigationPage(title="Appearance")
@@ -264,10 +267,48 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.sidebar_list.select_row(self.sidebar_list.get_row_at_index(0))
 
     def on_close_request(self, *_):
+        if self.pending_revert is not None:
+            self.revert_displays_after_close(self.pending_revert)    # an unconfirmed display change never outlives the window
+            self.pending_revert = None
         self.jobs.close()
         self.thumbs.close()
         self.ops.close()
+        self.hold_until_stopped(self.jobs, self.thumbs)
         return False
+
+    def hold_until_stopped(self, *owners, limit=3.0):
+        """Reads and previews are told to stop when the window closes; keep the application alive until their children are really
+        stopped and their private folders removed (they notice within 50 ms)."""
+        app = self.get_application()
+        if app is None or not any(o.active for o in owners):
+            return
+        app.hold()
+        end = time.monotonic() + limit
+
+        def check():
+            if any(o.active for o in owners) and time.monotonic() < end:
+                return True
+            app.release()
+            return False
+        GLib.timeout_add(50, check)
+
+    def revert_displays_after_close(self, previous):
+        """Put the displays back after the window is gone: wait for a running apply to end, then apply `previous`; the application is held."""
+        app = self.get_application()
+        if app is None:
+            return
+        app.hold()
+        ops = self.ops
+
+        def work():
+            end = time.monotonic() + sj.ORDINARY
+            while "displays" in ops.jobs.active and time.monotonic() < end:
+                time.sleep(0.05)
+            try:
+                self.apply_specs(sj.Budget(threading.Event(), total=sj.ORDINARY, per_child=sj.ORDINARY), previous)
+            finally:
+                GLib.idle_add(lambda: (app.release(), False)[1])
+        threading.Thread(target=work, name="displays-revert", daemon=True).start()
 
     def operate(self, key, work, done, deadline=None, coalesce=False, busy="Still working on the last change, try again in a moment"):
         """Run work(budget) as a change to the system; done(result) comes back here (the exception if it failed)."""
@@ -288,6 +329,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if not self.jobs.submit(key, work, done):
             self.incomplete.discard(key)
             self.toast("Busy, try again in a moment")
+            deliver(ReadError("Busy, try again in a moment"))      # the page shows its failure row with "Try again" instead of "Reading…"
 
     def read_failed_row(self, title, error, retry):
         row = Adw.ActionRow(title=title, subtitle=GLib.markup_escape_text(str(error) or "Unknown error"))
@@ -393,7 +435,8 @@ class SettingsWindow(Adw.ApplicationWindow):
                 self.refresh_wallpaper_state()
             self.toast(done_text if result == 0 else failure_text("Could not apply the theme", result))
 
-        self.operate("theme-switch", work, done, deadline=sj.LONG, busy="Still applying the last change")
+        if not self.operate("theme-switch", work, done, deadline=sj.LONG, busy="Still applying the last change"):
+            self.refresh_theme_state()                 # the toggle was clicked but nothing runs: show what is really set
 
     # ======================================================================= Wallpaper
     def build_wallpaper(self):
@@ -679,7 +722,12 @@ class SettingsWindow(Adw.ApplicationWindow):
             def finished(result):
                 if result != 0:
                     self.toast(failure_text(f"Could not change the {title.lower()}", result))
-                    select(row.last)
+                    try:                                  # the tool may have written the new value before it failed or timed out
+                        now = (STATE_DIR / state).read_text().strip()
+                    except OSError:
+                        now = ""
+                    select(keys.index("file") if now.startswith("/") else keys.index(now) if now in keys else row.last)
+                    row.last = row.get_selected()
                     return
                 row.last = row.get_selected()
                 row.set_subtitle(Path(value).name if value.startswith("/") else "")
@@ -966,12 +1014,18 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         def done(result):
             if isinstance(result, Exception):          # nothing is saved and nothing is announced; show what the screens really are
+                self.pending_revert = None
                 self.toast(failure_text("Could not apply the display settings", result))
                 self.load_monitors()
                 return
             self.confirm_displays(specs, previous)
 
-        self.operate("displays", lambda budget: self.apply_specs(budget, specs), done)
+        if self.pending_revert is None:
+            self.pending_revert = previous               # until Keep or Revert is answered, closing the window puts these back
+            if not self.operate("displays", lambda budget: self.apply_specs(budget, specs), done):
+                self.pending_revert = None
+        else:
+            self.toast("Answer the question about the display settings first")
 
     def confirm_displays(self, specs, previous):
         dialog = Adw.AlertDialog(heading="Keep these display settings?")
@@ -1002,6 +1056,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                 choice = d.choose_finish(res)
             except GLib.Error:
                 choice = "revert"
+            self.pending_revert = None
             if choice == "keep":
                 self.persist_displays(specs)
                 self.toast("Display settings saved")
@@ -1413,11 +1468,14 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         def vpn_done(names):
             if isinstance(names, Exception):
-                vpn.set_subtitle(f"Could not read the connections: {names}")
+                vpn.set_subtitle(GLib.markup_escape_text(f"Could not read the connections: {names}"))
                 return
             vpn.set_subtitle("")
+            chosen = vpn.get_selected_item().get_string() if vpn.get_selected_item() else "None"     # what the person picked meanwhile wins
+            if chosen not in names:
+                names.append(chosen)                       # a saved connection that is not listed any more stays selectable
             vpn.set_model(Gtk.StringList.new(names))
-            vpn.set_selected(names.index(mode["vpn"]) if mode["vpn"] in names else 0)
+            vpn.set_selected(names.index(chosen))
         self.read("modes/vpn-names", vpn_work, vpn_done)
         powers = list(mc.POWER)
         power = Adw.ComboRow(title="Power mode", model=Gtk.StringList.new([mc.POWER[p] for p in powers]))
@@ -1522,15 +1580,19 @@ class SettingsWindow(Adw.ApplicationWindow):
         if rules:
             self.wf.write_rules(self.wfc["app_rules"])
             self.wf_hypr_reload = True
+        reload_hypr = self.wf_hypr_reload               # read here on the UI thread; cleared only when an operation that carried it ended
 
         def work(budget):
-            reload_hypr, self.wf_hypr_reload = self.wf_hypr_reload, False
             if reload_hypr:
                 budget(["hyprctl", "reload"])
             budget(["gdbus", "call", "--session", "--dest", "dev.primo.Hub", "--object-path", "/dev/primo/Hub", "--method",
                     "org.gtk.Actions.Activate", "workflow-reload", "[]", "{}"])
 
-        self.operate("workflow-reload", work, lambda _r: None, coalesce=True)
+        def done(_result):
+            if reload_hypr and not isinstance(_result, Exception):
+                self.wf_hypr_reload = False
+
+        self.operate("workflow-reload", work, done, coalesce=True)
 
     def refresh_workflow(self):
         for key, group in (("cal", self.cal_group), ("apps", self.apps_group), ("snip", self.snip_group)):

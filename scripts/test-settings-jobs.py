@@ -263,6 +263,42 @@ pump(until=lambda: bool(got))
 pump(0.3)
 assert isinstance(got[0], ZeroDivisionError) and holds["hold"] == holds["release"] == 1, (got, holds)
 
+# ---- a UI that answers at once (post runs the callback on the calling thread) must not lose the coalesced request
+direct_holds = {"hold": 0, "release": 0}
+direct = sj.Operations(lambda fn, *a: fn(*a), lambda: direct_holds.__setitem__("hold", direct_holds["hold"] + 1),
+                       lambda: direct_holds.__setitem__("release", direct_holds["release"] + 1))
+order, results, gate = [], [], threading.Event()
+def tagged_op(tag):
+    def run(budget):
+        order.append(tag)
+        gate.wait(5)
+        return tag
+    return run
+direct.run("bluetooth", tagged_op("first"), results.append, coalesce=True)
+time.sleep(0.05)
+assert direct.run("bluetooth", tagged_op("latest"), results.append, coalesce=True) is True
+gate.set()
+end = time.monotonic() + 5
+while len(results) < 2 and time.monotonic() < end:
+    time.sleep(0.01)
+time.sleep(0.1)
+assert order == ["first", "latest"] and results == ["first", "latest"], (order, results)
+assert direct_holds["hold"] == direct_holds["release"], direct_holds
+
+# a thread that cannot start does not leak the hold
+class Broken(sj.JobOwner):
+    def submit(self, *a, **k):
+        raise RuntimeError("cannot start new thread")
+leak = {"hold": 0, "release": 0}
+bad = sj.Operations(post, lambda: leak.__setitem__("hold", leak["hold"] + 1), lambda: leak.__setitem__("release", leak["release"] + 1))
+bad.jobs = Broken(post)
+try:
+    bad.run("x", lambda b: 1, lambda r: None)
+    raise AssertionError("the error must surface")
+except RuntimeError:
+    pass
+assert leak["hold"] == leak["release"] == 1, leak
+
 # ---- the app's limits are the design's
 assert (sj.JobOwner(post).workers, sj.JobOwner(post).pending_limit) == (2, 4)
 b = sj.Budget(threading.Event())

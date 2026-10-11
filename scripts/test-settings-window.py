@@ -282,7 +282,7 @@ assert "Removed Sample VPN" in toasts and len(log_lines("nmcli", "connection del
 
 # a display change that cannot be applied keeps nothing and asks nothing
 confirmed = []
-win.confirm_displays = lambda specs, previous: confirmed.append(specs)
+win.confirm_displays = lambda specs, previous: (confirmed.append(specs), setattr(win, "pending_revert", None))   # the real one clears it when answered
 real_run = ps.ran
 win.select_page("displays")
 pump(5, until=lambda: not win.incomplete)
@@ -316,6 +316,25 @@ pump(5, until=lambda: holds.count("hold") == holds.count("release"))
 assert holds.count("hold") == holds.count("release") and not toasts, (holds, toasts)
 (slow.parent / "slow-set").unlink()
 ps.sj.ORDINARY = 10.0
+
+# ---- review fixes: an unconfirmed display change is put back when the window closes; closing holds the app until children stop
+holds.clear()
+log.write_text("")
+win3 = ps.SettingsWindow(app, "appearance")
+win3.pending_revert = [{"output": "SAMPLE-1", "mode": "1920x1080@60.00", "scale": 1.0, "transform": 0, "position": "0x0"}]
+win3.on_close_request()
+pump(3, until=lambda: holds.count("hold") == holds.count("release") and len(log_lines("hyprctl", "eval")) == 1)
+assert len(log_lines("hyprctl", "eval")) == 1 and win3.pending_revert is None, log_lines("hyprctl")
+assert holds.count("hold") == holds.count("release") >= 1, holds
+slow.write_text("1")
+win4 = ps.SettingsWindow(app, "bluetooth")
+pump(0.3)
+holds.clear()
+win4.on_close_request()
+assert holds.count("hold") == 1 and holds.count("release") == 0, holds              # held while its reads stop
+pump(3, until=lambda: holds.count("release") == 1)
+assert holds.count("release") == 1 and not win4.jobs.active, holds
+slow.unlink(missing_ok=True)
 
 # closing the window cancels what is still running and delivers nothing afterwards
 win2 = ps.SettingsWindow(app, "bluetooth")

@@ -34,8 +34,8 @@ class Budget:
 
 
 class _Job:
-    def __init__(self, key, work, deliver, generation):
-        self.key, self.work, self.deliver, self.generation = key, work, deliver, generation
+    def __init__(self, key, work, deliver, generation, finished=None):
+        self.key, self.work, self.deliver, self.generation, self.finished = key, work, deliver, generation, finished
         self.cancel = threading.Event()
 
 
@@ -48,13 +48,14 @@ class JobOwner:
         self.generation = {}   # key -> number; a job whose number is behind was invalidated
         self.closed = False
 
-    def submit(self, key, work, deliver, *, replace=True):
+    def submit(self, key, work, deliver, *, replace=True, finished=None):
         """True when the request was accepted (running or waiting); False when it was rejected (too many, closed, or replace=False
-        and one is already waiting for this key)."""
+        and one is already waiting for this key). `finished()` is posted to the UI after the slot is free, whatever happened to the
+        result (even when it is not delivered)."""
         with self.lock:
             if self.closed:
                 return False
-            job = _Job(key, work, deliver, self.generation.get(key, 0))
+            job = _Job(key, work, deliver, self.generation.get(key, 0), finished)
             if key not in self.active and len(self.active) < self.workers:
                 self._start(job)
                 return True
@@ -108,6 +109,8 @@ class JobOwner:
                     self._start(waiting)
                     break
         self.post(self._deliver, job, result)
+        if job.finished:
+            self.post(job.finished)
 
     def _deliver(self, job, result):
         """On the UI thread: only for a job that was not invalidated and an owner that is still open."""
@@ -139,16 +142,18 @@ class Operations:
         self.hold()
 
         def wrapped(cancel):
-            try:
-                return work(Budget(cancel, total=deadline, per_child=deadline))
-            finally:
-                self.post(self._finished, key)
+            return work(Budget(cancel, total=deadline, per_child=deadline))
 
-        if self.jobs.submit(key, wrapped, deliver, replace=False):
+        try:
+            accepted = self.jobs.submit(key, wrapped, deliver, replace=False, finished=lambda: self._finished(key))
+        except BaseException:              # a thread that could not start: the hold must not outlive the request
+            self.release()
+            raise
+        if accepted:
             return True
         self.release()
         if coalesce and not self.jobs.closed and key in self.jobs.active:
-            self.waiting[key] = (work, deliver, deadline)
+            self.waiting[key] = (work, deliver, deadline, coalesce)
             return True
         return False
 
@@ -156,7 +161,7 @@ class Operations:
         self.release()
         nxt = self.waiting.pop(key, None)
         if nxt and not self.jobs.closed:
-            self.run(key, *nxt[:2], deadline=nxt[2])
+            self.run(key, nxt[0], nxt[1], deadline=nxt[2], coalesce=nxt[3])
 
     def close(self):
         self.waiting.clear()
