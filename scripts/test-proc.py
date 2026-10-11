@@ -87,4 +87,31 @@ assert r.ok and r.out == "HELLO", r
 r = py("import time; time.sleep(30)", data=b"ignored", deadline=0.3)             # a program that never reads: still stopped at the deadline
 assert r.reason == "timeout", r
 
+# a program that starts helpers: the helpers go with it, at a deadline, on a cancel, and when the program itself ended early
+import tempfile
+pidfile = tempfile.mktemp()
+spawn_helper = ("import os, subprocess, sys, time\n"
+                "h = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                "open(sys.argv[1], 'w').write(str(h.pid))\n"
+                "{tail}")
+for tail, kind, kw in (("time.sleep(60)", "deadline", {"deadline": 0.5}), ("sys.exit(0)", "leader gone, helper holds the pipes", {"deadline": 0.5})):
+    r = py(spawn_helper.format(tail=tail), pidfile, **kw)
+    helper = int(open(pidfile).read())
+    for _ in range(40):
+        if not alive(helper):
+            break
+        time.sleep(0.05)
+    assert not alive(helper), (kind, "a helper outlived the program that started it")
+cancel = threading.Event()
+threading.Timer(0.5, cancel.set).start()
+r = py(spawn_helper.format(tail="time.sleep(60)"), pidfile, cancel=cancel)
+assert r.reason == "cancelled"
+helper = int(open(pidfile).read())
+for _ in range(40):
+    if not alive(helper):
+        break
+    time.sleep(0.05)
+assert not alive(helper), "cancel stops the helpers too"
+os.unlink(pidfile)
+
 print("bounded command checks passed")

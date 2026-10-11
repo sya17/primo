@@ -5,6 +5,7 @@ here, so a slow or stuck program can neither freeze a window nor outlive its own
 """
 import os
 import selectors
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -71,8 +72,11 @@ def _supervise(procs, outputs, stdin, data, deadline, cap, cancel):
                         sel.unregister(key.fileobj)
     finally:
         for proc in procs:
-            if proc.poll() is None:    # a timeout, a cancel, the cap, a program that closed its pipes and lingers, or an error
-                proc.kill()
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)   # its own group (run_bounded starts a new session): helpers it started go too
+            except OSError:
+                if proc.poll() is None:
+                    proc.kill()
             proc.wait()                # SIGKILL cannot be ignored: this returns, and the child is reaped
         for pipe in list(outputs) + ([stdin] if stdin is not None else []):
             pipe.close()
@@ -91,7 +95,7 @@ def run_bounded(cmd, deadline=DEADLINE, cap=CAP, cancel=None, env=None, data=Non
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
-                                env={**os.environ, **env} if env else None)
+                                env={**os.environ, **env} if env else None, start_new_session=True)
     except OSError:
         return Run(reason="missing")
     reason, chunks = _supervise([proc], [proc.stdout, proc.stderr], proc.stdin, data, deadline, cap, cancel)
