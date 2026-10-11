@@ -60,6 +60,7 @@ python3 scripts/test-perf.py >"$work/perf.out" 2>&1 && pass "measurement helper:
 python3 scripts/test-config.py >"$work/config.out" 2>&1 && pass "a config file that fails to parse is kept aside before saving; saves are atomic" || { fail "config safety"; tail -6 "$work/config.out"; }
 python3 scripts/test-services.py >"$work/services.out" 2>&1 && pass "service units: link only what is ours, one startup owner, finite restarts" || { fail "service units"; tail -6 "$work/services.out"; }
 python3 scripts/test-recovery.py >"$work/recovery.out" 2>&1 && pass "recovery: a fixed inventory, sensitive files opt-in, nothing outside the approved folders" || { fail "recovery"; tail -6 "$work/recovery.out"; }
+python3 scripts/test-update.py >"$work/update.out" 2>&1 && pass "update check: read-only, names what blocks a manual update, no credentials shown" || { fail "update check"; tail -6 "$work/update.out"; }
 while IFS= read -r f; do
     python3 -m py_compile "$f" 2>/dev/null && pass "$f" || fail "$f"
 done < <(find scripts config -type f -name '*.py')

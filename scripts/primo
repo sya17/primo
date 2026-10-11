@@ -7,6 +7,7 @@
     primo config path         the folders and files Primo reads
     primo config show         the settings in effect and where each comes from (private links and snippet texts hidden)
     primo config validate     check every settings file; exit 2 naming the file and line of the first problem in each
+    primo update check        is this checkout ready for a manual `git pull`? (read-only)
     primo restore ID          show what restoring a snapshot would change; --apply restores it, --rollback JOURNAL undoes it
     primo snapshot            copy your Primo settings into a private snapshot (--dry-run lists what it would take); also: list, show ID, remove ID
 
@@ -28,6 +29,7 @@ sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
 import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 import recovery_core as rc  # noqa: E402
+import update_core as uc  # noqa: E402
 
 MARK = {dc.PASS: "ok", dc.WARNING: "!!", dc.FAIL: "XX", dc.SKIPPED: "--"}
 COLOUR = {dc.PASS: "32", dc.WARNING: "33", dc.FAIL: "31", dc.SKIPPED: "2"}
@@ -209,6 +211,29 @@ def cmd_restore(args):
     if any(n in ("current", "wallpaper", "wallpaper-current") for n in res.applied):
         print("  note: the running desktop is unchanged; apply a restored theme or wallpaper yourself (hypr-theme NAME)")
     return 0 if res.complete else 1
+
+
+def cmd_update(args):
+    if args.action != "check":
+        print("primo update: use `primo update check`", file=sys.stderr)
+        return 64
+    out = make_out(args)
+    report = uc.preflight()
+    if args.json:
+        print(json.dumps({"version": 1, "verdict": report.verdict, "revision": report.revision, "branch": report.branch, "ahead": report.ahead,
+                          "behind": report.behind, "checks": [c.__dict__ for c in report.checks]}, indent=2))
+        return report.exit_code()
+    colour = {uc.OK: COLOUR[dc.PASS], uc.WARN: COLOUR[dc.WARNING], uc.BLOCK: COLOUR[dc.FAIL]}
+    mark = {uc.OK: "ok", uc.WARN: "!!", uc.BLOCK: "XX"}
+    print(out.c("1", "Update check") + out.c("2", "  (read-only: nothing is fetched, pulled or changed)"))
+    for c in report.checks:
+        print(f"  {out.c(colour[c.level], mark[c.level])}  {c.title}: {c.detail}")
+        if c.hint and c.level != uc.OK:
+            print(f"       try: {c.hint}")
+    word = {"ready": "READY", "ready-with-warnings": "READY, with warnings", "blocked": "BLOCKED"}[report.verdict]
+    print(f"\n  {out.c(colour[uc.OK] if report.verdict == 'ready' else colour[uc.WARN] if report.verdict != 'blocked' else colour[uc.BLOCK], word)}"
+          "  Primo does not update itself: when you are ready, run `git pull` in the checkout.")
+    return report.exit_code()
 
 
 def cmd_status(args):
@@ -403,6 +428,13 @@ def main(argv=None):
     sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
     sp.add_argument("--no-color", action="store_true", help="never use colours")
     sp.set_defaults(fn=cmd_restore)
+    sp = sub.add_parser("update", help="is this checkout ready for a manual update? (read-only)",
+                        description="check: looks at the git checkout, your settings files, the tools Primo needs and your last settings snapshot, "
+                                    "and says whether `git pull` is safe to try. Never fetches, pulls or changes anything.")
+    sp.add_argument("action", nargs="?", metavar="check")
+    sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+    sp.add_argument("--no-color", action="store_true", help="never use colours")
+    sp.set_defaults(fn=cmd_update)
     args = p.parse_args(argv)
     if not getattr(args, "fn", None):
         p.print_help(sys.stderr)

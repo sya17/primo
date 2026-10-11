@@ -1,0 +1,202 @@
+"""Is this Primo ready to be updated by hand, and (only when asked) is there a newer release? Standard library only.
+
+`preflight` is read-only: it looks at the git checkout, the settings files, the tools Primo needs and the last snapshot, and says
+ready / ready-with-warnings / blocked with the reasons. It never runs fetch, pull, reset, stash or checkout, never installs anything and never
+writes a file (git runs with optional locks off, so even `git status` does not refresh the index). Primo does not apply updates: the user runs
+`git pull` after reading this. `check_release` (the only network access) is added below, behind an explicit command.
+"""
+import importlib.util
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import config_core as cc
+import recovery_core as rc
+
+OK, WARN, BLOCK = "ok", "warn", "block"
+MAX_PATHS = 8             # changed files named in a report; the rest is a count
+SNAPSHOT_FRESH_DAYS = 7
+GIT_TIMEOUT = 5
+OUT_CAP = 64 * 1024
+
+
+@dataclass(frozen=True)
+class UpdateCheck:
+    id: str
+    level: str            # "ok", "warn" or "block"
+    title: str
+    detail: str = ""
+    hint: str = ""
+
+
+@dataclass(frozen=True)
+class UpdateReport:
+    verdict: str          # "ready", "ready-with-warnings" or "blocked"
+    revision: str
+    branch: str
+    ahead: "int | None"
+    behind: "int | None"
+    checks: tuple
+
+    def exit_code(self):
+        return {"ready": 0, "ready-with-warnings": 1, "blocked": 2}[self.verdict]
+
+
+def default_repo():
+    """The checkout this file lives in; PRIMO_REPO points checks at another one."""
+    repo = Path(os.environ.get("PRIMO_REPO") or Path(__file__).resolve().parents[3])
+    return repo if (repo / ".git").exists() else None
+
+
+def strip_credentials(url):
+    """A remote URL without the user:password part (and without a token in a query string), for showing."""
+    url = re.sub(r"^([a-z][a-z0-9+.-]*://)[^/@\s]*@", r"\1", url.strip(), flags=re.I)
+    return re.sub(r"[?#].*$", "", url)[:200]
+
+
+def _git(repo, *args, strip=True):
+    """(exit code, stdout) of one read-only git call; bounded in time and size; never prompts."""
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", LC_ALL="C")
+    try:
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+    text = r.stdout[:OUT_CAP].decode(errors="replace")
+    return r.returncode, text.strip() if strip else text.rstrip("\n")
+
+
+def _status(repo):
+    """(tracked changes, untracked, conflicts, sample of paths) from porcelain v1; the paths are names only."""
+    code, out = _git(repo, "status", "--porcelain=v1", "--untracked-files=normal", strip=False)
+    if code != 0:
+        return None
+    changed = untracked = conflicts = 0
+    names = []
+    for line in out.splitlines():
+        xy, name = line[:2], line[3:]
+        if xy == "??":
+            untracked += 1
+        elif "U" in xy or xy in ("AA", "DD"):
+            conflicts += 1
+        else:
+            changed += 1
+        if len(names) < MAX_PATHS:
+            names.append(name[:120])
+    return changed, untracked, conflicts, names
+
+
+def _age_days(path):
+    try:
+        return (time.time() - path.stat().st_mtime) / 86400
+    except OSError:
+        return None
+
+
+def preflight(repo=None, env=None, home=None, now=None):
+    """Everything worth knowing before a manual update, read-only. `repo` is the checkout (default: the one this file lives in)."""
+    repo = Path(repo) if repo else default_repo()
+    checks, ahead, behind, revision, branch = [], None, None, "", ""
+
+    # tools Primo needs: missing ones are blockers, optional ones never
+    missing = [n for n, ok in (("git", bool(shutil.which("git"))), ("python3", bool(shutil.which("python3"))),
+                               ("gi (python-gobject)", importlib.util.find_spec("gi") is not None)) if not ok]
+    if sys.version_info < (3, 11):
+        missing.append("python 3.11 or newer")
+    checks.append(UpdateCheck("tools", BLOCK if missing else OK, "Required tools", "missing: " + ", ".join(missing) if missing else "git, python3 and PyGObject are installed",
+                              "sudo pacman -S git python python-gobject" if missing else ""))
+
+    # the checkout
+    if repo is None or not shutil.which("git"):
+        checks.append(UpdateCheck("checkout", BLOCK, "Git checkout", "Primo was not installed from a git checkout here, so there is nothing to update with git",
+                                  "install from https://github.com/sya17/primo (docs/INSTALL.md)"))
+    else:
+        code, top = _git(repo, "rev-parse", "--show-toplevel")
+        code_b, branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        _c, revision = _git(repo, "rev-parse", "--short", "HEAD")
+        busy = [n for n in ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "BISECT_LOG") if (repo / ".git" / n).exists()] + \
+               [n for n in ("rebase-merge", "rebase-apply") if (repo / ".git" / n).exists()]
+        if code != 0 or code_b != 0:
+            checks.append(UpdateCheck("checkout", BLOCK, "Git checkout", "git cannot read this checkout", "look at `git status` yourself"))
+        elif branch == "HEAD":
+            checks.append(UpdateCheck("checkout", BLOCK, "Git checkout", "HEAD is detached (not on a branch)", "git switch main, then check again"))
+        elif busy:
+            checks.append(UpdateCheck("checkout", BLOCK, "Git checkout", "a " + busy[0].lower().replace("_head", "").replace("-", " ") + " is in progress", "finish or abort it first"))
+        else:
+            checks.append(UpdateCheck("checkout", OK, "Git checkout", f"on {branch} at {revision}"))
+            st = _status(repo)
+            if st is None:
+                checks.append(UpdateCheck("worktree", WARN, "Local changes", "git status could not be read"))
+            else:
+                changed, untracked, conflicts, names = st
+                if conflicts:
+                    checks.append(UpdateCheck("worktree", BLOCK, "Local changes", f"{conflicts} file(s) with merge conflicts", "resolve them first"))
+                elif changed or untracked:
+                    parts = ([f"{changed} changed"] if changed else []) + ([f"{untracked} untracked"] if untracked else [])
+                    checks.append(UpdateCheck("worktree", WARN, "Local changes", ", ".join(parts) + ": " + ", ".join(names) + (" ..." if changed + untracked > len(names) else ""),
+                                              "commit or move them before `git pull`; a pull may refuse or conflict"))
+                else:
+                    checks.append(UpdateCheck("worktree", OK, "Local changes", "none"))
+            code_u, upstream = _git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+            if code_u != 0:
+                checks.append(UpdateCheck("upstream", WARN, "Upstream", f"{branch} does not track a remote branch", "git branch --set-upstream-to origin/main"))
+            else:
+                _c, counts = _git(repo, "rev-list", "--left-right", "--count", f"HEAD...{upstream}")
+                try:
+                    ahead, behind = (int(x) for x in counts.split())
+                except ValueError:
+                    ahead = behind = None
+                fetched = _age_days(repo / ".git" / "FETCH_HEAD")
+                seen = "never fetched" if fetched is None else f"last fetched {fetched:.0f} day(s) ago" if fetched >= 1 else "fetched today"
+                if ahead is None:
+                    checks.append(UpdateCheck("upstream", WARN, "Upstream", f"{upstream}: could not compare"))
+                elif ahead and behind:
+                    checks.append(UpdateCheck("upstream", WARN, "Upstream", f"{ahead} local and {behind} remote commit(s): the branches have diverged ({seen})",
+                                              "`git pull --rebase` or merge by hand; Primo will not do it"))
+                else:
+                    checks.append(UpdateCheck("upstream", OK, "Upstream", f"{upstream}: {behind} commit(s) behind, {ahead} ahead, as of the last fetch ({seen})"))
+            code_r, remote = _git(repo, "remote", "get-url", "origin")
+            if code_r == 0 and remote:
+                checks.append(UpdateCheck("remote", OK, "Remote", strip_credentials(remote)))
+
+    # settings files: a file from a newer Primo is an incompatibility, a broken one a warning; a missing one is fine
+    bad, newer = [], []
+    for name, path, kind in cc.known_files(env, home):
+        first = None
+        for expect in (kind if isinstance(kind, tuple) else (kind,)):          # a file may be a table or a list
+            try:
+                cc.load(path, expect)
+                first = None
+                break
+            except cc.ConfigError as e:
+                first = first or e
+        if first is not None:
+            (newer if first.newer else bad).append(f"{Path(path).name}" + (f":{first.line}" if first.line else ""))
+    if newer:
+        checks.append(UpdateCheck("config-version", BLOCK, "Settings from a newer Primo", ", ".join(newer) + " were written by a newer version; this one would read them as defaults",
+                                  "update Primo before using it again, and do not save settings with this version"))
+    if bad:
+        checks.append(UpdateCheck("config", WARN, "Settings files", "do not parse: " + ", ".join(bad), "primo config validate"))
+    if not newer and not bad:
+        checks.append(UpdateCheck("config", OK, "Settings files", "all parse"))
+
+    # a snapshot of the settings (not of the repository or packages)
+    snaps = [s for s in rc.list_snapshots(env, home) if s.complete]
+    if not snaps:
+        checks.append(UpdateCheck("snapshot", WARN, "Settings snapshot", "no complete snapshot of your Primo settings", "primo snapshot"))
+    else:
+        try:
+            age = ((now or time.time()) - time.mktime(time.strptime(snaps[0].created, "%Y-%m-%dT%H:%M:%S"))) / 86400
+        except ValueError:
+            age = None
+        if age is None or age > SNAPSHOT_FRESH_DAYS:
+            checks.append(UpdateCheck("snapshot", WARN, "Settings snapshot", f"the last one ({snaps[0].id}) is {'of unknown age' if age is None else f'{age:.0f} days old'}", "primo snapshot"))
+        else:
+            checks.append(UpdateCheck("snapshot", OK, "Settings snapshot", f"{snaps[0].id}, {age:.0f} day(s) old; it covers your Primo settings, not the repository or packages"))
+
+    verdict = "blocked" if any(c.level == BLOCK for c in checks) else "ready-with-warnings" if any(c.level == WARN for c in checks) else "ready"
+    return UpdateReport(verdict, revision, branch, ahead, behind, tuple(checks))
