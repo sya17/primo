@@ -4,6 +4,8 @@
 Uses sample /proc text only; never measures the real machine."""
 import importlib.machinery
 import importlib.util
+import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,5 +63,63 @@ os.environ["HOME"] = str(home)
 files = pb.cmd_files(None)
 assert [r["query_length"] for r in files["runs"]] == [len(q) for q in pb.FILE_QUERIES] and files["runs"][0]["results"] == 1 and files["runs"][2]["results"] == 0, files
 assert all(r["children"] == 1 for r in files["runs"])
+
+# ---- render-context: observable facts only, null plus a reason when missing, nothing identifying
+import json
+sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
+import proc_core
+MONITOR = {"id": 0, "name": "SAMPLE-1", "description": "Sample Maker Panel 0000", "make": "Sample", "model": "Panel", "serial": "SN-123456",
+           "width": 2560, "height": 1440, "refreshRate": 143.9, "scale": 1.5, "transform": 0, "vrr": True, "currentFormat": "XRGB8888", "x": 0, "y": 0}
+ANSWERS = {
+    ("hyprctl", "version", "-j"): proc_core.Run(code=0, out=json.dumps({"version": "0.56.2", "tag": "v0.56.2", "commit": "abcdef0", "buildAt": "x"})),
+    ("hyprctl", "monitors", "-j"): proc_core.Run(code=0, out=json.dumps([MONITOR, {**MONITOR, "name": "SAMPLE-2", "serial": "SN-9"}])),
+    ("hyprctl", "getoption", "animations:enabled", "-j"): proc_core.Run(code=0, out='{"option": "animations:enabled", "bool": true, "set": true }'),
+    ("pkg-config", "--modversion", "gtk4"): proc_core.Run(code=0, out="4.22.5\n"),
+    ("pkg-config", "--modversion", "libadwaita-1"): proc_core.Run(code=0, out="1.9.4\n"),
+    ("powerprofilesctl", "get"): proc_core.Run(code=0, out="balanced\n"),
+    ("gsettings", "get", "org.gnome.desktop.interface", "enable-animations"): proc_core.Run(code=0, out="true\n"),
+}
+fake = lambda answers: (lambda argv: answers.get(tuple(argv), proc_core.Run(reason="missing")))
+env = {"XDG_SESSION_TYPE": "wayland"}
+ctx = pb.render_context(fake(ANSWERS), env, drm=None)
+assert ctx["versions"] == {"hyprland": "0.56.2", "gtk4": "4.22.5", "libadwaita": "1.9.4", "python": pb.sys.version.split()[0]}, ctx["versions"]
+assert ctx["monitors"] == [{"width": 2560, "height": 1440, "refresh_hz": 143.9, "scale": 1.5, "transform": 0, "vrr": True, "format": "XRGB8888"}] * 2
+assert ctx["compositor_animations"] is True and ctx["gtk_animations"] is True and ctx["power_profile"] == "balanced" and ctx["session"] == "wayland"
+text = json.dumps(ctx)
+for secret in ("SN-123456", "SN-9", "SAMPLE-1", "Sample Maker", "Panel", str(Path.home())):
+    assert secret not in text, secret
+assert ctx["unavailable"] == {"gpu": "no DRM device was given or found"} or "gpu" in ctx["unavailable"]
+
+# a tool that is missing, slow, or answers nonsense: null and why, never a guess
+for tool, field, reason in ((("hyprctl", "monitors", "-j"), "monitors", "not installed"), (("hyprctl", "version", "-j"), "versions.hyprland", "not installed")):
+    answers = {k: v for k, v in ANSWERS.items() if k != tool}
+    got = pb.render_context(fake(answers), env, drm=None)
+    assert reason in got["unavailable"][field], (field, got["unavailable"])
+timeout = {**ANSWERS, **{("hyprctl", "monitors", "-j"): proc_core.Run(reason="timeout")}}
+got = pb.render_context(fake(timeout), env, drm=None)
+assert got["monitors"] is None and "took too long" in got["unavailable"]["monitors"]
+bad = {**ANSWERS, **{("hyprctl", "monitors", "-j"): proc_core.Run(code=0, out="{ not json")}}
+got = pb.render_context(fake(bad), env, drm=None)
+assert got["monitors"] is None and "not JSON" in got["unavailable"]["monitors"]
+no_refresh = {**ANSWERS, **{("hyprctl", "monitors", "-j"): proc_core.Run(code=0, out=json.dumps([{"width": 1920, "height": 1080, "scale": 1.0}]))}}
+got = pb.render_context(fake(no_refresh), env, drm=None)
+assert got["monitors"] == [{"width": 1920, "height": 1080, "refresh_hz": None, "scale": 1.0, "transform": None, "vrr": None, "format": None}] and "refresh_hz" in got["unavailable"]["monitors[0]"]
+odd = pb.render_context(fake({**ANSWERS, ("hyprctl", "getoption", "animations:enabled", "-j"): proc_core.Run(code=0, out="{}")}), env, drm=None)
+assert odd["compositor_animations"] is None and "did not report" in odd["unavailable"]["compositor_animations"]
+nothing = pb.render_context(fake({}), {}, drm=None)
+assert all(nothing[k] is not None or k in nothing["unavailable"] for k in ("monitors", "compositor_animations", "gtk_animations", "power_profile", "session", "gpu")), "a null always has a reason"
+assert nothing["monitors"] is None and nothing["session"] is None and nothing["gtk_animations"] is None and all(isinstance(v, str) and v for v in nothing["unavailable"].values())
+# the GPU: only the driver name and PCI ids from a DRM folder
+drm = Path(tempfile.mkdtemp())
+dev = drm / "card1" / "device"
+dev.mkdir(parents=True)
+(dev / "vendor").write_text("0x1002\n")
+(dev / "device").write_text("0x1638\n")
+(drm / "drivers" / "amdgpu").mkdir(parents=True)
+(dev / "driver").symlink_to(drm / "drivers" / "amdgpu")
+(drm / "card1-eDP-1").mkdir()
+got = pb.render_context(fake(ANSWERS), env, drm=drm)
+assert got["gpu"] == {"driver": "amdgpu", "vendor_id": "0x1002", "device_id": "0x1638"} and "gpu" not in got["unavailable"], got["gpu"]
+assert "eDP" not in json.dumps(got), "connector names stay out"
 
 print("measurement helper checks passed")

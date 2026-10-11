@@ -8,6 +8,8 @@
                                                                 per typed query (no window, no file search, no painting)
     scripts/perf-baseline.py files                              the launcher's file search in your home folder: time until the
                                                                 result is delivered, CPU of the find children, children started
+    scripts/perf-baseline.py render-context                      read-only facts for reading a timing: versions, monitors (size, refresh,
+                                                                scale), GPU driver, animation switches. No serials, titles or paths.
     scripts/perf-baseline.py launcher-window [--cycles 30]      a launcher of its own, on a private D-Bus session: time from the
                                                                 request to the window being shown, and its PSS before and after the
                                                                 open/close cycles. SHOWS A WINDOW on your screen once per cycle.
@@ -124,6 +126,89 @@ def context():
             "cpu": cpu.group(1) if cpu else None, "logical_cpus": os.cpu_count(), "mem_kib": int(mem.group(1)) if mem else None,
             "kernel": os.uname().release, "python": sys.version.split()[0], "on_ac_power": None if power is None else power.strip() == "1",
             "primo_windows_open": open_windows, "taken": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+
+
+def _why(result):
+    return {"missing": "not installed", "timeout": "took too long to answer"}.get(result.reason) or (f"was stopped ({result.reason})" if result.reason else "failed")
+
+
+def render_context(run, env, drm="/sys/class/drm"):
+    """What can be observed about the display stack, for reading a timing correctly: versions, monitor size/refresh/scale, GPU driver,
+    animation switches, power profile. Read-only, one bounded command each; a value that cannot be observed is None and `unavailable`
+    says why. Never records connector names, serial numbers, window titles, network names or paths. `run(argv)` returns a proc_core.Run."""
+    out, why = {}, {}
+
+    def ask(field, argv):
+        result = run(argv)
+        if result.ok:
+            return result.out
+        why[field] = _why(result)
+        return None
+
+    def parse(field, text):
+        try:
+            return json.loads(text)
+        except ValueError:
+            why[field] = "answered with something that is not JSON"
+            return None
+
+    def first(text):
+        return text.strip() if isinstance(text, str) and text.strip() else None
+
+    out["versions"] = {"hyprland": None, "gtk4": None, "libadwaita": None, "python": sys.version.split()[0]}
+    data = parse("versions.hyprland", t) if (t := ask("versions.hyprland", ["hyprctl", "version", "-j"])) is not None else None
+    if isinstance(data, dict) and data.get("version"):
+        out["versions"]["hyprland"] = str(data["version"])
+    elif data is not None:
+        why["versions.hyprland"] = "did not report a version"
+    for key, pkg in (("gtk4", "gtk4"), ("libadwaita", "libadwaita-1")):
+        out["versions"][key] = first(ask(f"versions.{key}", ["pkg-config", "--modversion", pkg]))
+
+    out["monitors"] = None
+    listing = parse("monitors", t) if (t := ask("monitors", ["hyprctl", "monitors", "-j"])) is not None else None
+    if isinstance(listing, list):
+        out["monitors"] = []
+        for i, m in enumerate(listing):
+            m = m if isinstance(m, dict) else {}
+            row = {"width": m.get("width"), "height": m.get("height"), "refresh_hz": m.get("refreshRate"), "scale": m.get("scale"),
+                   "transform": m.get("transform"), "vrr": m.get("vrr"), "format": m.get("currentFormat")}
+            absent = [k for k, v in row.items() if v is None]
+            if absent:
+                why[f"monitors[{i}]"] = "not reported: " + ", ".join(absent)
+            out["monitors"].append(row)
+    elif listing is not None:
+        why["monitors"] = "answered in a shape that is not a list"
+
+    option = parse("compositor_animations", t) if (t := ask("compositor_animations", ["hyprctl", "getoption", "animations:enabled", "-j"])) is not None else None
+    value = option.get("bool", option.get("int")) if isinstance(option, dict) else None
+    out["compositor_animations"] = bool(value) if value is not None else None
+    if option is not None and value is None:
+        why["compositor_animations"] = "did not report the option"
+    gtk = first(ask("gtk_animations", ["gsettings", "get", "org.gnome.desktop.interface", "enable-animations"]))
+    out["gtk_animations"] = {"true": True, "false": False}.get(gtk)
+    out["power_profile"] = first(ask("power_profile", ["powerprofilesctl", "get"]))
+    out["session"] = env.get("XDG_SESSION_TYPE") or None
+    for field in ("session",):
+        if out[field] is None:
+            why[field] = "XDG_SESSION_TYPE is not set"
+
+    out["gpu"] = None
+    card = next((d for d in sorted(Path(drm).glob("card[0-9]*")) if (d / "device" / "vendor").exists()), None) if drm else None
+    if card is None:
+        why["gpu"] = "no DRM device was given or found"
+    else:
+        link = card / "device" / "driver"
+        out["gpu"] = {"driver": os.path.basename(os.readlink(link)) if link.is_symlink() else None,
+                      "vendor_id": (read(card / "device" / "vendor") or "").strip() or None, "device_id": (read(card / "device" / "device") or "").strip() or None}
+    out["unavailable"] = why
+    return out
+
+
+def cmd_render_context(args):
+    sys.path.insert(0, str(SCRIPTS))
+    import proc_core as pc
+    return {"workload": "render context: versions, monitors, GPU driver, animation switches (read-only, no timing)",
+            "render": render_context(lambda argv: pc.run_bounded(argv, deadline=3), os.environ)}
 
 
 def timed(fn):
@@ -308,6 +393,7 @@ def main(argv=None):
     sp.add_argument("--count", type=int, default=30)
     sp.set_defaults(fn=cmd_launcher)
     sub.add_parser("files").set_defaults(fn=cmd_files)
+    sub.add_parser("render-context").set_defaults(fn=cmd_render_context)
     sp = sub.add_parser("launcher-window")
     sp.add_argument("--cycles", type=int, default=30)
     sp.set_defaults(fn=cmd_launcher_window)

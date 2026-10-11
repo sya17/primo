@@ -142,4 +142,6 @@ generated TOML, JSON and SVG, and runs the tests of the hub, modes, workflow hel
 that every link and image in the Markdown files exists. CI runs both in an Arch container, and checks that the commit messages follow
 Conventional Commits (`scripts/check-commits.py`); see [RELEASING.md](RELEASING.md) for versions and releases.
 `scripts/perf-baseline.py` (opt-in, read-only, not run in CI) measures the resident services, the Activity collector and the launcher
-for before/after comparisons on one machine.
+for before/after comparisons on one machine. `perf-baseline.py render-context` lists what a timing depends on (Hyprland, GTK and
+libadwaita versions, monitor size, refresh and scale, GPU driver, animation switches); what it cannot observe is null with a reason, and it
+never records serial numbers, connector names, titles or paths.
