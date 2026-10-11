@@ -418,4 +418,206 @@ blob = home / ".local/share/primo/snapshots" / man.id / "files" / "0"
 blob.write_bytes(b"X" * blob.stat().st_size)
 assert run_cli("restore", man.id)[0] == 2 and run_cli("snapshot", "show", man.id)[0] == 2 and "was changed" in run_cli("snapshot", "show", man.id)[1]
 
+# ---- T064: apply a restore, fail in the middle, recover
+import errno  # noqa: E402
+
+
+def files_of(h):
+    return {str(p): p.read_bytes() for p in sorted(h.rglob("*")) if p.is_file() and "/recovery/" not in str(p) and "/snapshots/" not in str(p)}
+
+
+def damage(h):
+    (h / ".config/primo/ui.json").write_text('{"version": 1, "reduce_motion": true}')
+    (h / ".config/primo/modes.json").unlink()
+    (h / ".local/share/primo/hub.json").write_text('{"reminders": ["newer"]}')
+
+
+home, env, man = fresh()
+good = files_of(home)
+damage(home)
+damaged = files_of(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+res = rc.apply_restore(plan, env=env, home=home)
+assert res.complete and not res.failed and sorted(res.applied) == ["hub", "modes", "ui"], res
+after = files_of(home)
+assert {k: v for k, v in after.items() if not k.endswith("wallpaper")} == {k: v for k, v in good.items() if not k.endswith("wallpaper")}, "restored files are the snapshot's bytes"
+jdir = home / ".local/share/primo/recovery" / res.journal
+assert stat.S_IMODE(jdir.stat().st_mode) == 0o700 and stat.S_IMODE((jdir / "journal.json").stat().st_mode) == 0o600
+assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in (jdir / "pre").iterdir()) and len(list((jdir / "pre").iterdir())) == 2, "a private copy of each replaced file"
+j = json.loads((jdir / "journal.json").read_text())
+assert j["status"] == "done" and {e["name"]: e["state"] for e in j["entries"]} == {"modes": "done", "ui": "done", "hub": "done"}
+assert stat.S_IMODE((home / ".config/primo/ui.json").stat().st_mode) == 0o644, "the permissions of a replaced file are kept"
+back = rc.rollback_restore(res.journal, env=env, home=home)
+assert back.rolled_back and sorted(back.applied) == ["hub", "modes", "ui"] and files_of(home) == damaged, "rollback returns exactly to the state before"
+assert json.loads((jdir / "journal.json").read_text())["status"] == "rolled-back"
+
+# a restore changes only the planned files; everything else, mtimes included, stays
+home, env, man = fresh()
+damage(home)
+put(home, ".config/primo/workflow.json", "{}", 0o600)
+put(home, "Notes/keep.md", "mine")
+pre = {k: v for k, v in tree_state(home).items() if Path(k).is_file()}
+rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+post = {k: v for k, v in tree_state(home).items() if Path(k).is_file() and "/recovery/" not in k}
+changed = sorted({Path(k).name for k in post if k in pre and post[k] != pre[k]} | {Path(k).name for k in post if k not in pre})
+assert changed == ["hub.json", "modes.json", "ui.json"], changed
+
+# a target edited between preview and apply is not overwritten; the others still are
+home, env, man = fresh()
+damage(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+(home / ".config/primo/ui.json").write_text("edited after the preview")
+res = rc.apply_restore(plan, env=env, home=home)
+assert (home / ".config/primo/ui.json").read_text() == "edited after the preview"
+assert ("ui", "changed-since-preview") in res.skipped and not res.complete and not res.failed and sorted(res.applied) == ["hub", "modes"]
+# ... also a file that appeared, and a link swapped in
+home, env, man = fresh()
+damage(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+put(home, ".config/primo/modes.json", "created by the user meanwhile")
+(home / ".config/primo/ui.json").unlink()
+(home / "outside.json").write_text("x")
+(home / ".config/primo/ui.json").symlink_to(home / "outside.json")
+res = rc.apply_restore(plan, env=env, home=home)
+assert (home / ".config/primo/modes.json").read_text() == "created by the user meanwhile" and (home / "outside.json").read_text() == "x"
+assert {n for n, _r in res.skipped} >= {"modes", "ui"} and res.applied == ("hub",)
+# the snapshot changing after the preview refuses the whole apply
+home, env, man = fresh()
+damage(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+edit_manifest(home, man, lambda d: d.update(created="2000-01-01T00:00:00"))
+before = files_of(home)
+try:
+    rc.apply_restore(plan, env=env, home=home)
+    raise AssertionError
+except rc.RecoveryError as err:
+    assert "changed since the preview" in str(err)
+assert files_of(home) == before and not (home / ".local/share/primo/recovery").exists(), "a refused apply leaves no trace"
+
+
+def inject(after_calls, exc, wrong_bytes=False):
+    """Make the n-th write of a restored file fail (journal writes pass through). Returns an undo function."""
+    real_aw, state = rc.cc.atomic_write, {"n": 0}
+    def aw(path, text, mode=None):
+        if str(path).endswith("journal.json"):
+            return real_aw(path, text, mode)
+        state["n"] += 1
+        if state["n"] == after_calls:
+            if wrong_bytes:
+                return real_aw(path, b"not what the snapshot holds", mode)
+            raise exc
+        return real_aw(path, text, mode)
+    rc.cc.atomic_write = aw
+    return lambda: setattr(rc.cc, "atomic_write", real_aw)
+
+# a full disk on the second of three writes: stops, names the file, keeps the first, rollback undoes it
+home, env, man = fresh()
+damage(home)
+damaged = files_of(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+undo = inject(2, OSError(errno.ENOSPC, "No space left on device"))
+try:
+    res = rc.apply_restore(plan, env=env, home=home)
+finally:
+    undo()
+assert res.failed and not res.complete and len(res.applied) == 1, res
+j = json.loads((home / ".local/share/primo/recovery" / res.journal / "journal.json").read_text())
+states = [e["state"] for e in j["entries"]]
+assert j["status"] == "partial" and states == ["done", "failed", "pending"], states
+assert "No space" in j["entries"][1]["reason"] and "reduce_motion" not in j["entries"][1]["reason"], "the reason is an error, never file content"
+back = rc.rollback_restore(res.journal, env=env, home=home)
+assert back.rolled_back and files_of(home) == damaged
+# a write that lands with the wrong bytes is a failure, and rollback restores the old file
+home, env, man = fresh()
+damage(home)
+damaged = files_of(home)
+undo = inject(1, None, wrong_bytes=True)
+try:
+    res = rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+finally:
+    undo()
+assert res.failed and rc.rollback_restore(res.journal, env=env, home=home).rolled_back and files_of(home) == damaged
+# the backup copy failing stops before anything is replaced
+home, env, man = fresh()
+damage(home)
+damaged = files_of(home)
+real_copy = rc.shutil.copyfile
+rc.shutil.copyfile = lambda *a, **k: (_ for _ in ()).throw(OSError(errno.EIO, "I/O error"))
+try:
+    res = rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+finally:
+    rc.shutil.copyfile = real_copy
+assert res.failed == "ui" and res.applied == ("modes",), res
+assert files_of(home) == damaged | {str(home / ".config/primo/modes.json"): b'[{"id": "a"}]'}, "only the file that needs no backup was written"
+assert (home / ".config/primo/ui.json").read_text() == '{"version": 1, "reduce_motion": true}', "no file is replaced without its backup"
+# a process killed in the middle of a write (not an Exception): the journal says "writing", rollback still returns to the old state
+for landed in (False, True):
+    home, env, man = fresh()
+    damage(home)
+    damaged = files_of(home)
+    real_aw = rc.cc.atomic_write
+    def dying(path, text, mode=None, landed=landed, real_aw=real_aw):
+        if str(path).endswith("journal.json"):
+            return real_aw(path, text, mode)
+        if landed:
+            real_aw(path, text, mode)                       # the replace happened, the process died before saying so
+        raise KeyboardInterrupt
+    rc.cc.atomic_write = dying
+    try:
+        rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+        raise AssertionError
+    except KeyboardInterrupt:
+        pass
+    finally:
+        rc.cc.atomic_write = real_aw
+    jid = sorted(p.name for p in (home / ".local/share/primo/recovery").iterdir())[0]
+    assert json.loads((home / ".local/share/primo/recovery" / jid / "journal.json").read_text())["entries"][0]["state"] == "writing"
+    back = rc.rollback_restore(jid, env=env, home=home)
+    assert back.rolled_back and files_of(home) == damaged, landed
+
+# work done after the restore is never overwritten by a rollback
+home, env, man = fresh()
+damage(home)
+res = rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+(home / ".config/primo/ui.json").write_text("my newer edit")
+back = rc.rollback_restore(res.journal, env=env, home=home)
+assert (home / ".config/primo/ui.json").read_text() == "my newer edit" and ("ui", "edited since the restore; left as it is") in back.skipped
+assert not back.rolled_back and sorted(back.applied) == ["hub", "modes"] and not (home / ".config/primo/modes.json").exists()
+assert json.loads((home / ".local/share/primo/recovery" / res.journal / "journal.json").read_text())["status"] == "partial-rollback"
+for bad in ("../x", "nope", "", "20260101-000000"):
+    try:
+        rc.rollback_restore(bad, env=env, home=home)
+        raise AssertionError(bad)
+    except rc.RecoveryError:
+        pass
+
+# sensitive and machine files restore only when they were taken and asked for; the mode of a private file survives
+home, env, man = fresh()
+put(home, ".config/primo/workflow.json", '{"feeds": []}', 0o600)
+man = rc.create_snapshot(rc.plan_snapshot(include_sensitive=True, env=env, home=home), env=env, home=home)
+(home / ".config/primo/workflow.json").unlink()
+(home / ".local/state/hyprland-dotfiles/wallpaper").write_text("/other.png\n")
+res = rc.apply_restore(rc.plan_restore(man.id, env=env, home=home), env=env, home=home)
+assert (home / ".config/primo/workflow.json").read_text() == '{"feeds": []}' and stat.S_IMODE((home / ".config/primo/workflow.json").stat().st_mode) == 0o600
+assert (home / ".local/state/hyprland-dotfiles/wallpaper").read_text() == "/other.png\n" and "wallpaper" not in res.applied, "machine files wait for --include-machine"
+res = rc.apply_restore(rc.plan_restore(man.id, include_machine=True, env=env, home=home), env=env, home=home)
+assert (home / ".local/state/hyprland-dotfiles/wallpaper").read_text() == "/home/u/a.png\n" and "wallpaper" in res.applied
+
+# the CLI: preview, apply, journal, rollback, exit codes
+home, env, man = fresh()
+cenv = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", NO_COLOR="1")
+damage(home)
+damaged = files_of(home)
+code, out, _e = run_cli("restore", man.id)
+assert code == 0 and "add --apply" in out and files_of(home) == damaged
+code, out, _e = run_cli("restore", man.id, "--apply", "--json")
+doc = json.loads(out)
+assert code == 0 and doc["applied"] and doc["result"]["complete"] and sorted(doc["result"]["written"]) == ["hub", "modes", "ui"], out
+assert files_of(home) != damaged
+code, out, _e = run_cli("restore", "--rollback", doc["result"]["journal"])
+assert code == 0 and "put back" in out and files_of(home) == damaged
+assert run_cli("restore", "--rollback", "20990101-000000")[0] == 2 and run_cli("restore")[0] == 64
+code, out, _e = run_cli("restore", man.id, "--apply")
+assert code == 0 and "undo with: primo restore --rollback" in out and "time hub keeps its data in memory" in out
+
 print("ok: recovery")

@@ -481,3 +481,163 @@ def plan_restore(snapshot_id, only=None, include_machine=False, env=None, home=N
         actions.append(RestoreAction(f.name, f.base, f.rel, action, reason, now_sha, f.sha256, machine))
     raw = (snapshots_dir(env, home) / snapshot_id / "manifest.json").read_bytes()
     return RestorePlan(VERSION, snapshot_id, hashlib.sha256(raw).hexdigest(), time.strftime("%Y-%m-%dT%H:%M:%S", now or time.localtime()), tuple(actions))
+
+
+# ---------------------------------------------------------------------------------------------------- restore apply and recovery (T064)
+@dataclass(frozen=True)
+class RestoreResult:
+    plan_id: str            # the snapshot id the plan came from
+    journal: str            # the journal id (the folder name under recovery/)
+    applied: tuple          # names written and verified
+    failed: "str | None"    # the name that stopped the run, if any
+    rolled_back: bool
+    complete: bool          # every action of the plan was applied (or was already the same)
+    skipped: tuple = ()     # ((name, reason), ...): left alone on purpose, e.g. changed since the preview
+
+
+def recovery_dir(env=None, home=None):
+    return cc.data_home(env, home) / "primo" / "recovery"
+
+
+def _journal_save(path, journal):
+    cc.atomic_write(path, json.dumps(journal, indent=1), 0o600)
+
+
+def _journal_load(journal_id, env, home):
+    if not _ID.match(journal_id or ""):
+        raise RecoveryError("that is not a restore journal id")
+    folder = recovery_dir(env, home) / journal_id
+    if folder.is_symlink() or not folder.is_dir():
+        raise RecoveryError("no such restore journal")
+    try:
+        j = json.loads((folder / "journal.json").read_text())
+        if j.get("version") != VERSION or j.get("id") != journal_id or not isinstance(j.get("entries"), list):
+            raise ValueError
+    except (OSError, ValueError):
+        raise RecoveryError("the restore journal is unreadable")
+    return folder, j
+
+
+def _target_of(e, env, home):
+    entry = _entry_for(ManifestFile(e["name"], e["base"], e["rel"], 0, "0" * 64, 0o600, e["cls"], 0))
+    if entry is None:
+        raise RecoveryError("the journal names a file recovery may not touch")
+    return entry, target_path(entry, env, home)
+
+
+def apply_restore(plan, env=None, home=None, now=None):
+    """Write what `plan` says, one file at a time, and record every step in a private journal first. Each target is checked again right
+    before it is written; one that changed since the preview is left alone. A failure stops the run and leaves the journal (and a copy of every
+    replaced file) so `rollback_restore` can put things back. Only files in today's inventory are written; nothing else is touched."""
+    manifest, problems = load_snapshot(plan.snapshot_id, env, home)
+    if problems:
+        raise RecoveryError("this snapshot cannot be restored: " + "; ".join(problems[:3]))
+    raw = (snapshots_dir(env, home) / plan.snapshot_id / "manifest.json").read_bytes()
+    if hashlib.sha256(raw).hexdigest() != plan.manifest_sha256:
+        raise RecoveryError("the snapshot changed since the preview; run the preview again")
+    files = {f.name: f for f in manifest.files}
+    todo = [a for a in plan.actions if a.action in ("create", "replace")]
+    for a in todo:
+        if a.name not in files or files[a.name].sha256 != a.snapshot_sha256:
+            raise RecoveryError("the plan does not match the snapshot; run the preview again")
+    folder = recovery_dir(env, home)
+    _mkdir_private(folder)
+    when = now or time.localtime()
+    jid = _new_id(folder, when)
+    jdir = folder / jid
+    jdir.mkdir(mode=0o700)
+    (jdir / "pre").mkdir(mode=0o700)
+    journal = {"version": VERSION, "id": jid, "snapshot": plan.snapshot_id, "manifest_sha256": plan.manifest_sha256, "status": "applying",
+               "entries": [{"name": a.name, "base": a.base, "rel": a.rel, "cls": files[a.name].cls, "action": a.action, "state": "pending",
+                            "pre": None, "pre_sha256": a.target_sha256, "new_sha256": a.snapshot_sha256, "reason": ""} for a in todo]}
+    jpath = jdir / "journal.json"
+    _journal_save(jpath, journal)
+    applied, skipped, failed = [], [(a.name, a.reason) for a in plan.actions if a.action == "skip"], None
+    snap = snapshots_dir(env, home) / plan.snapshot_id
+    for n, e in enumerate(journal["entries"]):
+        entry, target = _target_of(e, env, home)
+        wrote = False
+        try:
+            real = Path(os.path.realpath(target))
+            exists = os.path.lexists(target)
+            if exists and (not _inside(real, Path(os.path.realpath(roots(env, home)[e["base"]]))) or not real.is_file()):
+                e["state"], e["reason"] = "skipped", "the file is a folder or a link that leaves its folder"
+            elif (exists and _sha(real) != e["pre_sha256"]) or (not exists and e["pre_sha256"] is not None):
+                e["state"], e["reason"] = "skipped", "changed-since-preview"
+            else:
+                if exists:                                                 # a private copy of what is about to be replaced
+                    pre = jdir / "pre" / str(n)
+                    shutil.copyfile(real, pre)
+                    os.chmod(pre, 0o600)
+                    if _sha(pre) != e["pre_sha256"]:
+                        raise OSError("the backup of the current file does not match it")
+                    e["pre"] = n
+                e["state"] = "writing"
+                _journal_save(jpath, journal)
+                f = files[e["name"]]
+                data = (snap / "files" / str(f.index)).read_bytes()
+                cc.atomic_write(target, data, None if exists else (f.mode & 0o666) or 0o600)
+                wrote = True
+                if _sha(target) != e["new_sha256"]:
+                    raise OSError("the file written does not match the snapshot")
+                e["state"] = "done"
+                applied.append(e["name"])
+        except (OSError, RecoveryError) as err:
+            e["state"], e["reason"] = "failed", f"{type(err).__name__}: {getattr(err, 'strerror', None) or err}"[:160]
+            if wrote:                                        # the file landed but is not what the snapshot holds: put it back at once
+                try:
+                    if e["pre"] is None:
+                        os.unlink(target)
+                    else:
+                        cc.atomic_write(target, (jdir / "pre" / str(e["pre"])).read_bytes(), None)
+                    e["reason"] += "; the file was put back"
+                except OSError:
+                    e["reason"] += "; the file could NOT be put back, use the rollback"
+                    e["state"] = "writing"
+            failed = e["name"]
+            journal["status"] = "partial"
+            _journal_save(jpath, journal)
+            break
+        if e["state"] == "skipped":
+            skipped.append((e["name"], e["reason"]))
+        _journal_save(jpath, journal)
+    if failed is None:
+        journal["status"] = "done"
+        _journal_save(jpath, journal)
+    complete = failed is None and not any(r == "changed-since-preview" or r.startswith("the file is") for _n, r in skipped)
+    return RestoreResult(plan.snapshot_id, jid, tuple(applied), failed, False, complete, tuple(skipped))
+
+
+def rollback_restore(journal_id, env=None, home=None):
+    """Undo a restore from its journal: put each replaced file back from its private copy and remove each file the restore created, but only
+    where the file is still exactly what the restore wrote. A file edited since stays as it is and is reported."""
+    folder, journal = _journal_load(journal_id, env, home)
+    undone, kept, trouble = [], [], None
+    for e in journal["entries"]:
+        if e["state"] not in ("done", "writing"):
+            continue
+        try:
+            entry, target = _target_of(e, env, home)
+            exists = os.path.lexists(target)
+            now_sha = _sha(Path(os.path.realpath(target))) if exists and Path(os.path.realpath(target)).is_file() else None
+            if now_sha == e["pre_sha256"] and (e["pre"] is not None or not exists):
+                e["state"] = "rolled-back"                              # an interrupted write that never replaced the file
+            elif now_sha == e["new_sha256"]:
+                if e["pre"] is None:
+                    os.unlink(target)
+                else:
+                    pre = folder / "pre" / str(e["pre"])
+                    if _sha(pre) != e["pre_sha256"]:
+                        raise OSError("the backup copy was altered")
+                    cc.atomic_write(target, pre.read_bytes(), None)
+                e["state"] = "rolled-back"
+                undone.append(e["name"])
+            else:
+                kept.append((e["name"], "edited since the restore; left as it is"))
+        except (OSError, RecoveryError) as err:
+            trouble = e["name"]
+            kept.append((e["name"], f"{type(err).__name__}: {getattr(err, 'strerror', None) or err}"[:160]))
+            break
+    journal["status"] = "rolled-back" if not kept and trouble is None else "partial-rollback"
+    _journal_save(folder / "journal.json", journal)
+    return RestoreResult(journal["snapshot"], journal_id, tuple(undone), trouble, not kept and trouble is None, not kept and trouble is None, tuple(kept))

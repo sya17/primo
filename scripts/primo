@@ -7,10 +7,11 @@
     primo config path         the folders and files Primo reads
     primo config show         the settings in effect and where each comes from (private links and snippet texts hidden)
     primo config validate     check every settings file; exit 2 naming the file and line of the first problem in each
-    primo restore ID          show what restoring a snapshot would change (nothing is written yet)
+    primo restore ID          show what restoring a snapshot would change; --apply restores it, --rollback JOURNAL undoes it
     primo snapshot            copy your Primo settings into a private snapshot (--dry-run lists what it would take); also: list, show ID, remove ID
 
-Only `primo snapshot` writes anything, and only under ~/.local/share/primo/snapshots; everything else is read-only: a fix is only ever
+Only `primo snapshot` (under ~/.local/share/primo/snapshots) and `primo restore --apply`/`--rollback` (the Primo files named in the preview, plus
+~/.local/share/primo/recovery) write anything; everything else is read-only: a fix is only ever
 printed as a command for you to run.
 Exit codes: 0 healthy, 1 warnings, 2 at least one failure, 64 usage error.
 Colours are off when NO_COLOR is set, when the output is not a terminal, or with --no-color.
@@ -163,19 +164,51 @@ def cmd_snapshot(args):
 def cmd_restore(args):
     out = make_out(args)
     try:
+        if args.rollback:
+            res = rc.rollback_restore(args.rollback)
+            if args.json:
+                print(json.dumps({"version": 1, "rolled_back": res.rolled_back, "undone": list(res.applied), "kept": [list(k) for k in res.skipped]}, indent=2))
+            else:
+                print(out.c("1", f"Rollback of {args.rollback}") + ("" if res.rolled_back else "  INCOMPLETE"))
+                for n in res.applied:
+                    print(f"  put back  {n}")
+                for n, why in res.skipped:
+                    print(f"  kept      {n}: {why}")
+            return 0 if res.rolled_back else 2
+        if not args.id:
+            print("primo restore: needs a snapshot id (see `primo snapshot list`), or --rollback JOURNAL", file=sys.stderr)
+            return 64
         plan = rc.plan_restore(args.id, only=args.only or None, include_machine=args.include_machine)
+        res = rc.apply_restore(plan) if args.apply else None
     except rc.RecoveryError as e:
         print(f"primo restore: {e}", file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps({"version": 1, "snapshot": plan.snapshot_id, "applied": False, "actions": [a.__dict__ for a in plan.actions]}, indent=2))
-        return 0
-    print(out.c("1", f"Restore preview for {plan.snapshot_id}") + out.c("2", "  (nothing is written)"))
+        print(json.dumps({"version": 1, "snapshot": plan.snapshot_id, "applied": bool(res),
+                          "actions": [a.__dict__ for a in plan.actions],
+                          "result": None if res is None else {"journal": res.journal, "written": list(res.applied), "failed": res.failed,
+                                                              "complete": res.complete, "skipped": [list(k) for k in res.skipped]}}, indent=2))
+        return 0 if res is None or res.complete else (2 if res.failed else 1)
+    print(out.c("1", f"Restore of {plan.snapshot_id}" if res else f"Restore preview for {plan.snapshot_id}") + ("" if res else out.c("2", "  (nothing is written; add --apply)")))
     for a in plan.actions:
         print(f"  {a.action:8} {a.name:26} {a.reason}")
     todo = [a for a in plan.actions if a.action in ("create", "replace")]
-    print(f"\n  {len(todo)} file(s) would change" if todo else "\n  nothing to restore")
-    return 0
+    if res is None:
+        print(f"\n  {len(todo)} file(s) would change" if todo else "\n  nothing to restore")
+        return 0
+    print(f"\n  written: {', '.join(res.applied) or 'nothing'}")
+    for n, why in res.skipped:
+        if why in ("changed-since-preview",) or why.startswith("the file is"):
+            print(f"  left alone: {n}: {why}")
+    print(f"  journal: {res.journal}  (undo with: primo restore --rollback {res.journal})")
+    if res.failed:
+        print(out.c("31", f"  stopped at {res.failed}; the files written so far can be put back with the command above"))
+        return 2
+    if any(n in ("hub",) for n in res.applied):
+        print("  note: the time hub keeps its data in memory; log out and in (or restart it) to load restored reminders")
+    if any(n in ("current", "wallpaper", "wallpaper-current") for n in res.applied):
+        print("  note: the running desktop is unchanged; apply a restored theme or wallpaper yourself (hypr-theme NAME)")
+    return 0 if res.complete else 1
 
 
 def cmd_status(args):
@@ -358,10 +391,13 @@ def main(argv=None):
     sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
     sp.add_argument("--no-color", action="store_true", help="never use colours")
     sp.set_defaults(fn=cmd_snapshot)
-    sp = sub.add_parser("restore", help="show what restoring a snapshot would change",
-                        description="Compares the files in snapshot ID with the files you have now and lists what would be created or replaced. "
-                                    "Writes nothing. Files specific to this machine need --include-machine; --only NAME ... picks files.")
-    sp.add_argument("id", help="a snapshot id (see `primo snapshot list`)")
+    sp = sub.add_parser("restore", help="show what restoring a snapshot would change, or restore it with --apply",
+                        description="Compares the files in snapshot ID with the files you have now and lists what would be created or replaced; "
+                                    "with --apply it writes them, keeping a private copy of each replaced file and a journal, and --rollback JOURNAL "
+                                    "puts them back. Files specific to this machine need --include-machine; --only NAME ... picks files.")
+    sp.add_argument("id", nargs="?", help="a snapshot id (see `primo snapshot list`)")
+    sp.add_argument("--apply", action="store_true", help="really write the files (without it nothing is written)")
+    sp.add_argument("--rollback", metavar="JOURNAL", help="undo a restore from its journal id")
     sp.add_argument("--only", nargs="+", metavar="NAME", help="only these files")
     sp.add_argument("--include-machine", action="store_true", help="also restore files that are specific to this machine")
     sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
