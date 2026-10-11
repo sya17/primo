@@ -96,6 +96,60 @@ s = Fake(h, ALL_TOOLS - {"mpvpaper", "docker", "satty"}, ALL_PROCS, active=UNITS
 res = dc.run_all(s)
 assert dc.summary(res)["exit_code"] == 0 and "mpvpaper" in next(r for r in res if r.id == "dependency.wallpaper").message
 
+# ---- Primo's own service units: one bounded read, never a start or a change; disabled and not installed are not faults
+class WithUnits(Fake):
+    def __init__(self, *a, units=None, **k):
+        super().__init__(*a, **k)
+        self.units = units
+    def user_unit_states(self, names):
+        self.calls.append(("systemctl", "--user", "show", *names))
+        return self.units
+
+def unit(name, active="active", enabled="enabled", load="loaded", status="69", result="success"):
+    return {"Id": name, "LoadState": load, "UnitFileState": enabled, "ActiveState": active, "SubState": "x", "Result": result, "ExecMainStatus": status}
+
+NAMES = [f.unit for f in dc.FEATURES if f.unit]
+assert sorted(NAMES) == sorted(f"primo-{x}.service" for x in ("launcher", "switcher", "overview", "hub", "activity"))
+sup = lambda res: {r.feature: (r.status, r.state, r.message, r.fix) for r in res if r.id.startswith("unit.primo-")}
+s = WithUnits(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo, units={})                       # no systemd user manager
+res = dc.run_all(s)
+assert {v[:2] for v in sup(res).values()} == {("skipped", "unmanaged")} and dc.summary(res)["exit_code"] == 0
+assert sum(1 for c in s.calls if c[:3] == ("systemctl", "--user", "show")) == 1, "one call for all the units, not one per service"
+assert not any(c[:2] == ("systemctl", "--user") and c[2] in ("start", "stop", "enable", "disable", "restart") for c in s.calls), "the Doctor only reads"
+states = {n: unit(n) for n in NAMES}
+states["primo-hub.service"] = unit("primo-hub.service", active="inactive", enabled="disabled")
+states["primo-switcher.service"] = unit("primo-switcher.service", active="inactive", load="not-found", enabled="")
+states["primo-launcher.service"] = unit("primo-launcher.service", active="failed", status="69", result="exit-code")   # a core service whose unit failed
+states["primo-activity.service"] = unit("primo-activity.service", active="activating")
+res = dc.run_all(WithUnits(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo, units=states))
+got = sup(res)
+assert got["overview"][:2] == ("pass", "running") and got["activity"][:2] == ("pass", "starting")
+assert got["hub"][:2] == ("skipped", "disabled") and got["switcher"][:2] == ("skipped", "not installed"), got
+assert got["launcher"][:2] == ("warning", "failed") and "session bus or no display" in got["launcher"][2] and got["launcher"][3] == "systemctl --user status primo-launcher.service"
+assert not any(r.status == "fail" for r in res if r.id.startswith("unit.primo-")), "a unit is never a core failure; the process check says whether the service itself is up"
+assert dc.summary(res)["exit_code"] == 1
+feats = {f["id"]: f for f in dc.feature_states(res)}
+assert feats["launcher"]["supervisor"] == "failed" and feats["hub"]["supervisor"] == "disabled" and feats["bar"]["supervisor"] == "" and feats["settings"]["supervisor"] == ""
+assert feats["launcher"]["state"] == "working", "the feature state still follows the service itself"
+assert any("session bus or no display" in n for n in feats["launcher"]["notes"]) and feats["hub"]["notes"] == [], "a failed unit is a note on the feature; a disabled one is not"
+states["primo-launcher.service"] = unit("primo-launcher.service", active="inactive", enabled="enabled")
+assert sup(dc.run_all(WithUnits(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo, units=states)))["launcher"][:2] == ("warning", "stopped")
+assert dc.supervisor_state(unit("x", active="failed", status="1", result="exit-code"))[1] == "Failed (exit-code)"
+assert json.loads(json.dumps(dc.to_dicts(res)))[0]["state"] in ("", "running", "unmanaged"), "the new field is plain JSON"
+# the real reader: two blocks from one `systemctl show`, a refused call means no manager
+class Raw(dc.System):
+    def __init__(self, code, out):
+        super().__init__(env={}, home=h)
+        self.code, self.out, self.asked = code, out, []
+    def run(self, *cmd, timeout=4):
+        self.asked.append((cmd, timeout))
+        return self.code, self.out
+two = "Id=primo-a.service\nLoadState=loaded\nActiveState=active\n\nId=primo-b.service\nLoadState=not-found\nActiveState=inactive"
+raw = Raw(0, two)
+assert sorted(raw.user_unit_states(["primo-a.service", "primo-b.service"])) == ["primo-a.service", "primo-b.service"]
+assert raw.asked[0][1] <= 3 and raw.asked[0][0][:3] == ("systemctl", "--user", "show"), raw.asked
+assert Raw(1, "").user_unit_states(["primo-a.service"]) == {}
+
 # ---- a non-core resident service is not running: warning with the start command
 s = Fake(h, ALL_TOOLS, [p for p in ALL_PROCS if "hub.py" not in p], active=UNITS, repo=repo)
 res = dc.run_all(s)

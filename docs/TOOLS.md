@@ -162,6 +162,11 @@ primo config validate        # check every settings file; names the file and lin
 primo doctor --json | jq '.checks[] | select(.status != "pass")'
 ```
 
+If you turned on Primo's systemd user units (`scripts/install.sh --services`, see `docs/ARCHITECTURE.md`), the Services checks also say how each
+unit is doing: running, starting, stopped, failed, or simply disabled or not installed, which is normal and never a fault. `primo features --json` carries
+the same word as `supervisor`. A unit in trouble shows as a warning and a note on its feature; a core service still counts as working or stopped by its
+own process check.
+
 Nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into
 `~/.local/bin`.

@@ -38,20 +38,21 @@ class Feature:
     start: str = ""               # a command that starts it (shown as a hint)
     page: str = ""                # Settings page, if any
     keybind: str = ""
+    unit: str = ""                # the optional systemd user unit that can run its service (scripts/install.sh --services)
 
 
 FEATURES = [
     Feature("bar", "Bar", "Waybar: workspaces, clock, tray, status icons", core=True, requires=(("waybar", "waybar"),), process=r"(^|/)waybar( |$)", start="waybar"),
     Feature("launcher", "Launcher", "Apps, calculator, actions, files, snippets, web", core=True, process=r"scripts/launcher\.py", start=f"python3 {SCRIPTS}/launcher.py --daemon",
-            requires=(("python3", "python"),), keybind="Super+Space"),
-    Feature("switcher", "Window switcher", "Hold Alt, tap Tab: windows, most recent first", process=r"scripts/switcher\.py", start=f"python3 {SCRIPTS}/switcher.py --daemon", keybind="Alt+Tab"),
-    Feature("overview", "Overview", "Every workspace and its windows", process=r"scripts/overview\.py", start=f"python3 {SCRIPTS}/overview.py --daemon", keybind="Super+O"),
+            requires=(("python3", "python"),), keybind="Super+Space", unit="primo-launcher.service"),
+    Feature("switcher", "Window switcher", "Hold Alt, tap Tab: windows, most recent first", process=r"scripts/switcher\.py", start=f"python3 {SCRIPTS}/switcher.py --daemon", keybind="Alt+Tab", unit="primo-switcher.service"),
+    Feature("overview", "Overview", "Every workspace and its windows", process=r"scripts/overview\.py", start=f"python3 {SCRIPTS}/overview.py --daemon", keybind="Super+O", unit="primo-overview.service"),
     Feature("settings", "Settings", "Appearance, wallpaper, displays, power, Bluetooth, modes, workflow, VPN", keybind="Super+,"),
     Feature("hub", "Time hub", "Calendar, reminders, clock, focus, report, notes", process=r"scripts/hub\.py", start=f"python3 {SCRIPTS}/hub.py --daemon",
             requires=(("notify-send", "libnotify"),), optional=(("pw-play", "pipewire", "alarm and reminder sounds"), ("swaync-client", "swaync", "do-not-disturb while focusing"),
-                                                              ("wl-copy", "wl-clipboard", "copy a report summary")), keybind="Super+Ctrl+H"),
+                                                              ("wl-copy", "wl-clipboard", "copy a report summary")), keybind="Super+Ctrl+H", unit="primo-hub.service"),
     Feature("activity", "Activity", "What runs and what it costs; ports; containers", process=r"scripts/activity\.py", start=f"python3 {SCRIPTS}/activity.py --daemon",
-            optional=(("ss", "iproute2", "connections and listening ports"), ("pactl", "libpulse", "microphone and audio badges"), ("docker", "docker", "container list")), keybind="Super+Shift+Esc"),
+            optional=(("ss", "iproute2", "connections and listening ports"), ("pactl", "libpulse", "microphone and audio badges"), ("docker", "docker", "container list")), keybind="Super+Shift+Esc", unit="primo-activity.service"),
     Feature("modes", "Modes", "One action sets up apps, VPN, power, do-not-disturb and a focus session", requires=(("hyprctl", "hyprland"),),
             optional=(("nmcli", "networkmanager", "VPN step"), ("powerprofilesctl", "power-profiles-daemon", "power step"), ("swaync-client", "swaync", "do-not-disturb step")),
             page="modes", keybind="Super+Ctrl+W"),
@@ -83,7 +84,7 @@ FEATURES = [
 ]
 FEATURES_BY_ID = {f.id: f for f in FEATURES}
 
-# system units worth looking at, only when the matching tool is installed: (feature, unit, user unit?)
+# system units worth looking at, only when the matching tool is installed: (feature, unit, user unit?, unit="primo-launcher.service", unit="primo-switcher.service", unit="primo-overview.service", unit="primo-hub.service", unit="primo-activity.service")
 UNITS = [("bluetooth", "bluetooth.service", False), ("power", "power-profiles-daemon.service", False), ("vpn", "NetworkManager.service", False)]
 
 
@@ -96,6 +97,7 @@ class Result:
     message: str = ""
     fix: str = ""               # a command to suggest, never run
     feature: str = ""
+    state: str = ""             # for a service unit: unmanaged, not installed, disabled, starting, running, stopped or failed
 
 
 class System:
@@ -136,6 +138,19 @@ class System:
     def unit_active(self, unit, user=False):
         code, out = self.run("systemctl", *(["--user"] if user else []), "is-active", unit)
         return out == "active"
+
+    def user_unit_states(self, units):
+        """{unit: properties} for the given user units, from one bounded read-only call; {} when there is no user manager."""
+        props = ("Id", "LoadState", "UnitFileState", "ActiveState", "SubState", "Result", "ExecMainStatus")
+        code, out = self.run("systemctl", "--user", "show", *units, *(a for p in props for a in ("-p", p)), timeout=3)
+        if code != 0:
+            return {}
+        states = {}
+        for block in out.split("\n\n"):
+            d = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+            if d.get("Id"):
+                states[d["Id"]] = d
+        return states
 
     def fonts(self):
         if self._fonts is None:
@@ -200,6 +215,27 @@ def check_session(s):
     return out
 
 
+def supervisor_state(props):
+    """(state, detail) of one Primo service unit from its systemd properties. Disabled and not installed are normal, never faults."""
+    if not props:
+        return "unmanaged", "Started by the Hyprland autostart (no systemd user manager here)"
+    if props.get("LoadState") != "loaded":
+        return "not installed", "Not installed; the Hyprland autostart starts it"
+    active = props.get("ActiveState")
+    enabled = props.get("UnitFileState", "").startswith("enabled")
+    if active == "failed":
+        if props.get("ExecMainStatus") == "69":
+            return "failed", "Failed: no session bus or no display when it started"
+        return "failed", f"Failed ({props.get('Result') or 'unknown'})"
+    if active == "active":
+        return "running", "Running under systemd"
+    if active in ("activating", "reloading"):
+        return "starting", "Starting"
+    if not enabled:
+        return "disabled", "Installed, not enabled; the Hyprland autostart starts it"
+    return "stopped", "Enabled but not running"
+
+
 def check_services(s):
     out = []
     if not in_session(s):
@@ -223,6 +259,14 @@ def check_services(s):
             out.append(Result(f"service.{f.id}", "Services", f.name, PASS, "Running", feature=f.id))
         else:
             out.append(Result(f"service.{f.id}", "Services", f.name, FAIL if f.core else WARNING, "Not running", f.start, f.id))
+    wanted = [f for f in FEATURES if f.unit and all(s.which(b) for b, _p in f.requires)]
+    if wanted:
+        states = s.user_unit_states([f.unit for f in wanted])
+        for f in wanted:
+            state, detail = supervisor_state(states.get(f.unit))
+            status = PASS if state in ("running", "starting") else WARNING if state in ("failed", "stopped") else SKIPPED
+            fix = {"failed": f"systemctl --user status {f.unit}", "stopped": f"systemctl --user start {f.unit}"}.get(state, "")
+            out.append(Result(f"unit.{f.unit}", "Services", f.unit, status, detail, fix, f.id, state))
     for fid, unit, user in UNITS:
         f = FEATURES_BY_ID[fid]
         if not all(s.which(b) for b, _p in f.requires):
@@ -394,6 +438,7 @@ def feature_states(results):
         rs = by_feature.get(f.id, [])
         dep = next((r for r in rs if r.id == f"dependency.{f.id}"), None)
         svc = next((r for r in rs if r.id == f"service.{f.id}"), None)
+        sup = next((r for r in rs if r.id == f"unit.{f.unit}"), None) if f.unit else None
         notes = []
         if dep and dep.status in (WARNING, FAIL):
             state, notes = "unavailable", [dep.message]
@@ -403,7 +448,10 @@ def feature_states(results):
             state = "working"
             if dep and dep.status in (PASS, SKIPPED) and dep.message.startswith("Optional"):
                 notes = [dep.message]
-        out.append({"id": f.id, "name": f.name, "summary": f.summary, "state": state, "notes": notes, "keybind": f.keybind, "page": f.page, "core": f.core})
+        if sup and sup.status == WARNING:                      # the unit is in trouble: say so on the feature, in the CLI and in Settings alike
+            notes.append(sup.message)
+        out.append({"id": f.id, "name": f.name, "summary": f.summary, "state": state, "notes": notes, "keybind": f.keybind, "page": f.page, "core": f.core,
+                    "supervisor": sup.state if sup else ""})
     return out
 
 
