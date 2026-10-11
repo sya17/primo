@@ -32,7 +32,7 @@ def fake(bindir, name, body):
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
-def sandbox(manager=True, enabled=False, spawns=True):
+def sandbox(manager=True, enabled=False, spawns=True, delay=0, activate_fails=False):
     """A temp HOME and a PATH whose systemctl, gdbus, setsid and python3 only record what they were asked."""
     home = Path(tempfile.mkdtemp(prefix="primo-services-"))
     bindir = home / "bin"
@@ -49,11 +49,12 @@ case "$*" in
   *is-enabled*) [[ -e "{state}" ]] ;;
   *"--user enable"*) touch "{state}" ;;
   *"--user disable"*) rm -f "{state}" ;;
-  *"--user start"*) {'touch "' + str(started) + '"' if spawns else 'exit 1'} ;;
+  *"--user start"*) {('(sleep ' + str(delay) + '; touch "' + str(started) + '") >/dev/null 2>&1 &' if delay else 'touch "' + str(started) + '"') if spawns else 'exit 1'} ;;
 esac
 ''')
     fake(bindir, "gdbus", f'''echo "gdbus $*" >> "{log}"
 if [[ "$*" == *NameHasOwner* ]]; then [[ -e "{started}" ]] && echo "(true,)" || echo "(false,)"; fi
+{'if [[ "$*" == *Activate* ]]; then echo "Error: the service went away" >&2; exit 1; fi' if activate_fails else ''}
 ''')
     fake(bindir, "setsid", f'echo "setsid $*" >> "{log}"{"; touch " + chr(34) + str(started) + chr(34) if spawns else ""}\n')
     fake(bindir, "notify-send", f'echo "notify-send $*" >> "{log}"\n')
@@ -196,6 +197,17 @@ for name in SERVICES:
         assert (f"systemctl --user status primo-{name}.service" in out.stderr) == enabled, out.stderr
         assert any(c.startswith("notify-send") for c in got) and not any("Activate" in c for c in got), got
         assert sum(c.startswith("setsid") for c in got) == (0 if enabled else 1), "an enabled unit that fails is reported, not started a second way"
+
+# ---- a slow start is waited for (within the wrapper's limit); a service that disappears under the request is an error, not a success
+for name in SERVICES:
+    home, env, log = sandbox(enabled=True, delay=1)
+    out = wrapper(name, env)
+    assert out.returncode == 0 and any("Activate" in c for c in calls(log)), (name, "a start that takes a second is waited for", out.stderr)
+    time.sleep(1.2)                                               # let the fake's background start finish before the sandbox is dropped
+    home, env, log = sandbox(enabled=True, activate_fails=True)
+    (home / "started").touch()
+    out = wrapper(name, env)
+    assert out.returncode != 0 and "went away" in out.stderr, (name, out.returncode, out.stderr)
 
 # ---- the autostart lines: skipped while the unit is enabled, the old command otherwise
 lua = (ROOT / "config" / "hypr" / "modules" / "autostart.lua").read_text()
