@@ -162,7 +162,8 @@ primo config validate        # check every settings file; names the file and lin
 primo doctor --json | jq '.checks[] | select(.status != "pass")'
 primo snapshot --dry-run     # what a copy of your Primo settings would hold, and what it leaves out
 primo snapshot               # take it: ~/.local/share/primo/snapshots/<id>, private (0700/0600)
-primo snapshot list          # also: show ID, remove ID
+primo snapshot list          # also: show ID (checks its integrity), remove ID
+primo restore ID             # what restoring a snapshot would create or replace; writes nothing
 ```
 
 If you turned on Primo's systemd user units (`scripts/install.sh --services`, see `docs/ARCHITECTURE.md`), the Services checks also say how each
@@ -173,8 +174,8 @@ own process check.
 A snapshot copies only the settings Primo itself owns (modes, activity, overview and interface settings, the time hub's reminders and timers, a few
 state files such as the current theme and wallpaper), never your whole home folder and never generated files. Files that can hold secrets, the
 calendar links and snippets in `workflow.json` and the launcher history, are left out unless you add `--include-sensitive`. A file bigger than 1 MiB is
-left out and named. Nothing is deleted for you: past 10 snapshots it tells you to remove old ones, past 25 it refuses. Restoring is a separate step
-(see below when it is available); a snapshot taken while a file kept changing says it is incomplete and cannot be restored.
+left out and named. Nothing is deleted for you: past 10 snapshots it tells you to remove old ones, past 25 it refuses. `primo restore ID` shows what a restore would create or replace, file by file, and refuses a snapshot whose files were changed, truncated or
+are not ones Primo may restore; a snapshot taken while a file kept changing says it is incomplete and cannot be restored.
 
 Apart from `primo snapshot`, which writes only inside its own folder, nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into

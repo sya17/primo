@@ -361,3 +361,123 @@ def plan_rows(plan_or_manifest):
         m = plan_or_manifest
         rows = [(f.name, f.cls, "captured", f.size) for f in m.files] + [(n, classes.get(n, "portable"), r, None) for n, r in m.skipped]
     return sorted(rows, key=lambda r: (order.get(r[0], len(order)), r[0]))
+
+
+# ---------------------------------------------------------------------------------------------------- restore preview (T063)
+_EXTRA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(json|toml)$")
+_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True)
+class RestoreAction:
+    name: str
+    base: str
+    rel: str
+    action: str             # "create", "replace", "same" or "skip"
+    reason: str
+    target_sha256: "str | None"      # the target as it was when the plan was made; None when it did not exist
+    snapshot_sha256: str
+    machine: bool
+
+
+@dataclass(frozen=True)
+class RestorePlan:
+    version: int
+    snapshot_id: str
+    manifest_sha256: str
+    created: str
+    actions: tuple
+
+
+def _entry_for(f):
+    """The inventory entry a manifest file claims to be, or None when today's rules do not allow it. A fixed entry must match exactly; any other
+    file must be a plain `<name>.json`/`.toml` in the Primo config folder."""
+    for e in INVENTORY:
+        if (e.name, e.base, e.rel) == (f.name, f.base, f.rel):
+            return e if e.cls == f.cls else None
+    if f.base == "config" and f.name == f"primo/{f.rel}" and _EXTRA.match(f.rel) and ".bad-" not in f.rel and f.cls == "portable":
+        return _e(f.name, "config", f.rel, "toml" if f.rel.endswith(".toml") else "json", "portable", "another settings file of yours")
+    return None
+
+
+def _sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_snapshot(snapshot_id, env=None, home=None):
+    """(manifest, problems). `problems` is empty only for a snapshot that is whole and unaltered: complete, every file present with the recorded
+    size and SHA-256, nothing extra, and every entry one that today's inventory allows. Nothing is read from outside the snapshot folder."""
+    manifest = read_manifest(snapshot_id, env, home)
+    folder = snapshots_dir(env, home) / snapshot_id
+    problems = []
+    if not manifest.complete:
+        problems.append("the snapshot is marked incomplete")
+    seen, indexes = set(), set()
+    for f in manifest.files:
+        label = f.name if isinstance(f.name, str) and len(f.name) < 80 else "an entry"
+        if not (isinstance(f.size, int) and isinstance(f.index, int) and isinstance(f.mode, int) and isinstance(f.sha256, str)):
+            problems.append(f"{label}: malformed record")
+            continue
+        if f.name in seen or f.index in indexes:
+            problems.append(f"{label}: listed twice")
+        seen.add(f.name)
+        indexes.add(f.index)
+        if _entry_for(f) is None:
+            problems.append(f"{label}: not a file recovery may restore")
+            continue
+        if not _HEX.match(f.sha256) or f.size < 0 or f.size > MAX_FILE or not 0 <= f.mode <= 0o777:
+            problems.append(f"{label}: malformed record")
+            continue
+        blob = folder / "files" / str(f.index)
+        if blob.is_symlink() or not blob.is_file():
+            problems.append(f"{label}: the saved copy is missing")
+        elif blob.stat().st_size != f.size:
+            problems.append(f"{label}: the saved copy has the wrong size")
+        elif _sha(blob) != f.sha256:
+            problems.append(f"{label}: the saved copy was changed")
+    try:
+        extra = sorted(p.name for p in (folder / "files").iterdir() if not p.name.isdigit() or int(p.name) not in indexes)
+    except OSError:
+        extra = []
+    if extra:
+        problems.append(f"{len(extra)} unexpected file(s) in the snapshot")
+    return manifest, problems
+
+
+def plan_restore(snapshot_id, only=None, include_machine=False, env=None, home=None, now=None):
+    """What restoring would do to each file, compared with the files as they are now. Writes nothing. Refuses a snapshot that is not sound."""
+    manifest, problems = load_snapshot(snapshot_id, env, home)
+    if problems:
+        raise RecoveryError("this snapshot cannot be restored: " + "; ".join(problems[:3]) + (f" (and {len(problems) - 3} more)" if len(problems) > 3 else ""))
+    names = {f.name for f in manifest.files}
+    if only:
+        unknown = sorted(set(only) - names)
+        if unknown:
+            raise RecoveryError("not in this snapshot: " + ", ".join(unknown))
+    rt = {b: Path(os.path.realpath(p)) for b, p in roots(env, home).items()}
+    actions = []
+    for f in manifest.files:
+        entry = _entry_for(f)
+        target = target_path(entry, env, home)
+        machine = entry.cls == "machine"
+        now_sha, action, reason = None, "", ""
+        if only and f.name not in only:
+            action, reason = "skip", "not selected"
+        elif machine and not include_machine:
+            action, reason = "skip", "specific to this machine (add --include-machine to restore it)"
+        elif not os.path.lexists(target):
+            action, reason = "create", "the file does not exist now"
+        else:
+            real = Path(os.path.realpath(target))
+            if not _inside(real, rt[entry.base]) or not real.is_file():
+                action, reason = "skip", "the file now is a folder or a link that leaves its folder"
+            else:
+                now_sha = _sha(real)
+                action, reason = ("same", "already as in the snapshot") if now_sha == f.sha256 else ("replace", "differs from the snapshot")
+        actions.append(RestoreAction(f.name, f.base, f.rel, action, reason, now_sha, f.sha256, machine))
+    raw = (snapshots_dir(env, home) / snapshot_id / "manifest.json").read_bytes()
+    return RestorePlan(VERSION, snapshot_id, hashlib.sha256(raw).hexdigest(), time.strftime("%Y-%m-%dT%H:%M:%S", now or time.localtime()), tuple(actions))

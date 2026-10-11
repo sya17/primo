@@ -275,4 +275,147 @@ assert cli("show")[0] == 64 and cli("remove")[0] == 64 and cli("nonsense")[0] ==
 assert cli("remove", "../../etc")[0] == 2 and cli("show", "20990101-000000")[0] == 2
 assert cli("remove", done["snapshot"])[0] == 0 and json.loads(cli("list", "--json")[1])["snapshots"] == []
 
+# ---- T063: validate a snapshot, preview a restore
+import copy  # noqa: E402
+import dataclasses  # noqa: E402
+
+
+def fresh():
+    h, e = make_home()
+    put(h, ".config/primo/modes.json", '[{"id": "a"}]')
+    put(h, ".config/primo/ui.json", '{"version": 1}')
+    put(h, ".config/primo/extra.toml", "a = 1\n")
+    put(h, ".local/share/primo/hub.json", '{"reminders": []}')
+    put(h, ".local/state/hyprland-dotfiles/current", "primo-dusk\n")
+    put(h, ".local/state/hyprland-dotfiles/wallpaper", "/home/u/a.png\n")
+    man = rc.create_snapshot(rc.plan_snapshot(env=e, home=h), env=e, home=h)
+    return h, e, man
+
+
+def manifest_path(h, man):
+    return h / ".local/share/primo/snapshots" / man.id / "manifest.json"
+
+
+def edit_manifest(h, man, fn):
+    path = manifest_path(h, man)
+    d = json.loads(path.read_text())
+    fn(d)
+    path.write_text(json.dumps(d, indent=1))
+
+
+def refused(h, e, man, why):
+    m, problems = rc.load_snapshot(man.id, e, h)
+    assert problems and why in " ".join(problems), (why, problems)
+    try:
+        rc.plan_restore(man.id, env=e, home=h)
+        raise AssertionError(f"a snapshot with this problem ({why}) must not give a plan")
+    except rc.RecoveryError as err:
+        assert "cannot be restored" in str(err)
+
+
+home, env, man = fresh()
+m, problems = rc.load_snapshot(man.id, env, home)
+assert problems == [] and m == man, problems
+
+# every way a snapshot can be wrong is named, and no plan follows
+h, e, man = fresh(); blob = h / ".local/share/primo/snapshots" / man.id / "files" / "0"
+blob.write_bytes(blob.read_bytes() + b" "); refused(h, e, man, "wrong size")
+h, e, man = fresh(); blob = h / ".local/share/primo/snapshots" / man.id / "files" / "0"
+blob.write_bytes(b"X" * blob.stat().st_size); refused(h, e, man, "was changed")
+h, e, man = fresh(); (h / ".local/share/primo/snapshots" / man.id / "files" / "1").unlink(); refused(h, e, man, "missing")
+h, e, man = fresh(); (h / ".local/share/primo/snapshots" / man.id / "files" / "7").write_text("x"); refused(h, e, man, "unexpected")
+h, e, man = fresh(); b = h / ".local/share/primo/snapshots" / man.id / "files" / "0"; keep = b.read_bytes(); b.unlink(); (h / "elsewhere").write_bytes(keep); b.symlink_to(h / "elsewhere"); refused(h, e, man, "missing")
+for label, change, why in (
+        ("path out of the folder", lambda d: d["files"][0].update(rel="../../../etc/passwd"), "not a file recovery may restore"),
+        ("absolute path", lambda d: d["files"][0].update(rel="/etc/passwd"), "not a file recovery may restore"),
+        ("unknown name", lambda d: d["files"][0].update(name="evil", rel="evil.sh"), "not a file recovery may restore"),
+        ("extra script", lambda d: d["files"][0].update(name="primo/run.sh", rel="run.sh"), "not a file recovery may restore"),
+        ("kept-aside copy", lambda d: d["files"][0].update(name="primo/modes.json.bad-1", rel="modes.json.bad-1"), "not a file recovery may restore"),
+        ("class changed", lambda d: [f.update(cls="portable") for f in d["files"] if f["name"] == "wallpaper"], "not a file recovery may restore"),
+        ("another base", lambda d: d["files"][0].update(base="state"), "not a file recovery may restore"),
+        ("bad hash", lambda d: d["files"][0].update(sha256="zz"), "malformed"),
+        ("huge size", lambda d: d["files"][0].update(size=rc.MAX_FILE + 1), "malformed"),
+        ("bad mode", lambda d: d["files"][0].update(mode=0o7777), "malformed"),
+        ("listed twice", lambda d: d["files"].append(copy.deepcopy(d["files"][0])), "listed twice"),
+        ("incomplete", lambda d: d.update(complete=False), "incomplete")):
+    h, e, man = fresh()
+    edit_manifest(h, man, change)
+    refused(h, e, man, why)
+h, e, man = fresh()
+edit_manifest(h, man, lambda d: d.update(version=2))
+for call in (lambda: rc.load_snapshot(man.id, e, h), lambda: rc.plan_restore(man.id, env=e, home=h)):
+    try:
+        call()
+        raise AssertionError("a newer snapshot version is refused, not guessed")
+    except rc.RecoveryError as err:
+        assert "another version" in str(err)
+h, e, man = fresh()
+manifest_path(h, man).write_text("{not json")
+try:
+    rc.load_snapshot(man.id, e, h)
+    raise AssertionError
+except rc.RecoveryError as err:
+    assert "manifest" in str(err)
+
+# the preview: create / replace / same / skip, from the files as they are now, and it writes nothing
+home, env, man = fresh()
+(home / ".config/primo/ui.json").write_text('{"version": 1, "reduce_motion": true}')       # differs now
+(home / ".config/primo/modes.json").unlink()                                              # gone now
+(home / ".local/state/hyprland-dotfiles/current").unlink()                               # a folder where the file was
+(home / ".local/state/hyprland-dotfiles/current").mkdir()
+before = tree_state(home)
+plan = rc.plan_restore(man.id, env=env, home=home)
+assert tree_state(home) == before, "a restore preview must not change anything"
+acts = {a.name: a for a in plan.actions}
+assert acts["modes"].action == "create" and acts["modes"].target_sha256 is None
+assert acts["ui"].action == "replace" and acts["ui"].target_sha256 == hashlib.sha256(b'{"version": 1, "reduce_motion": true}').hexdigest()
+assert acts["hub"].action == "same" and acts["primo/extra.toml"].action == "same"
+assert acts["current"].action == "skip" and "folder" in acts["current"].reason
+assert acts["wallpaper"].action == "skip" and acts["wallpaper"].machine and "include-machine" in acts["wallpaper"].reason
+assert plan.manifest_sha256 == hashlib.sha256(manifest_path(home, man).read_bytes()).hexdigest() and plan.snapshot_id == man.id
+assert [a for a in rc.plan_restore(man.id, env=env, home=home).actions] == list(plan.actions), "same inputs, same plan"
+try:
+    plan.actions = ()
+    raise AssertionError("a plan is immutable")
+except dataclasses.FrozenInstanceError:
+    pass
+wide = {a.name: a for a in rc.plan_restore(man.id, include_machine=True, env=env, home=home).actions}
+assert wide["wallpaper"].action in ("same", "create", "replace")
+only = {a.name: a for a in rc.plan_restore(man.id, only=["ui"], env=env, home=home).actions}
+assert only["ui"].action == "replace" and only["modes"].action == "skip" and only["modes"].reason == "not selected"
+try:
+    rc.plan_restore(man.id, only=["nope"], env=env, home=home)
+    raise AssertionError
+except rc.RecoveryError as err:
+    assert "nope" in str(err)
+# a target that is a link leaving its folder is never a restore target
+home, env, man = fresh()
+(home / ".config/primo/ui.json").unlink()
+(home / "elsewhere.json").write_text("{}")
+(home / ".config/primo/ui.json").symlink_to(home / "elsewhere.json")
+assert {a.name: a for a in rc.plan_restore(man.id, env=env, home=home).actions}["ui"].action == "skip"
+# a link that stays inside its folder is a normal target
+(home / ".config/primo/ui.json").unlink()
+put(home, ".config/primo/ui-real.json", "{}")
+(home / ".config/primo/ui.json").symlink_to(home / ".config/primo/ui-real.json")
+assert {a.name: a for a in rc.plan_restore(man.id, env=env, home=home).actions}["ui"].action == "replace"
+
+# the CLI preview
+PRIMO = str(Path(__file__).resolve().parent / "primo")
+home, env, man = fresh()
+cenv = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", NO_COLOR="1")
+(home / ".config/primo/ui.json").write_text("{}")
+def run_cli(*a):
+    r = subprocess.run([sys.executable, PRIMO, *a], env=cenv, capture_output=True, text=True, timeout=30)
+    return r.returncode, r.stdout, r.stderr
+before = tree_state(home)
+code, out, _e = run_cli("restore", man.id)
+assert code == 0 and "replace  ui" in out.replace("  ", "  ") and "nothing is written" in out and tree_state(home) == before
+code, out, _e = run_cli("restore", man.id, "--json")
+assert code == 0 and json.loads(out)["applied"] is False and {a["name"]: a["action"] for a in json.loads(out)["actions"]}["ui"] == "replace"
+assert run_cli("restore", "20990101-000000")[0] == 2 and run_cli("restore", man.id, "--only", "nope")[0] == 2 and run_cli("restore")[0] != 0
+blob = home / ".local/share/primo/snapshots" / man.id / "files" / "0"
+blob.write_bytes(b"X" * blob.stat().st_size)
+assert run_cli("restore", man.id)[0] == 2 and run_cli("snapshot", "show", man.id)[0] == 2 and "was changed" in run_cli("snapshot", "show", man.id)[1]
+
 print("ok: recovery")
