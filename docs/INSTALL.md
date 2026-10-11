@@ -11,7 +11,7 @@ This is the full set the repo was built with. Remove what you do not use; the he
 sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst kitty grim slurp wl-clipboard libnotify \
                brightnessctl playerctl swayosd hyprsunset swaync starship eza bat fzf btop zoxide fastfetch satty wf-recorder \
                power-profiles-daemon bluez bluez-utils blueman reflector pacman-contrib ufw timeshift keepassxc \
-               telegram-desktop qbittorrent baobab noto-fonts-cjk awww hyprpicker jq pavucontrol network-manager-applet \
+               telegram-desktop qbittorrent baobab noto-fonts-cjk awww hyprpicker jq pavucontrol network-manager-applet networkmanager libpulse \
                polkit-kde-agent ttf-jetbrains-mono-nerd inter-font capitaine-cursors noto-fonts-emoji adw-gtk-theme \
                papirus-icon-theme breeze plasma-integration kde-cli-tools \
                nautilus sushi file-roller gvfs gvfs-smb gvfs-mtp ffmpegthumbnailer loupe papers libheif webp-pixbuf-loader
@@ -19,6 +19,15 @@ sudo pacman -S hyprland hyprpaper hyprlock hypridle cliphist waybar wofi dunst k
 
 Primo's own tools (Settings, launcher, time hub, activity, modes) are Python with GTK 4 and libadwaita: `python-gobject` and
 `libadwaita` come with Nautilus.
+
+Some controls depend on one program each and are hidden (or say what is missing) when it is not installed, in Settings, the notification
+panel and the launcher alike; `primo features` and Settings > Health list them:
+
+| Control | Needs | Optional |
+| --- | --- | --- |
+| Network page, `network` in the launcher | `nmcli` (`networkmanager`) | `nm-connection-editor` and `nm-applet` (`network-manager-applet`): company or school sign-in, password prompts |
+| Audio page, microphone mute, `audio` in the launcher | `pactl` (`libpulse`, served by PipeWire or PulseAudio) | `pavucontrol`: the full mixer |
+| Screenshots and `capture` | `grim`, `slurp` (the copy to the clipboard uses `wl-copy` from `wl-clipboard`) | `satty` (annotate), `wf-recorder` (recording) |
 
 ## 2. Try it first
 
