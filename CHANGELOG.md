@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/sya17/primo/compare/v0.5.0...v0.6.0) (2026-10-11)
+
+### Added
+
+* **doctor:** report the state of Primo's service units ([49cd245](https://github.com/sya17/primo/commit/49cd245a9ee0eb175656bd6d55cec5dfe3b5992b))
+* **hub:** run the time hub as an optional unit that keeps its work ([f8df512](https://github.com/sya17/primo/commit/f8df5128d16b35cf4a2d4965fd2538883106c4e0))
+* **services:** run launcher, switcher and activity as optional units ([5590ca1](https://github.com/sya17/primo/commit/5590ca16025ff25ff8eb83f2badfc5db4f0456a0))
+* **services:** run the overview as an optional systemd user unit ([75544e9](https://github.com/sya17/primo/commit/75544e9a8487e28d26d5ac15a10058dc39997ce6))
+
+### Fixed
+
+* **services:** report an overview that cannot start instead of hiding it ([9b556f4](https://github.com/sya17/primo/commit/9b556f40000907fb70efefcbbb65d8030c50551f))
+
 ## [0.5.0](https://github.com/sya17/primo/compare/v0.4.0...v0.5.0) (2026-10-11)
 
 ### Added
