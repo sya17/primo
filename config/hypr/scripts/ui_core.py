@@ -76,3 +76,11 @@ def resolve_policy(prefs, system_animations):
     if not isinstance(system_animations, bool):
         raise UiPreferenceError("the system animation setting must be true or false")
     return UiPolicy(animate=system_animations and not prefs.reduce_motion, opaque=prefs.reduce_transparency)
+
+
+PAGE_TRANSITION_MS = 180
+
+
+def transition_ms(policy):
+    """How long a custom page transition lasts: the usual 180 ms, none when custom animation is off."""
+    return PAGE_TRANSITION_MS if policy.animate else 0

@@ -42,6 +42,8 @@ echo "python"
 python3 scripts/test-idle.py && pass "idle settings and Never" || fail "idle settings"
 python3 scripts/test-control-center.py >"$work/cc.out" 2>&1 && pass "notification panel: buttons follow the installed tools, base config untouched, last good config kept" || { fail "control center"; tail -6 "$work/cc.out"; }
 python3 scripts/test-ui-core.py >"$work/uicore.out" 2>&1 && pass "interface preferences: strict booleans, safe read and save, policy for all combinations" || { fail "ui core"; tail -6 "$work/uicore.out"; }
+python3 scripts/test-ui-style.py >"$work/uistyle.out" 2>&1 && pass "interface policy on a window: classes, the toolkit's animation setting wins, no handler left behind" || { fail "ui style"; tail -6 "$work/uistyle.out"; }
+python3 scripts/test-launcher-window.py >"$work/lwin.out" 2>&1 && pass "launcher window: shared styles loaded once, preferences applied, nothing delivered to a closed window" || { fail "launcher window"; tail -6 "$work/lwin.out"; }
 python3 scripts/test-ui-theme.py >"$work/uitheme.out" 2>&1 && pass "shared GTK4 roles: every theme, GTK3 untouched, scoped selectors, contrast, safe failure" || { fail "ui theme"; tail -6 "$work/uitheme.out"; }
 python3 scripts/test-interaction.py >"$work/interaction.out" 2>&1 && pass "interaction: panel, launcher and Health agree on missing tools; slow tools and 30 open/close cycles leak nothing" || { fail "interaction"; tail -6 "$work/interaction.out"; }
 python3 scripts/test-overview.py >"$work/overview.out" 2>&1 && pass "overview: read and acted on by workers, last view kept when Hyprland is slow, vanished targets refused" || { fail "overview"; tail -6 "$work/overview.out"; }

@@ -31,26 +31,23 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_core as cc  # noqa: E402
+import ui_style  # noqa: E402
 from launcher_core import KIND_LABEL, Context, Facts, FactsWorker, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, wants_file_search  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 APP_ID = "dev.primo.Launcher"
 log = logging.getLogger("primo.launcher")
-USER_CSS = Path.home() / ".config" / "gtk-4.0" / "gtk.css"
+USER_CSS = cc.config_home() / "gtk-4.0" / "gtk.css"
 
 CSS = """
 window.primo-launcher, window.primo-launcher.background { background: transparent; box-shadow: none; }
-.ln-card { background-color: @window_bg_color; border: 1px solid alpha(@accent_bg_color, 0.55); }
-.ln-entry { margin: 16px 16px 8px 16px; font-size: 17px; min-height: 44px; border-radius: 12px; }
-.ln-row { padding: 8px 12px; border-radius: 12px; margin: 1px 10px; }
-.ln-row:selected { background-color: alpha(@accent_bg_color, 0.30); }
-.ln-row:selected label { color: @window_fg_color; }
-.ln-title { font-size: 14px; }
-.ln-sub { font-size: 11px; opacity: 0.6; }
-.ln-kind { font-size: 10px; opacity: 0.5; letter-spacing: 1px; margin: 10px 20px 2px 20px; }
+.ln-entry { margin: 16px 16px 8px 16px; min-height: 44px; }
+.ln-row { padding: 8px 12px; margin: 1px 10px; }
+.ln-sub { opacity: 0.6; }
+.ln-kind { letter-spacing: 1px; margin: 10px 20px 2px 20px; }
 .ln-calc { font-size: 22px; font-weight: 300; }
-.ln-hint { opacity: 0.5; font-size: 11px; margin: 6px 16px 10px 16px; }
+.ln-hint { margin: 6px 16px 10px 16px; }
 """
 
 
@@ -69,14 +66,15 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.search = FileSearch(lambda text, hits: GLib.idle_add(self.apply_file_hits, hits, text))
         # Windows, clipboard and the like are read by a worker; typing only ever uses what is cached.
         self.facts_worker = FactsWorker(app.facts, lambda values: GLib.idle_add(self.apply_facts, set(values)))
+        self.policy = ui_style.PolicyBinding(self)       # reads the preferences now; follows the toolkit's animation setting until closed
         self.connect("close-request", self.on_close)
         self.connect("map", lambda *_: log.debug("shown %.1f ms after it was asked for", (time.monotonic() - app.asked) * 1000))
 
         # The window is fixed-size and transparent; the visible card sits at its top and grows
         # downwards, so the search box never jumps while results appear (Hyprland keeps a floating
         # window's centre fixed when it resizes).
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["ln-card", "primo-card"], valign=Gtk.Align.START)
-        self.entry = Gtk.SearchEntry(placeholder_text="Search apps, files, math, actions…", css_classes=["ln-entry"])
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["ln-card", "primo-card", "primo-popup"], valign=Gtk.Align.START)
+        self.entry = Gtk.SearchEntry(placeholder_text="Search apps, files, math, actions…", css_classes=["ln-entry", "primo-control", "primo-title"])
         self.entry.connect("search-changed", self.on_changed)
         self.entry.connect("activate", lambda *_: self.activate_selected())
         root.append(self.entry)
@@ -87,7 +85,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.scroller = Gtk.ScrolledWindow(child=self.listbox, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                            propagate_natural_height=True, max_content_height=430)
         root.append(self.scroller)
-        root.append(Gtk.Label(label="↵ Open     ↑↓ Move     Esc Close     ws  theme  win  clip", xalign=0, css_classes=["ln-hint"]))
+        root.append(Gtk.Label(label="↵ Open     ↑↓ Move     Esc Close     ws  theme  win  clip", xalign=0, css_classes=["ln-hint", "primo-caption", "primo-muted"]))
         outer = Gtk.Box()
         outer.append(root)
         outer.set_hexpand(True)
@@ -140,6 +138,7 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     def on_close(self, *_):
         self.alive = False
+        self.policy.close()
         self.search.cancel()
         self.facts_worker.cancel()
         self.app.facts.forget("clipboard")          # previews of what you copied do not stay in memory after the window closes
@@ -182,7 +181,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.scroller.set_visible(bool(self.items))
 
     def make_row(self, it):
-        row = Gtk.ListBoxRow(css_classes=["ln-row"])
+        row = Gtk.ListBoxRow(css_classes=["ln-row", "primo-control"])
         row.item = it
         box = Gtk.Box(spacing=14)
         img = Gtk.Image(pixel_size=32)
@@ -193,16 +192,16 @@ class LauncherWindow(Adw.ApplicationWindow):
         box.append(img)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER, hexpand=True)
         col.append(Gtk.Label(label=it.title, xalign=0, ellipsize=3,
-                             css_classes=["ln-calc" if it.big else "ln-title"]))
+                             css_classes=["ln-calc"] if it.big else ["ln-title", "primo-body"]))
         if it.subtitle:
-            col.append(Gtk.Label(label=it.subtitle, xalign=0, ellipsize=3, css_classes=["ln-sub"]))
+            col.append(Gtk.Label(label=it.subtitle, xalign=0, ellipsize=3, css_classes=["ln-sub", "primo-caption"]))
         box.append(col)
         row.set_child(box)
         return row
 
     def header_func(self, row, before):
         if before is None or before.item.kind != row.item.kind:
-            row.set_header(Gtk.Label(label=KIND_LABEL[row.item.kind], xalign=0, css_classes=["ln-kind"]))
+            row.set_header(Gtk.Label(label=KIND_LABEL[row.item.kind], xalign=0, css_classes=["ln-kind", "primo-caption", "primo-muted"]))
         else:
             row.set_header(None)
 
@@ -263,7 +262,7 @@ class Service(Adw.Application):
         super().__init__(application_id=APP_ID)
         self.daemon = daemon
         self.window = None
-        self.css = None
+        self.styles = None
         self.asked = 0.0
         self.apps = []
         self.facts = SampleFacts() if os.environ.get("PRIMO_SHOT_MODE") else Facts()
@@ -291,15 +290,9 @@ class Service(Adw.Application):
         self.toggle()
 
     def load_css(self):
-        display = Gdk.Display.get_default()
-        if self.css is None:
-            self.css = Gtk.CssProvider()
-            Gtk.StyleContext.add_provider_for_display(display, self.css, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
-            own = Gtk.CssProvider()
-            own.load_from_string(CSS)
-            Gtk.StyleContext.add_provider_for_display(display, own, Gtk.STYLE_PROVIDER_PRIORITY_USER + 2)
-        if USER_CSS.exists():
-            self.css.load_from_path(str(USER_CSS))
+        if self.styles is None:                  # the providers are made once; each opening only re-reads the generated stylesheet
+            self.styles = ui_style.Styles(CSS)
+        self.styles.reload_user(USER_CSS)
 
     def toggle(self):
         if self.window is not None and self.window.get_visible():

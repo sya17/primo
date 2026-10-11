@@ -38,6 +38,13 @@ the theme already has, so a theme needs no new key. Every selector starts with o
 window background, and an error is an outline around normal text, because those are the pairs that keep their contrast in every shipped
 theme (`scripts/test-ui-theme.py` checks it).
 
+`ui_style.py` is the small GTK side of the interface preferences (`ui_core.py`, `ui.json`): a window asks it for its policy when it opens
+and gets the classes `primo-reduce-motion` and `primo-opaque` that the shared stylesheet answers. The toolkit's own animation setting always
+wins, and an open window follows it until it closes. The launcher uses it and reads its preferences each time it opens, so a changed
+preference shows on the next open. Style providers are made once per process: a fallback with the toolkit's named colours (used only when the
+generated stylesheet has no shared roles), the generated `gtk-4.0/gtk.css`, and the launcher's own layout rules, which hold no colour, radius
+or text size of their own.
+
 ## Add a theme
 
 Copy a folder in `themes/`, edit `theme.conf` (keep `mode=dark|light`), then
