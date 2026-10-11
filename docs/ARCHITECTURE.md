@@ -29,6 +29,15 @@ themes/<name>/theme.conf ──► templates/<app>/*.tpl ──► generated fil
 `gtk_theme`, `icon_theme`, `wallpaper_path`. A template that uses an unknown placeholder makes
 `theme-switch` fail before anything is written.
 
+## Shared UI roles
+
+`templates/gtk/primo-ui.css.tpl` is appended to the GTK4 stylesheet only (never GTK3). It gives the launcher and Settings a small set of
+role classes (`primo-popup`, `primo-surface`, `primo-control`, `primo-title`, `primo-body`, `primo-caption`, `primo-muted`,
+`primo-selected`, `primo-error`, plus the `primo-opaque` and `primo-reduce-motion` window classes) built from the colours and radii
+the theme already has, so a theme needs no new key. Every selector starts with one of those two windows. Muted text is meant for the
+window background, and an error is an outline around normal text, because those are the pairs that keep their contrast in every shipped
+theme (`scripts/test-ui-theme.py` checks it).
+
 ## Add a theme
 
 Copy a folder in `themes/`, edit `theme.conf` (keep `mode=dark|light`), then
