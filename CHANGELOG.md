@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/sya17/primo/compare/v0.4.0...v0.5.0) (2026-10-11)
+
+### Added
+
+* **accessibility:** reduce interface motion and transparency ([344e1fe](https://github.com/sya17/primo/commit/344e1fe3aa99a66284eb085cfbbc944fe5186d73))
+* **appearance:** interface preferences and the policy they give ([3a51152](https://github.com/sya17/primo/commit/3a51152a102d01d54b08749a0fd0e95daea3410d))
+* **launcher:** use the shared roles and the interface policy ([9fe6f6f](https://github.com/sya17/primo/commit/9fe6f6f85f0318bbb96a0fb30aac3cff9788c66c))
+* **settings:** shared roles, page transition follows the policy ([d8d6ba1](https://github.com/sya17/primo/commit/d8d6ba11c3b88ad32c37636491911ea56531ca28))
+
+### Fixed
+
+* **launcher:** free a closed window instead of keeping it ([bbda8c2](https://github.com/sya17/primo/commit/bbda8c2ea517009c2fee3b8059241d3fbd862c3d))
+
 ## [0.4.0](https://github.com/sya17/primo/compare/v0.3.0...v0.4.0) (2026-10-11)
 
 ### Added
