@@ -71,6 +71,12 @@ A read that fails or comes back malformed keeps the last view and says so; an em
 the desktop and check the window and workspace before sending a single fixed dispatch, so a window that vanished is refused with a message
 instead of being sent to Hyprland.
 
+The overview is the first service with an optional systemd user unit (`config/systemd/user/primo-overview.service`, `Type=dbus` on its own
+bus name, bounded restarts, tied to the graphical session). `scripts/install.sh --services` links and enables it, `--remove-services` undoes it;
+both accept `--dry-run`, leave any unit or drop-in of your own alone, and never start or stop a running service. While the unit is enabled the
+Hyprland autostart and the wrapper leave the start to systemd; otherwise they start the service as before, so a machine without a user manager
+behaves as it always did.
+
 ## Logs
 
 Each resident service calls `config_core.setup_logging("<name>")` once and logs through Python's `logging` (`primo.<name>`):

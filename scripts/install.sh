@@ -2,6 +2,8 @@
 # Symlink the configs into ~/.config, install the theme-switch helper and apply a theme.
 #
 # Usage: install.sh [--dry-run] [--theme NAME]
+#        install.sh --services [--dry-run]         enable Primo's systemd user units (they take over at the next login)
+#        install.sh --remove-services [--dry-run]  disable them again; the autostart fallback takes over
 set -euo pipefail
 
 root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -11,18 +13,55 @@ stamp="$(date +%Y%m%d-%H%M%S)"
 apps=(hypr waybar wofi dunst kitty swayosd swaync fontconfig)
 theme="catppuccin-mocha"
 dry=0
+services=""
+units=(primo-overview.service)   # the services that have a unit so far
 
 while (( $# )); do
     case "$1" in
         --dry-run) dry=1 ;;
         --theme)   theme="${2:?--theme needs a name}"; shift ;;
-        -h|--help) sed -n '2,4p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --services) services=install ;;
+        --remove-services) services=remove ;;
+        -h|--help) sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
 done
 
 run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
+
+# ---- systemd user units: link only what is ours, never replace a user's own file or drop-in ----
+if [[ -n "$services" ]]; then
+    unit_dir="$config_home/systemd/user"
+    if ! command -v systemctl >/dev/null || ! systemctl --user show-environment >/dev/null 2>&1; then
+        echo "note: no systemd user manager here; the services keep starting from the Hyprland autostart"
+        exit 0
+    fi
+    changed=0
+    for unit in "${units[@]}"; do
+        src="$root/config/systemd/user/$unit"; dst="$unit_dir/$unit"
+        if [[ "$services" == install ]]; then
+            if [[ -L "$dst" && "$(readlink -f "$dst")" == "$src" ]]; then
+                echo "ok: $unit already linked"
+            elif [[ -e "$dst" || -L "$dst" ]]; then
+                echo "skip: $dst exists and is not Primo's; left alone"; continue
+            else
+                run mkdir -p "$unit_dir"; run ln -s "$src" "$dst"; echo "link: $dst -> $src"; changed=1
+            fi
+            run systemctl --user enable "$unit" >/dev/null 2>&1 || echo "note: could not enable $unit"
+        else
+            run systemctl --user disable "$unit" >/dev/null 2>&1 || true
+            if [[ -L "$dst" && "$(readlink -f "$dst")" == "$src" ]]; then
+                run rm "$dst"; echo "removed: $dst"; changed=1
+            elif [[ -e "$dst" || -L "$dst" ]]; then
+                echo "skip: $dst is not Primo's; left alone"
+            fi
+        fi
+    done
+    (( changed )) && run systemctl --user daemon-reload
+    [[ "$services" == install ]] && echo "Enabled for the next login; a running overview keeps running until then."
+    exit 0
+fi
 
 # ---- dependencies ----
 required=(Hyprland hyprpaper hyprlock hypridle cliphist wl-paste waybar wofi dunst kitty grim slurp wl-copy notify-send)

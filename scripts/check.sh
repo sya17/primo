@@ -58,6 +58,7 @@ python3 scripts/test-proc.py >"$work/proc.out" 2>&1 && pass "bounded commands: d
 python3 scripts/test-activity.py >"$work/activity.out" 2>&1 && pass "Activity collects off the window's thread, one at a time, and recovers from a failure" || { fail "Activity collector worker"; tail -6 "$work/activity.out"; }
 python3 scripts/test-perf.py >"$work/perf.out" 2>&1 && pass "measurement helper: /proc parsing, restarts and unavailable counters" || { fail "measurement helper"; tail -6 "$work/perf.out"; }
 python3 scripts/test-config.py >"$work/config.out" 2>&1 && pass "a config file that fails to parse is kept aside before saving; saves are atomic" || { fail "config safety"; tail -6 "$work/config.out"; }
+python3 scripts/test-services.py >"$work/services.out" 2>&1 && pass "service units: link only what is ours, one startup owner, finite restarts" || { fail "service units"; tail -6 "$work/services.out"; }
 while IFS= read -r f; do
     python3 -m py_compile "$f" 2>/dev/null && pass "$f" || fail "$f"
 done < <(find scripts config -type f -name '*.py')

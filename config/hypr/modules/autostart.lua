@@ -8,7 +8,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("swayosd-server --style ~/.config/swayosd/style.css") -- no-op until swayosd is installed
     hl.exec_cmd("python3 ~/.config/hypr/scripts/switcher.py --daemon")  -- Alt+Tab service
     hl.exec_cmd("python3 ~/.config/hypr/scripts/launcher.py --daemon")  -- launcher service (instant open)
-    hl.exec_cmd("python3 ~/.config/hypr/scripts/overview.py --daemon")  -- overview service (instant open)
+    -- overview service (instant open): started here only while its systemd user unit is not enabled (install.sh --services)
+    hl.exec_cmd("sh -c 'systemctl --user is-enabled -q primo-overview.service 2>/dev/null || exec python3 ~/.config/hypr/scripts/overview.py --daemon'")
     hl.exec_cmd("python3 ~/.config/hypr/scripts/hub.py --daemon")  -- time hub: keeps timers, alarms and reminders running
     hl.exec_cmd("python3 ~/.config/hypr/scripts/activity.py --daemon")  -- Activity service; measures only while open
     hl.exec_cmd("python3 ~/.config/hypr/scripts/idle_core.py")
