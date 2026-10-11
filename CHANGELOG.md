@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0](https://github.com/sya17/primo/compare/v0.3.0...v0.4.0) (2026-10-11)
+
+### Added
+
+* **audio:** choose audio devices and mute the microphone in Settings ([1cd12c9](https://github.com/sya17/primo/commit/1cd12c97d1dc54414dd2a178725048806806047c))
+* **control-center:** panel buttons follow the installed tools ([3322416](https://github.com/sya17/primo/commit/332241664e388db28b1b13090710aa2cb933df76))
+* **launcher:** system namespaces for audio, network, capture and more ([5a25d7e](https://github.com/sya17/primo/commit/5a25d7e79f77a7ca7ff04c6dc071f05f74774f0d))
+* **network:** connect and disconnect from the Network page ([f29d903](https://github.com/sya17/primo/commit/f29d903afb974736fecddcc7c52f6a221a0827d1))
+* **network:** list Wi-Fi networks and saved connections in Settings ([4faac2b](https://github.com/sya17/primo/commit/4faac2b5436b3f623efe0112f07ac5b841f4e6e8))
+* **overview:** search windows and group workspaces by monitor ([e68aa19](https://github.com/sya17/primo/commit/e68aa19153970ba6064c3eea86a2ab95019af493))
+
+### Fixed
+
+* **doctor:** stop the Health checks when the page is left ([fc209ce](https://github.com/sya17/primo/commit/fc209cedf370879c4cca4bd6496f3341a9d97a4e))
+* **network:** stop an action when the network cannot be read ([06ca88a](https://github.com/sya17/primo/commit/06ca88a05ebe99b8666b3611c15ce3f67df1a70a))
+* **perf:** restore the file search queries of the helper ([f0427e2](https://github.com/sya17/primo/commit/f0427e28e2321c34850bcdf2ec675d3d21c7579f))
+* **proc:** stop the helpers of a bounded command with it ([2b1ccab](https://github.com/sya17/primo/commit/2b1ccab96412afde69aab41449c85908a97bbad9))
+* **settings:** put displays back on close and stop losing queued changes ([6b1441b](https://github.com/sya17/primo/commit/6b1441b01ce5724fdd3698c3e2cb93ae2853505c))
+
+### Faster
+
+* **clipboard:** read, copy, delete and preview in the background ([1df32c4](https://github.com/sya17/primo/commit/1df32c44175b8457a983688718acd229ac6c2a2e))
+* **launcher:** typing never waits for hyprctl, cliphist or the history ([4098a9d](https://github.com/sya17/primo/commit/4098a9dfe0a7401b4bfa7adbe3f21d366bbf4d9e))
+* **overview:** read and act on Hyprland from workers ([03c9281](https://github.com/sya17/primo/commit/03c92818c127080d30ab9f429761de6e3eac73c9))
+* **settings:** apply changes in the background, one at a time per item ([ea7dc1f](https://github.com/sya17/primo/commit/ea7dc1fdec2f99019a9c47ec4dcfe17c6d8a01d5))
+* **settings:** make wallpaper previews in an owned child under limits ([b73cc52](https://github.com/sya17/primo/commit/b73cc52d67cb07c3b313c259ad425d9a02f27ad3))
+* **settings:** read tools in the background so pages open at once ([871fe6f](https://github.com/sya17/primo/commit/871fe6f12519601389b8de1150371ae6ee6b2263))
+
 ## [0.3.0](https://github.com/sya17/primo/compare/v0.2.0...v0.3.0) (2026-10-09)
 
 ### Added
