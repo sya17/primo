@@ -2226,7 +2226,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.health_again.set_sensitive(False)
 
         def work(cancel):
-            return self.dc.sample_results() if os.environ.get("PRIMO_SHOT_MODE") else self.dc.run_all()
+            return self.dc.sample_results() if os.environ.get("PRIMO_SHOT_MODE") else self.dc.run_all(cancel=cancel)
         self.read("health/checks", work, self.apply_health_result)
 
     def apply_health_result(self, results):

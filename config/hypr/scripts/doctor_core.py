@@ -352,10 +352,13 @@ def check_system(s):
     return out
 
 
-def run_all(s=None):
+def run_all(s=None, cancel=None):
+    """Every check. `cancel` (a threading.Event) stops it between checks: a page that was left does not keep probing the machine."""
     s = s or System()
     results = []
     for fn in (check_session, check_services, check_features, check_configuration, check_theme, check_system):
+        if cancel is not None and cancel.is_set():
+            break
         try:
             results.extend(fn(s))
         except Exception as exc:   # a broken check must not hide the others

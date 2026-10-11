@@ -70,6 +70,16 @@ def status_of(results, rid): return next(r.status for r in results if r.id == ri
 # ---- a healthy machine
 h, repo = home_with()
 s = Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo)
+import threading
+stopped = threading.Event()
+stopped.set()
+assert dc.run_all(s, cancel=stopped) == [], "a cancelled run starts no check"
+calls = []
+class Counting(threading.Event):
+    def is_set(self):
+        calls.append(1)
+        return len(calls) > 2                                      # stopped after two checks
+assert 0 < len(dc.run_all(s, cancel=Counting())) < len(dc.run_all(s)), "a cancel arriving mid-run stops the rest"
 res = dc.run_all(s)
 sm = dc.summary(res)
 assert sm["health"] == "HEALTHY" and sm["exit_code"] == 0, [(r.id, r.status, r.message) for r in res if r.status in ("warning", "fail")]
