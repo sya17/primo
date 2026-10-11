@@ -71,6 +71,8 @@ FEATURES = [
     Feature("battery", "Battery warnings", "Warns at 20, 10 and 4 percent", process=r"battery-watch\.sh", start=f"{SCRIPTS}/battery-watch.sh"),
     Feature("bluetooth", "Bluetooth", "Devices and pairing", requires=(("bluetoothctl", "bluez-utils"),), optional=(("blueman-manager", "blueman", "pairing window"),), page="bluetooth"),
     Feature("vpn", "VPN", "NetworkManager VPN connections", requires=(("nmcli", "networkmanager"),), page="vpn"),
+    Feature("network", "Network", "Wi-Fi networks and saved connections", requires=(("nmcli", "networkmanager"),),
+            optional=(("nm-connection-editor", "network-manager-applet", "advanced connection setup"), ("nm-applet", "network-manager-applet", "password prompts")), page="network"),
     Feature("audio", "Audio", "Output and input devices, volume and microphone mute", requires=(("pactl", "libpulse"),),
             optional=(("pavucontrol", "pavucontrol", "the full mixer"),), page="audio"),
     Feature("nightlight", "Night light", "Warmer screen colours", requires=(("hyprsunset", "hyprsunset"),), keybind="Super+N"),

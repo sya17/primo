@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|audio|modes|workflow|health|vpn|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|audio|network|modes|workflow|health|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -22,6 +22,7 @@ from pathlib import Path
 import config_core as cc
 import idle_core
 import audio_core as sj_audio
+import network_core as nc
 import settings_jobs as sj
 import thumbnail_core as tc
 
@@ -50,6 +51,7 @@ PAGES = [
     ("power", "Power", "battery-symbolic"),
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
     ("audio", "Audio", "audio-volume-high-symbolic"),
+    ("network", "Network", "network-wireless-symbolic"),
     ("modes", "Modes", "emblem-system-symbolic"),
     ("workflow", "Workflow", "view-list-symbolic"),
     ("health", "Health", "emblem-default-symbolic"),
@@ -215,6 +217,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "workflow": self.build_workflow,
             "health": self.build_health,
             "audio": self.build_audio,
+            "network": self.build_network,
             "vpn": self.build_vpn,
             "more": self.build_more,
         }
@@ -259,7 +262,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=2))
 
-    REFRESH_ON_RETURN = {"power", "bluetooth", "audio", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
+    REFRESH_ON_RETURN = {"power", "bluetooth", "audio", "network", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
 
     # ---- navigation
     def select_page(self, pid):
@@ -1443,6 +1446,151 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.audio_gen += 1
             self.refresh_audio()
         return False
+
+    # ======================================================================= Network
+    def build_network(self):
+        page = Adw.PreferencesPage()
+        if shutil.which("nmcli") is None:
+            group = Adw.PreferencesGroup()
+            group.add(Adw.ActionRow(title="NetworkManager is not installed", subtitle="sudo pacman -S networkmanager"))
+            page.add(group)
+            return page
+        self.net_reading = False
+        self.net_snapshot = None
+        self.net_rows = {"status": [], "aps": [], "saved": []}
+        self.net_status = Adw.PreferencesGroup()
+        self.net_summary = Adw.ActionRow(title="Reading the network…")
+        self.net_refresh_btn = Gtk.Button(label="Refresh", valign=Gtk.Align.CENTER, sensitive=False)
+        self.net_refresh_btn.connect("clicked", lambda *_: self.on_net_rescan())
+        self.net_summary.add_suffix(self.net_refresh_btn)
+        self.net_status.add(self.net_summary)
+        self.net_agent = Adw.ActionRow(title="No program to ask for Wi-Fi passwords", subtitle="Start nm-applet to connect to a network that needs one. Saved networks still work.",
+                                       visible=False)
+        self.net_agent.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
+        self.net_status.add(self.net_agent)
+        page.add(self.net_status)
+        search_group = Adw.PreferencesGroup()
+        self.net_search = Adw.EntryRow(title="Search networks")
+        self.net_search.connect("changed", lambda *_: self.render_network())
+        search_group.add(self.net_search)
+        page.add(search_group)
+        self.net_aps_group = Adw.PreferencesGroup(title="Available Wi-Fi networks", description="What your Wi-Fi card heard most recently. Refresh scans again.")
+        page.add(self.net_aps_group)
+        self.net_saved_group = Adw.PreferencesGroup(title="Saved connections", description="Wi-Fi and wired profiles. VPNs are on their own page.")
+        page.add(self.net_saved_group)
+        if shutil.which("nm-connection-editor"):
+            more = Adw.PreferencesGroup()
+            row = Adw.ActionRow(title="Advanced setup…", subtitle="Opens the connection editor", activatable=True)
+            row.add_prefix(Gtk.Image.new_from_icon_name("document-edit-symbolic"))
+            row.connect("activated", lambda *_: spawn("nm-connection-editor"))
+            more.add(row)
+            page.add(more)
+        self.refreshers["network"] = self.refresh_network
+        self.refresh_network()
+        GLib.timeout_add_seconds(5, self.network_tick, page)
+        return page
+
+    def network_tick(self, page):
+        if page.get_mapped() and not self.net_reading and "network-scan" not in self.ops.jobs.active:
+            self.refresh_network()
+        return True
+
+    def refresh_network(self):
+        self.net_reading = True
+
+        def work(cancel):
+            budget = sj.Budget(cancel)
+            return nc.snapshot(lambda argv, **k: budget(argv, **k)), nc.secret_agent_running()
+
+        def done(result):
+            self.net_reading = False
+            self.apply_network(result)
+        self.read("network/state", work, done)
+
+    def apply_network(self, result):
+        for key, group in (("status", self.net_status), ("aps", self.net_aps_group), ("saved", self.net_saved_group)):
+            for r in self.net_rows[key]:
+                group.remove(r)
+            self.net_rows[key] = []
+        if isinstance(result, Exception):
+            self.net_snapshot = None
+            self.net_summary.set_title("Network information is not available")
+            self.net_summary.set_subtitle(GLib.markup_escape_text(str(result)))
+            self.net_refresh_btn.set_sensitive(False)
+            row = self.read_failed_row("Could not read the network", result, self.refresh_network)
+            self.net_status.add(row)
+            self.net_rows["status"].append(row)
+            return
+        snap, agent = result
+        self.net_snapshot = snap
+        active = [c for c in snap.connections if c.active]
+        self.net_summary.set_title("Wi-Fi is on" if snap.wifi_enabled else "Wi-Fi is off")
+        self.net_summary.set_subtitle(GLib.markup_escape_text(("Connected: " + ", ".join(c.name for c in active)) if active else "Not connected"))
+        self.net_refresh_btn.set_sensitive(bool(snap.wifi_enabled and snap.wifi_interfaces))
+        self.net_agent.set_visible(not agent)
+        self.render_network()
+
+    def render_network(self):
+        snap = getattr(self, "net_snapshot", None)
+        if snap is None:
+            return
+        for key, group in (("aps", self.net_aps_group), ("saved", self.net_saved_group)):
+            for r in self.net_rows[key]:
+                group.remove(r)
+            self.net_rows[key] = []
+        words = self.net_search.get_text().lower().split()
+        match = lambda text: all(w in text.lower() for w in words)
+        shown = 0
+        for ap in snap.access_points:
+            name = ap.ssid or "Hidden network"
+            if not match(name):
+                continue
+            level = "excellent" if ap.signal >= 75 else "good" if ap.signal >= 50 else "ok" if ap.signal >= 30 else "weak"
+            row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle=GLib.markup_escape_text(
+                f"{ap.signal}% · {ap.security or 'Open'} · {ap.interface}" + (" · connected" if ap.active else "")), tooltip_text=f"{ap.interface} {ap.bssid}")
+            row.add_prefix(Gtk.Image.new_from_icon_name(f"network-wireless-signal-{level}-symbolic"))
+            if ap.security:
+                row.add_suffix(Gtk.Image.new_from_icon_name("changes-prevent-symbolic"))
+            self.net_aps_group.add(row)
+            self.net_rows["aps"].append(row)
+            shown += 1
+        if not shown:
+            text = ("Wi-Fi is off" if not snap.wifi_enabled else "No Wi-Fi card found" if not snap.wifi_interfaces else
+                    "No network matches your search" if words else "No networks heard yet. Press Refresh.")
+            row = Adw.ActionRow(title=text)
+            self.net_aps_group.add(row)
+            self.net_rows["aps"].append(row)
+        shown = 0
+        for c in snap.connections:
+            if not match(c.name):
+                continue
+            row = Adw.ActionRow(title=GLib.markup_escape_text(c.name), subtitle=("Wi-Fi" if c.kind == "wifi" else "Wired") + (f" · connected on {c.interface}" if c.active else ""),
+                                tooltip_text=c.uuid)
+            row.add_prefix(Gtk.Image.new_from_icon_name("network-wireless-symbolic" if c.kind == "wifi" else "network-wired-symbolic"))
+            self.net_saved_group.add(row)
+            self.net_rows["saved"].append(row)
+            shown += 1
+        if not shown:
+            row = Adw.ActionRow(title="No saved connection matches your search" if words else "No saved connections")
+            self.net_saved_group.add(row)
+            self.net_rows["saved"].append(row)
+
+    def on_net_rescan(self):
+        snap = self.net_snapshot
+        if not snap or not snap.wifi_interfaces:
+            return
+        interfaces = list(snap.wifi_interfaces)
+        self.toast("Scanning…")
+
+        def work(budget):
+            outcomes = [nc.rescan(i, lambda argv, **k: budget(argv, **k)) for i in interfaces]
+            return next((o for o in outcomes if not o), outcomes[0])
+
+        def done(result):
+            if isinstance(result, Exception) or not result:
+                self.toast(failure_text("Could not scan", result if isinstance(result, Exception) else ReadError(result.reason)))
+            GLib.timeout_add(2500, lambda: (self.refresh_network(), False)[1])        # the scan takes a moment; then read what it found
+        self.operate("network-scan", work, done, busy="Still scanning")
 
     # ======================================================================= Bluetooth
     def build_bluetooth(self):

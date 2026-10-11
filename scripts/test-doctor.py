@@ -164,6 +164,13 @@ assert len({f.id for f in dc.FEATURES}) == len(dc.FEATURES)
 for f in dc.FEATURES:
     assert f.name and f.summary and all(len(r) == 2 for r in f.requires) and all(len(o) == 3 for o in f.optional), f.id
 
+# ---- Network is a feature of its own: nmcli required; the editor and a password prompt program only add
+net = dc.FEATURES_BY_ID["network"]
+assert net.page == "network" and ("nmcli", "networkmanager") in net.requires
+res = dc.run_all(Fake(h, ALL_TOOLS - {"nmcli"}, ALL_PROCS, active=UNITS, repo=repo))
+assert {f["id"]: f for f in dc.feature_states(res)}["network"]["state"] == "unavailable"
+assert next(r for r in res if r.id == "dependency.network").fix == "sudo pacman -S networkmanager"
+
 # ---- Audio is a feature of its own: pactl is required, pavucontrol only adds a link, and the Settings page is named
 audio = dc.FEATURES_BY_ID["audio"]
 assert audio.page == "audio" and ("pactl", "libpulse") in audio.requires and any(o[0] == "pavucontrol" for o in audio.optional)
