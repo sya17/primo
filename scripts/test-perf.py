@@ -122,4 +122,18 @@ got = pb.render_context(fake(ANSWERS), env, drm=drm)
 assert got["gpu"] == {"driver": "amdgpu", "vendor_id": "0x1002", "device_id": "0x1638"} and "gpu" not in got["unavailable"], got["gpu"]
 assert "eDP" not in json.dumps(got), "connector names stay out"
 
+# the frame probe: with a display it reports real frames, without one it says so (never a made-up number)
+class A:
+    seconds = 0.8
+if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"):
+    probe = pb.cmd_frame_probe(A)
+    assert probe["available"] and probe["frame_interval_ms"]["count"] > 10 and probe["with_presentation_time"] <= probe["frames_reported"], probe
+else:
+    saved = {k: os.environ.pop(k, None) for k in ("WAYLAND_DISPLAY", "DISPLAY")}
+    try:
+        probe = pb.cmd_frame_probe(A)
+    finally:
+        os.environ.update({k: v for k, v in saved.items() if v})
+    assert probe["available"] is False and "reason" in probe, probe
+
 print("measurement helper checks passed")

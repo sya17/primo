@@ -10,6 +10,8 @@
                                                                 result is delivered, CPU of the find children, children started
     scripts/perf-baseline.py render-context                      read-only facts for reading a timing: versions, monitors (size, refresh,
                                                                 scale), GPU driver, animation switches. No serials, titles or paths.
+    scripts/perf-baseline.py frame-probe [--seconds 3]            frame-clock pace and presentation reports of one small window of its
+                                                                own (the instrument for pilot measurements). SHOWS A WINDOW briefly.
     scripts/perf-baseline.py launcher-window [--cycles 30]      a launcher of its own, on a private D-Bus session: time from the
                                                                 request to the window being shown, and its PSS before and after the
                                                                 open/close cycles. SHOWS A WINDOW on your screen once per cycle.
@@ -204,6 +206,60 @@ def render_context(run, env, drm="/sys/class/drm"):
     return out
 
 
+FRAME_PROBE = r'''
+import gi, json, sys
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+app = Gtk.Application(application_id="dev.primo.PerfProbe")
+seen, stats = set(), {"frames": 0, "complete": 0, "presented": 0, "late": 0}
+gaps, refresh, last = [], set(), [None]
+def on_activate(app):
+    win = Gtk.ApplicationWindow(application=app, default_width=240, default_height=80)
+    label = Gtk.Label(label="probe")
+    win.set_child(label)
+    def tick(widget, clock):
+        now = clock.get_frame_time()
+        if last[0] is not None:
+            gaps.append((now - last[0]) / 1000)
+        last[0] = now
+        label.set_label(str(now))
+        counter = clock.get_frame_counter()
+        for frame in range(max(0, counter - 8), counter - 3):
+            timings = clock.get_timings(frame)
+            if timings is None or frame in seen:
+                continue
+            seen.add(frame)
+            stats["frames"] += 1
+            stats["complete"] += bool(timings.get_complete())
+            stats["presented"] += bool(timings.get_presentation_time())
+            if timings.get_refresh_interval():
+                refresh.add(timings.get_refresh_interval())
+        return GLib.SOURCE_CONTINUE
+    win.add_tick_callback(tick)
+    win.present()
+    GLib.timeout_add(int(sys.argv[1]), lambda: (win.destroy(), app.quit(), False)[2])
+app.connect("activate", on_activate)
+app.run([])
+print(json.dumps({"gaps": gaps[5:], "refresh_us": sorted(refresh), **stats}))
+'''
+
+
+def cmd_frame_probe(args):
+    """The GTK frame clock of one small window of its own: how often a frame is produced and whether the compositor reports when it was
+    presented (GdkFrameTimings). This is the instrument for a later pilot measurement; it measures the machine at rest, not Primo's windows."""
+    done = subprocess.run([sys.executable, "-c", FRAME_PROBE, str(int(args.seconds * 1000))], capture_output=True, text=True, timeout=args.seconds + 20,
+                          env=dict(os.environ, NO_AT_BRIDGE="1", GTK_A11Y="none"))
+    try:
+        got = json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"workload": "frame probe", "available": False, "reason": "the probe window could not run (no display?)"}
+    if not got["frames"]:
+        return {"workload": "frame probe", "available": False, "reason": "the probe window produced no frames (no display?)"}
+    return {"workload": "frame probe: one small owned GTK window animating a label for a short time; frame-clock intervals and GdkFrameTimings presentation reports",
+            "available": True, "seconds": args.seconds, "frame_interval_ms": spread(got["gaps"]), "frames_reported": got["frames"],
+            "complete": got["complete"], "with_presentation_time": got["presented"], "refresh_interval_us": got["refresh_us"]}
+
+
 def cmd_render_context(args):
     sys.path.insert(0, str(SCRIPTS))
     import proc_core as pc
@@ -394,6 +450,9 @@ def main(argv=None):
     sp.set_defaults(fn=cmd_launcher)
     sub.add_parser("files").set_defaults(fn=cmd_files)
     sub.add_parser("render-context").set_defaults(fn=cmd_render_context)
+    sp = sub.add_parser("frame-probe")
+    sp.add_argument("--seconds", type=float, default=3.0)
+    sp.set_defaults(fn=cmd_frame_probe)
     sp = sub.add_parser("launcher-window")
     sp.add_argument("--cycles", type=int, default=30)
     sp.set_defaults(fn=cmd_launcher_window)
