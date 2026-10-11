@@ -14,8 +14,9 @@ apps=(hypr waybar wofi dunst kitty swayosd swaync fontconfig)
 theme="catppuccin-mocha"
 dry=0
 services=""
-units=(primo-overview.service)   # the services that have a unit so far
-declare -A unit_bus=([primo-overview.service]=dev.primo.Overview.service)   # each unit and its D-Bus activation file
+units=(primo-overview.service primo-launcher.service primo-switcher.service primo-activity.service)   # the services that have a unit (the time hub is not one yet)
+declare -A unit_bus=([primo-overview.service]=dev.primo.Overview.service [primo-launcher.service]=dev.primo.Launcher.service
+                    [primo-switcher.service]=dev.primo.Switcher.service [primo-activity.service]=dev.primo.Activity.service)   # each unit and its D-Bus activation file
 
 while (( $# )); do
     case "$1" in
@@ -61,7 +62,7 @@ if [[ -n "$services" ]]; then
         fi
     done
     (( changed )) && run systemctl --user daemon-reload
-    [[ "$services" == install ]] && echo "Enabled for the next login; a running overview keeps running until then."
+    [[ "$services" == install ]] && echo "Enabled for the next login; services that are running keep running until then."
     exit 0
 fi
 

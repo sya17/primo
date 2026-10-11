@@ -71,14 +71,13 @@ A read that fails or comes back malformed keeps the last view and says so; an em
 the desktop and check the window and workspace before sending a single fixed dispatch, so a window that vanished is refused with a message
 instead of being sent to Hyprland.
 
-The overview is the first service with an optional systemd user unit (`config/systemd/user/primo-overview.service`, `Type=dbus` on its own
-bus name, bounded restarts, tied to the graphical session). `scripts/install.sh --services` links and enables it, `--remove-services` undoes it;
-it also links a D-Bus activation file so the first request to `dev.primo.Overview` starts the unit. Both accept `--dry-run`, leave any unit,
-activation file or drop-in of your own alone, and never start or stop a running service. A service that finds no session bus or no display
-(`service_core.require_session`) logs one line and exits with 69, which the unit does not retry; the wrapper then says the overview is not
-available instead of reporting success. While the unit is enabled the
-Hyprland autostart and the wrapper leave the start to systemd; otherwise they start the service as before, so a machine without a user manager
-behaves as it always did.
+The launcher, switcher, overview and activity services each have an optional systemd user unit (`config/systemd/user/primo-<service>.service`,
+`Type=dbus` on the service's own bus name, bounded restarts, tied to the graphical session); the time hub does not yet. `scripts/install.sh --services`
+links and enables them, `--remove-services` undoes it. It also links a D-Bus activation file per service so the first request to the bus name starts
+the unit. Both accept `--dry-run`, leave any unit, activation file or drop-in of your own alone, and never start or stop a running service. While a
+unit is enabled the Hyprland autostart and the wrapper (`service-lib.sh`) leave that service's start to systemd; otherwise they start it as before, so a
+machine without a user manager behaves as it always did. A service that finds no session bus or no display (`service_core.require_session`) logs one
+line and exits with 69, which the unit does not retry; the wrapper then says the service is not available instead of reporting success.
 
 ## Logs
 

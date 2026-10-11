@@ -18,7 +18,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "config" / "hypr" / "scripts"
-UNIT = ROOT / "config" / "systemd" / "user" / "primo-overview.service"
+UNITS = ROOT / "config" / "systemd" / "user"
+BUSES = ROOT / "config" / "systemd" / "dbus-1" / "services"
+# service name -> bus name; the time hub has no unit yet (T056)
+SERVICES = {"overview": "dev.primo.Overview", "launcher": "dev.primo.Launcher", "switcher": "dev.primo.Switcher", "activity": "dev.primo.Activity"}
 
 
 def fake(bindir, name, body):
@@ -81,73 +84,85 @@ def install(args, env):
     return subprocess.run(["/usr/bin/bash", str(ROOT / "scripts" / "install.sh"), *args], env=env, capture_output=True, text=True)
 
 
-# ---- the unit file itself
-unit = configparser.ConfigParser(strict=False, interpolation=None)
-unit.optionxform = str
-unit.read(UNIT)
-assert unit["Service"]["Type"] == "dbus"
-sys.path.insert(0, str(SCRIPTS))
-import overview_core  # noqa: E402
-assert unit["Service"]["BusName"] == overview_core.OWN_CLASS, "the unit waits for the bus name the service really owns"
-assert unit["Service"]["ExecStart"].endswith("scripts/overview.py --daemon") and (SCRIPTS / "overview.py").exists()
-assert unit["Service"]["Restart"] == "on-failure"
-assert int(unit["Unit"]["StartLimitBurst"]) <= 5 and int(unit["Unit"]["StartLimitIntervalSec"]) > 0, "restarts are finite"
-assert unit["Service"]["RestartPreventExitStatus"] == "69", "a service that cannot reach its display is not retried"
-bus = configparser.ConfigParser(strict=False, interpolation=None)
-bus.optionxform = str
-bus.read(ROOT / "config" / "systemd" / "dbus-1" / "services" / "dev.primo.Overview.service")
-assert bus["D-BUS Service"]["Name"] == unit["Service"]["BusName"] and bus["D-BUS Service"]["SystemdService"] == UNIT.name
-assert unit["Install"]["WantedBy"] == "graphical-session.target" and unit["Unit"]["PartOf"] == "graphical-session.target"
+def ini(path):
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    cp.optionxform = str
+    cp.read(path)
+    return cp
 
-# ---- install: a preview changes nothing, then link + enable, then idempotent
+
+def wrapper(name, env, timeout=30):
+    return subprocess.run(["/usr/bin/bash", str(SCRIPTS / f"{name}.sh")], env=env, capture_output=True, text=True, timeout=timeout)
+
+
+sys.path.insert(0, str(SCRIPTS))
+import service_core  # noqa: E402
+
+# ---- the unit files themselves
+for name, busname in SERVICES.items():
+    unit = ini(UNITS / f"primo-{name}.service")
+    assert unit["Service"]["Type"] == "dbus" and unit["Service"]["BusName"] == busname
+    source = (SCRIPTS / f"{name}.py").read_text()
+    assert f'"{busname}"' in source or "OWN_CLASS" in source, f"{name}: the unit waits for a bus name the service does not own"
+    assert unit["Service"]["ExecStart"].endswith(f"scripts/{name}.py --daemon")
+    assert unit["Service"]["Restart"] == "on-failure"
+    assert int(unit["Unit"]["StartLimitBurst"]) <= 5 and int(unit["Unit"]["StartLimitIntervalSec"]) > 0, "restarts are finite"
+    assert unit["Service"]["RestartPreventExitStatus"] == str(service_core.EX_UNAVAILABLE) == "69", "no retry for a missing display"
+    assert unit["Install"]["WantedBy"] == "graphical-session.target" and unit["Unit"]["PartOf"] == "graphical-session.target"
+    bus = ini(BUSES / f"{busname}.service")
+    assert bus["D-BUS Service"]["Name"] == busname and bus["D-BUS Service"]["SystemdService"] == f"primo-{name}.service"
+    assert "require_session" in source, f"{name}.py must check its session before it starts"
+assert ini(UNITS / "primo-overview.service")["Service"]["BusName"] == __import__("overview_core").OWN_CLASS
+
+# ---- install: a preview changes nothing, then link + enable every unit, then idempotent
 home, env, log = sandbox()
 out = install(["--services", "--dry-run"], env)
 assert out.returncode == 0 and "[dry-run]" in out.stdout, out.stdout + out.stderr
 assert not (home / ".config" / "systemd").exists() and not any("enable" in c for c in calls(log)), "dry run touched something"
 
 out = install(["--services"], env)
-link = home / ".config" / "systemd" / "user" / "primo-overview.service"
-assert out.returncode == 0 and link.is_symlink() and link.resolve() == UNIT.resolve(), out.stdout + out.stderr
-BUS = ROOT / "config" / "systemd" / "dbus-1" / "services" / "dev.primo.Overview.service"
-buslink = home / ".local" / "share" / "dbus-1" / "services" / "dev.primo.Overview.service"
-assert buslink.is_symlink() and buslink.resolve() == BUS.resolve(), "the bus activation file is linked with the unit"
-assert any(c.endswith("--user enable primo-overview.service") for c in calls(log)) and any("daemon-reload" in c for c in calls(log))
-assert not any(" start " in c for c in calls(log)), "installing must not start or stop a running service"
+assert out.returncode == 0, out.stdout + out.stderr
+for name, busname in SERVICES.items():
+    link = home / ".config" / "systemd" / "user" / f"primo-{name}.service"
+    assert link.is_symlink() and link.resolve() == (UNITS / f"primo-{name}.service").resolve(), name
+    buslink = home / ".local" / "share" / "dbus-1" / "services" / f"{busname}.service"
+    assert buslink.is_symlink() and buslink.resolve() == (BUSES / f"{busname}.service").resolve(), "the bus activation file is linked with the unit"
+    assert any(c.endswith(f"--user enable primo-{name}.service") for c in calls(log)), name
+assert any("daemon-reload" in c for c in calls(log))
+assert not any(" start " in c or " stop " in c for c in calls(log)), "installing must not start or stop a running service"
+assert not (home / ".config" / "systemd" / "user" / "primo-hub.service").exists(), "the time hub has no unit yet"
 before = len(calls(log))
 out = install(["--services"], env)
-assert out.returncode == 0 and "already linked" in out.stdout and link.is_symlink()
+assert out.returncode == 0 and out.stdout.count("already linked") == 2 * len(SERVICES)
 assert not any("daemon-reload" in c for c in calls(log)[before:]), "second run changed nothing, so no reload"
 
-# ---- a user's own unit or drop-in is never replaced or removed
+# ---- a user's own unit, activation file or drop-in is never replaced or removed
 home, env, log = sandbox()
 unit_dir = home / ".config" / "systemd" / "user"
-(unit_dir / "primo-overview.service.d").mkdir(parents=True)
-(unit_dir / "primo-overview.service.d" / "mine.conf").write_text("[Service]\nRestartSec=5\n")
-mine = unit_dir / "primo-overview.service"
-mine.write_text("# user's own\n")
-out = install(["--services"], env)
-assert out.returncode == 0 and "left alone" in out.stdout and not mine.is_symlink() and mine.read_text() == "# user's own\n"
-out = install(["--remove-services"], env)
-assert mine.read_text() == "# user's own\n" and (unit_dir / "primo-overview.service.d" / "mine.conf").exists()
-
-# ---- remove: disables and drops only our own link, keeps drop-ins
-home, env, log = sandbox()
-install(["--services"], env)
-(home / ".config" / "systemd" / "user" / "primo-overview.service.d").mkdir()
-out = install(["--remove-services"], env)
-assert out.returncode == 0 and not (home / ".config" / "systemd" / "user" / "primo-overview.service").exists()
-assert (home / ".config" / "systemd" / "user" / "primo-overview.service.d").is_dir()
-assert any(c.endswith("--user disable primo-overview.service") for c in calls(log))
-assert not (home / ".local" / "share" / "dbus-1" / "services" / "dev.primo.Overview.service").exists(), "remove takes the activation file too"
-
-# a bus activation file of the user's own survives both ways
-home, env, log = sandbox()
+(unit_dir / "primo-launcher.service.d").mkdir(parents=True)
+(unit_dir / "primo-launcher.service.d" / "mine.conf").write_text("[Service]\nRestartSec=5\n")
+(unit_dir / "primo-launcher.service").write_text("# user's own\n")
 busdir = home / ".local" / "share" / "dbus-1" / "services"
 busdir.mkdir(parents=True)
-(busdir / "dev.primo.Overview.service").write_text("# user's own\n")
-install(["--services"], env)
+(busdir / "dev.primo.Switcher.service").write_text("# user's own\n")
+out = install(["--services"], env)
+assert out.returncode == 0 and "left alone" in out.stdout and not (unit_dir / "primo-launcher.service").is_symlink()
+assert (unit_dir / "primo-overview.service").is_symlink(), "one foreign file does not block the other services"
 install(["--remove-services"], env)
-assert (busdir / "dev.primo.Overview.service").read_text() == "# user's own\n"
+assert (unit_dir / "primo-launcher.service").read_text() == "# user's own\n" and (unit_dir / "primo-launcher.service.d" / "mine.conf").exists()
+assert (busdir / "dev.primo.Switcher.service").read_text() == "# user's own\n"
+
+# ---- remove: disables and drops only our own links, keeps drop-ins
+home, env, log = sandbox()
+install(["--services"], env)
+(home / ".config" / "systemd" / "user" / "primo-activity.service.d").mkdir()
+out = install(["--remove-services"], env)
+assert out.returncode == 0
+for name, busname in SERVICES.items():
+    assert not (home / ".config" / "systemd" / "user" / f"primo-{name}.service").exists(), name
+    assert not (home / ".local" / "share" / "dbus-1" / "services" / f"{busname}.service").exists(), "remove takes the activation file too"
+    assert any(c.endswith(f"--user disable primo-{name}.service") for c in calls(log)), name
+assert (home / ".config" / "systemd" / "user" / "primo-activity.service.d").is_dir()
 
 # ---- no user manager: the fallback is named, nothing is installed
 home, env, log = sandbox(manager=False)
@@ -155,92 +170,114 @@ out = install(["--services"], env)
 assert out.returncode == 0 and "keep starting from the Hyprland autostart" in out.stdout
 assert not (home / ".config" / "systemd").exists()
 
-# ---- the wrapper: the unit starts the service when enabled, the old path otherwise; never both
-for enabled in (True, False):
-    home, env, log = sandbox(enabled=enabled)
-    out = subprocess.run(["/usr/bin/bash", str(SCRIPTS / "overview.sh")], env=env, capture_output=True, text=True, timeout=20)
-    got = calls(log)
-    assert out.returncode == 0, out.stderr
-    assert any("--user start primo-overview.service" in c for c in got) == enabled, got
-    assert any(c.startswith("setsid") for c in got) == (not enabled), got
-    assert any("Activate" in c for c in got), "the toggle is still delivered"
-
-home, env, log = sandbox(enabled=True)
-(home / "started").touch()                                  # already running: neither path starts anything
-subprocess.run(["/usr/bin/bash", str(SCRIPTS / "overview.sh")], env=env, capture_output=True, text=True, timeout=20)
-assert not any(c.startswith(("setsid", "systemctl --user start")) for c in calls(log)), "a running service is never started twice"
-
-# ---- the autostart line: skipped while the unit is enabled, the old command otherwise; the other services are untouched
-lua = (ROOT / "config" / "hypr" / "modules" / "autostart.lua").read_text()
-line = re.search(r'hl\.exec_cmd\("(sh -c \'systemctl --user is-enabled -q primo-overview\.service[^"]*)"\)', lua)
-assert line, "autostart.lua must guard the overview start with the unit check"
-command = line.group(1).replace("~", "$HOME")
-for enabled in (True, False):
-    home, env, log = sandbox(enabled=enabled)
-    subprocess.run(["/usr/bin/sh", "-c", command.replace("sh -c '", "", 1).rsplit("'", 1)[0]], env=env, capture_output=True, text=True, timeout=20)
-    started = [c for c in calls(log) if c.startswith("python3")]
-    assert bool(started) == (not enabled) and (not started or "overview.py --daemon" in started[0]), (enabled, calls(log))
-for name in ("switcher", "launcher", "hub", "activity"):
-    assert f'hl.exec_cmd("python3 ~/.config/hypr/scripts/{name}.py --daemon")' in lua, f"{name} must still start from autostart"
+# ---- each wrapper: the unit starts its service when enabled, the old path otherwise; never both; a running service is left alone
+for name, busname in SERVICES.items():
+    for enabled in (True, False):
+        home, env, log = sandbox(enabled=enabled)
+        out = wrapper(name, env)
+        got = calls(log)
+        assert out.returncode == 0, (name, out.stderr)
+        assert any(f"--user start primo-{name}.service" in c for c in got) == enabled, (name, got)
+        assert sum(c.startswith("setsid") for c in got) == (0 if enabled else 1), (name, got)
+        assert any("Activate" in c and busname in c for c in got), f"{name}: the action is still delivered to its own bus name"
+    home, env, log = sandbox(enabled=True)
+    (home / "started").touch()
+    wrapper(name, env)
+    assert not any(c.startswith(("setsid", "systemctl --user start")) for c in calls(log)), f"{name}: a running service is never started twice"
 
 # ---- a service that cannot start says so: no guessed success, no second start, no Activate into the void
-for enabled in (True, False):
-    home, env, log = sandbox(enabled=enabled, spawns=False)
-    out = subprocess.run(["/usr/bin/bash", str(SCRIPTS / "overview.sh")], env=env, capture_output=True, text=True, timeout=30)
-    got = calls(log)
-    assert out.returncode == 69 and "overview is not available" in out.stderr, (out.returncode, out.stderr)
-    assert ("systemctl status" in out.stderr or "systemctl --user status" in out.stderr) == enabled, out.stderr
-    assert any(c.startswith("notify-send") for c in got) and not any("Activate" in c for c in got), got
-    assert sum(c.startswith("setsid") for c in got) == (0 if enabled else 1), "an enabled unit that fails is reported, not started a second way"
+for name in SERVICES:
+    for enabled in (True, False):
+        home, env, log = sandbox(enabled=enabled, spawns=False)
+        out = wrapper(name, env)
+        got = calls(log)
+        assert out.returncode == 69 and f"the {name} service is not available" in out.stderr, (name, out.returncode, out.stderr)
+        assert (f"systemctl --user status primo-{name}.service" in out.stderr) == enabled, out.stderr
+        assert any(c.startswith("notify-send") for c in got) and not any("Activate" in c for c in got), got
+        assert sum(c.startswith("setsid") for c in got) == (0 if enabled else 1), "an enabled unit that fails is reported, not started a second way"
+
+# ---- the autostart lines: skipped while the unit is enabled, the old command otherwise; the time hub is untouched
+lua = (ROOT / "config" / "hypr" / "modules" / "autostart.lua").read_text()
+for name in SERVICES:
+    line = re.search(r'hl\.exec_cmd\("(sh -c \'systemctl --user is-enabled -q primo-%s\.service[^"]*)"\)' % name, lua)
+    assert line, f"autostart.lua must guard the {name} start with the unit check"
+    command = line.group(1).replace("~", "$HOME").replace("sh -c '", "", 1).rsplit("'", 1)[0]
+    for enabled in (True, False):
+        home, env, log = sandbox(enabled=enabled)
+        subprocess.run(["/usr/bin/sh", "-c", command], env=env, capture_output=True, text=True, timeout=20)
+        started = [c for c in calls(log) if c.startswith("python3")]
+        assert bool(started) == (not enabled) and (not started or f"{name}.py --daemon" in started[0]), (name, enabled, calls(log))
+assert 'hl.exec_cmd("python3 ~/.config/hypr/scripts/hub.py --daemon")' in lua, "the time hub still starts from autostart"
 
 # ---- service_core: no bus and no display are reported with status 69, not hidden behind 0
-sys.path.insert(0, str(SCRIPTS))
-import service_core  # noqa: E402
-assert service_core.EX_UNAVAILABLE == 69 == int(unit["Service"]["RestartPreventExitStatus"])
 probe = "import sys; sys.path.insert(0, %r); import logging, service_core; service_core.require_session(logging.getLogger('t'))" % str(SCRIPTS)
 clean = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS")}
 r = subprocess.run([sys.executable, "-c", probe], env=dict(clean, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent"), capture_output=True, text=True, timeout=30)
 assert r.returncode == 69 and "no session bus" in r.stderr, (r.returncode, r.stderr)
-if shutil.which("dbus-run-session"):
+has_run_session = bool(shutil.which("dbus-run-session"))
+if has_run_session:
     r = run_owned(["dbus-run-session", "--", sys.executable, "-c", probe], clean)
     assert r.returncode == 69 and "no display" in r.stderr, (r.returncode, r.stderr)
-    r = run_owned(["dbus-run-session", "--", sys.executable, str(SCRIPTS / "overview.py"), "--daemon"], dict(clean, XDG_STATE_HOME=tempfile.mkdtemp(prefix="primo-services-")), timeout=15)
-    assert r.returncode == 69, f"overview.py must use the check: exit {r.returncode}"
 else:
     print("skipped: no display case (dbus-run-session not installed)")
-r = run_owned([sys.executable, str(SCRIPTS / "overview.py"), "--daemon"], dict(clean, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent", XDG_STATE_HOME=tempfile.mkdtemp(prefix="primo-services-")), timeout=15)
-assert r.returncode == 69 and "no session bus" in r.stderr, (r.returncode, r.stderr)
+for name in SERVICES:   # the services really use it: every one of them exits 69, none runs on
+    r = run_owned([sys.executable, str(SCRIPTS / f"{name}.py"), "--daemon"],
+                  dict(clean, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent", XDG_STATE_HOME=tempfile.mkdtemp(prefix="primo-services-")), timeout=15)
+    assert r.returncode == 69 and "no session bus" in r.stderr, (name, r.returncode, r.stderr)
+    if has_run_session:
+        r = run_owned(["dbus-run-session", "--", sys.executable, str(SCRIPTS / f"{name}.py"), "--daemon"],
+                      dict(clean, XDG_STATE_HOME=tempfile.mkdtemp(prefix="primo-services-")), timeout=15)
+        assert r.returncode == 69, f"{name}.py must exit 69 without a display, not {r.returncode}"
 
 
-# ---- the real overview in a private session: one winner of two simultaneous starts, and a free name after a kill (needs a display)
+# ---- the real services in a private session: one winner of two simultaneous starts, and a free name after a kill (needs a display)
 def concurrent_child():
     tmp = tempfile.mkdtemp(prefix="primo-services-")
     env = dict(os.environ, XDG_STATE_HOME=tmp + "/s", XDG_CONFIG_HOME=tmp + "/c", XDG_CACHE_HOME=tmp + "/ca", XDG_DATA_HOME=tmp + "/d",
                NO_AT_BRIDGE="1", GTK_A11Y="none", GTK_USE_PORTAL="0")
     env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
 
-    def owned():
+    def owned(busname):
         r = subprocess.run(["gdbus", "call", "--session", "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method",
-                            "org.freedesktop.DBus.NameHasOwner", "dev.primo.Overview"], capture_output=True, text=True)
+                            "org.freedesktop.DBus.NameHasOwner", busname], capture_output=True, text=True)
         return "true" in r.stdout
 
-    def start(n):
-        return [subprocess.Popen([sys.executable, str(SCRIPTS / "overview.py"), "--daemon"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def start(name, n):
+        return [subprocess.Popen([sys.executable, str(SCRIPTS / f"{name}.py"), "--daemon"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 for _ in range(n)]
 
-    procs = start(2)
+    for name, busname in SERVICES.items():
+        procs = start(name, 2)
+        time.sleep(4)
+        alive = [p for p in procs if p.poll() is None]
+        try:
+            assert len(alive) == 1 and owned(busname), f"{name}: {len(alive)} instances alive, name owned: {owned(busname)}"
+        finally:
+            for p in alive:
+                p.kill()
+                p.wait()
+        time.sleep(0.5)
+        assert not owned(busname), f"{name}: a killed service must not keep its name"
+        again = start(name, 1)[0]
+        time.sleep(3)
+        try:
+            assert again.poll() is None and owned(busname), f"{name}: a fresh start after a kill takes the name"
+        finally:
+            again.kill()
+            again.wait()
+    # an isolated crash leaves the others alone
+    every = {name: start(name, 1)[0] for name in SERVICES}
     time.sleep(4)
-    alive = [p for p in procs if p.poll() is None]
-    assert len(alive) == 1 and owned(), f"{len(alive)} instances alive, name owned: {owned()}"
-    alive[0].kill()
-    alive[0].wait()
-    time.sleep(0.5)
-    assert not owned(), "a killed service must not keep its name"
-    again = start(1)[0]
-    time.sleep(3)
-    assert again.poll() is None and owned(), "a fresh start after a kill takes the name"
-    again.kill()
-    again.wait()
+    try:
+        assert all(owned(b) for b in SERVICES.values()), "all four own their names"
+        every["launcher"].kill()
+        every["launcher"].wait()
+        time.sleep(0.5)
+        assert not owned(SERVICES["launcher"]) and all(owned(b) for n, b in SERVICES.items() if n != "launcher"), "one crash must not take another service down"
+    finally:
+        for p in every.values():
+            p.kill()
+            p.wait()
     shutil.rmtree(tmp, ignore_errors=True)
     print("child ok")
 
@@ -249,9 +286,9 @@ if "--concurrent-child" in sys.argv:
     concurrent_child()
     sys.exit(0)
 if not os.environ.get("PRIMO_SERVICES_REAL"):
-    print("skipped: concurrent start and restart of the real overview (opt in with PRIMO_SERVICES_REAL=1; it reads Hyprland, which check.sh forbids)")
-elif shutil.which("dbus-run-session") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and shutil.which("gdbus"):
-    r = run_owned(["dbus-run-session", "--", sys.executable, __file__, "--concurrent-child"], os.environ.copy(), timeout=60)
+    print("skipped: concurrent start and restart of the real services (opt in with PRIMO_SERVICES_REAL=1; they read Hyprland, which check.sh forbids)")
+elif has_run_session and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and shutil.which("gdbus"):
+    r = run_owned(["dbus-run-session", "--", sys.executable, __file__, "--concurrent-child"], os.environ.copy(), timeout=120)
     assert r.returncode == 0 and "child ok" in r.stdout, (r.stdout[-300:], r.stderr[-600:])
 else:
     print("skipped: concurrent start and restart need a display, dbus-run-session and gdbus")

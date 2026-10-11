@@ -31,6 +31,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_core as cc  # noqa: E402
+import service_core as sv  # noqa: E402
 import ui_style  # noqa: E402
 from launcher_core import KIND_LABEL, Context, Facts, FactsWorker, FileSearch, SampleFacts, bump_history, calculate, collect, load_history, wants_file_search  # noqa: E402
 
@@ -315,7 +316,7 @@ class Service(Adw.Application):
 
 
 def main():
-    cc.setup_logging("launcher")
+    sv.require_session(cc.setup_logging("launcher"))
     return Service("--daemon" in sys.argv).run([sys.argv[0]])
 
 

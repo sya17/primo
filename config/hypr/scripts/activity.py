@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import activity_collect as ac  # noqa: E402
 import config_core as cc  # noqa: E402
+import service_core as sv  # noqa: E402
 
 STATE_DIR = cc.state_home() / "hyprland-dotfiles"
 APP_ID = "dev.primo.Activity"
@@ -854,5 +855,5 @@ class Service(Adw.Application):
 
 
 if __name__ == "__main__":
-    cc.setup_logging("activity")
+    sv.require_session(cc.setup_logging("activity"))
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

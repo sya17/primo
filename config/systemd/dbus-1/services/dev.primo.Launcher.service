@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.primo.Launcher
+Exec=/usr/bin/false
+SystemdService=primo-launcher.service

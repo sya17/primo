@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.primo.Activity
+Exec=/usr/bin/false
+SystemdService=primo-activity.service

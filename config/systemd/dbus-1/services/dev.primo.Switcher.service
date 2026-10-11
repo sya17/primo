@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.primo.Switcher
+Exec=/usr/bin/false
+SystemdService=primo-switcher.service
