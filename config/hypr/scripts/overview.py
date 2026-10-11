@@ -21,6 +21,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 import config_core as cc  # noqa: E402
 import overview_core as oc  # noqa: E402
+import service_core as sv  # noqa: E402
 import settings_jobs as sj  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -364,5 +365,5 @@ class Service(Adw.Application):
 
 
 if __name__ == "__main__":
-    cc.setup_logging("overview")
+    sv.require_session(cc.setup_logging("overview"))
     sys.exit(Service("--daemon" in sys.argv).run([sys.argv[0]]))

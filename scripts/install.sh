@@ -15,6 +15,7 @@ theme="catppuccin-mocha"
 dry=0
 services=""
 units=(primo-overview.service)   # the services that have a unit so far
+declare -A unit_bus=([primo-overview.service]=dev.primo.Overview.service)   # each unit and its D-Bus activation file
 
 while (( $# )); do
     case "$1" in
@@ -32,30 +33,31 @@ run() { if (( dry )); then echo "[dry-run] $*"; else "$@"; fi; }
 
 # ---- systemd user units: link only what is ours, never replace a user's own file or drop-in ----
 if [[ -n "$services" ]]; then
-    unit_dir="$config_home/systemd/user"
     if ! command -v systemctl >/dev/null || ! systemctl --user show-environment >/dev/null 2>&1; then
         echo "note: no systemd user manager here; the services keep starting from the Hyprland autostart"
         exit 0
     fi
     changed=0
+    link_ours() {   # link_ours SRC DST
+        if [[ -L "$2" && "$(readlink -f "$2")" == "$1" ]]; then echo "ok: $2 already linked"
+        elif [[ -e "$2" || -L "$2" ]]; then echo "skip: $2 exists and is not Primo's; left alone"; return 1
+        else run mkdir -p "$(dirname "$2")"; run ln -s "$1" "$2"; echo "link: $2 -> $1"; changed=1; fi
+    }
+    unlink_ours() { # unlink_ours SRC DST
+        if [[ -L "$2" && "$(readlink -f "$2")" == "$1" ]]; then run rm "$2"; echo "removed: $2"; changed=1
+        elif [[ -e "$2" || -L "$2" ]]; then echo "skip: $2 is not Primo's; left alone"; fi
+    }
+    unit_dir="$config_home/systemd/user"
+    bus_dir="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"
     for unit in "${units[@]}"; do
-        src="$root/config/systemd/user/$unit"; dst="$unit_dir/$unit"
         if [[ "$services" == install ]]; then
-            if [[ -L "$dst" && "$(readlink -f "$dst")" == "$src" ]]; then
-                echo "ok: $unit already linked"
-            elif [[ -e "$dst" || -L "$dst" ]]; then
-                echo "skip: $dst exists and is not Primo's; left alone"; continue
-            else
-                run mkdir -p "$unit_dir"; run ln -s "$src" "$dst"; echo "link: $dst -> $src"; changed=1
-            fi
+            link_ours "$root/config/systemd/user/$unit" "$unit_dir/$unit" || continue
+            link_ours "$root/config/systemd/dbus-1/services/${unit_bus[$unit]}" "$bus_dir/${unit_bus[$unit]}" || true
             run systemctl --user enable "$unit" >/dev/null 2>&1 || echo "note: could not enable $unit"
         else
             run systemctl --user disable "$unit" >/dev/null 2>&1 || true
-            if [[ -L "$dst" && "$(readlink -f "$dst")" == "$src" ]]; then
-                run rm "$dst"; echo "removed: $dst"; changed=1
-            elif [[ -e "$dst" || -L "$dst" ]]; then
-                echo "skip: $dst is not Primo's; left alone"
-            fi
+            unlink_ours "$root/config/systemd/dbus-1/services/${unit_bus[$unit]}" "$bus_dir/${unit_bus[$unit]}"
+            unlink_ours "$root/config/systemd/user/$unit" "$unit_dir/$unit"
         fi
     done
     (( changed )) && run systemctl --user daemon-reload

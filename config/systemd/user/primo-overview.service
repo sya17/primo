@@ -12,6 +12,7 @@ Type=dbus
 BusName=dev.primo.Overview
 ExecStart=/usr/bin/python3 %h/.config/hypr/scripts/overview.py --daemon
 Restart=on-failure
+RestartPreventExitStatus=69
 RestartSec=1
 
 [Install]

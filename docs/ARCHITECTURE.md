@@ -73,7 +73,10 @@ instead of being sent to Hyprland.
 
 The overview is the first service with an optional systemd user unit (`config/systemd/user/primo-overview.service`, `Type=dbus` on its own
 bus name, bounded restarts, tied to the graphical session). `scripts/install.sh --services` links and enables it, `--remove-services` undoes it;
-both accept `--dry-run`, leave any unit or drop-in of your own alone, and never start or stop a running service. While the unit is enabled the
+it also links a D-Bus activation file so the first request to `dev.primo.Overview` starts the unit. Both accept `--dry-run`, leave any unit,
+activation file or drop-in of your own alone, and never start or stop a running service. A service that finds no session bus or no display
+(`service_core.require_session`) logs one line and exits with 69, which the unit does not retry; the wrapper then says the overview is not
+available instead of reporting success. While the unit is enabled the
 Hyprland autostart and the wrapper leave the start to systemd; otherwise they start the service as before, so a machine without a user manager
 behaves as it always did.
 

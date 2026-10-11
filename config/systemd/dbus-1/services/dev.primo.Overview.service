@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.primo.Overview
+Exec=/usr/bin/false
+SystemdService=primo-overview.service
