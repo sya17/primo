@@ -51,4 +51,15 @@ s = pb.spread([float(n) for n in range(1, 101)])
 assert s["count"] == 100 and s["median"] == 50.5 and s["p95"] == 95.05 and s["max"] == 100.0
 assert pb.spread([]) == {"count": 0}
 
+# every workload runs on sample data: the file search, in a temporary home folder
+import os
+import tempfile
+home = Path(tempfile.mkdtemp())
+(home / "docs").mkdir()
+(home / "docs" / "readme.txt").write_text("x")
+os.environ["HOME"] = str(home)
+files = pb.cmd_files(None)
+assert [r["query_length"] for r in files["runs"]] == [len(q) for q in pb.FILE_QUERIES] and files["runs"][0]["results"] == 1 and files["runs"][2]["results"] == 0, files
+assert all(r["children"] == 1 for r in files["runs"])
+
 print("measurement helper checks passed")

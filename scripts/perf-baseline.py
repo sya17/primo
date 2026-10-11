@@ -186,6 +186,9 @@ def cmd_launcher(args):
             "facts_refresh_ms": refresh_ms, "first_call_ms": walls[0] if walls else None, "next_calls_ms": spread(walls[1:])}
 
 
+FILE_QUERIES = ["readme", "config", "zzqx-no-such-name", "notes", "png"]
+
+
 def cmd_files(args):
     sys.path.insert(0, str(SCRIPTS))
     import launcher_core as lc
