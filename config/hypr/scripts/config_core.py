@@ -40,6 +40,10 @@ def state_home(env=None, home=None):
     return _xdg("XDG_STATE_HOME", ".local/state", env, home)
 
 
+def cache_home(env=None, home=None):
+    return _xdg("XDG_CACHE_HOME", ".cache", env, home)
+
+
 # The files Primo reads: (name, base folder, path in it, kind of value). `primo config` and the Health checks list them.
 FILES = [
     ("modes", "config", "primo/modes.json", list),

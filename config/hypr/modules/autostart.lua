@@ -4,7 +4,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("~/.config/hypr/scripts/wallpaper-rotate.sh") -- slideshow loop, idle unless enabled in Settings
     hl.exec_cmd("waybar")
     -- Notification daemon: swaync (with control center) when installed, dunst otherwise.
-    hl.exec_cmd("sh -c 'command -v swaync >/dev/null && exec swaync || exec dunst'")
+    hl.exec_cmd("python3 ~/.config/hypr/scripts/control_center.py start")
     hl.exec_cmd("swayosd-server --style ~/.config/swayosd/style.css") -- no-op until swayosd is installed
     hl.exec_cmd("python3 ~/.config/hypr/scripts/switcher.py --daemon")  -- Alt+Tab service
     hl.exec_cmd("python3 ~/.config/hypr/scripts/launcher.py --daemon")  -- launcher service (instant open)

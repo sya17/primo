@@ -10,7 +10,7 @@ set -uo pipefail
 have_swaync() { command -v swaync-client >/dev/null && pgrep -x swaync >/dev/null; }
 
 case "${1:-stream}" in
-    panel) have_swaync && swaync-client -t -sw || "$(dirname "$0")/dnd.sh" toggle ;;
+    panel) if have_swaync; then python3 "$(dirname "$0")/control_center.py" refresh; swaync-client -t -sw; else "$(dirname "$0")/dnd.sh" toggle; fi ;;
     dnd)   have_swaync && swaync-client -d -sw >/dev/null || "$(dirname "$0")/dnd.sh" toggle ;;
     stream)
         if have_swaync; then exec swaync-client -swb; fi

@@ -260,7 +260,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.user_css.load_from_path(str(USER_CSS))
 
     def toast(self, text):
-        self.toasts.add_toast(Adw.Toast(title=text, timeout=2))
+        self.toasts.add_toast(Adw.Toast(title=text, timeout=2, use_markup=False))     # text from tools and networks is shown as it is
 
     REFRESH_ON_RETURN = {"power", "bluetooth", "audio", "network", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
 
@@ -1580,7 +1580,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         for c in snap.connections:
             if not match(c.name):
                 continue
-            row = Adw.ActionRow(title=GLib.markup_escape_text(c.name), subtitle=("Wi-Fi" if c.kind == "wifi" else "Wired") + (f" · connected on {c.interface}" if c.active else ""),
+            row = Adw.ActionRow(title=GLib.markup_escape_text(c.name), subtitle=GLib.markup_escape_text(("Wi-Fi" if c.kind == "wifi" else "Wired") + (f" · connected on {c.interface}" if c.active else "")),
                                 tooltip_text=c.uuid)
             row.add_prefix(Gtk.Image.new_from_icon_name("network-wireless-symbolic" if c.kind == "wifi" else "network-wired-symbolic"))
             if c.uuid in self.net_connecting:

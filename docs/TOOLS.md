@@ -16,6 +16,10 @@ system reports afterwards. If a tool is slow you see "it is taking too long" and
   (through `awww`), videos (through `mpvpaper`, paused on battery with a notification). Lock and login screens: the desktop
   wallpaper, blurred windows (lock only) or a picture, GIF or video of their own. When a GIF or video cannot play, its still
   frame is shown instead of the theme's wallpaper; `~/.local/state/hyprland-dotfiles/wallpaper.log` says why.
+- **Notification panel**: its quick buttons are generated at start-up from what is installed (the base `config/swaync/config.json` is never
+  rewritten; the copy lives in `~/.cache/primo/swaync/`). The network and sound buttons open the Network and Audio pages here, a button whose
+  tool is missing is not shown, and if the copy cannot be made the last good one is used, or swaync's own defaults (notifications only).
+  Opening the panel refreshes it, so installing a tool shows its button without a restart.
 - **Audio** (needs `pactl`): the output and input device (the system default), volume and mute for each, refreshed every two seconds while the
   page is open. A device is chosen by its name, so two with the same label stay apart, and one that was unplugged meanwhile is refused with
   a message, not replaced by another. Choosing a device sets the system default; a program that is already playing may keep its old one.
