@@ -191,7 +191,7 @@ def _fresh(run):
 def activate_saved(uuid, interface, run):
     """Bring up a saved Wi-Fi or wired profile on an interface, by its UUID. A VPN profile is not touched from here."""
     snap, error = _fresh(run)
-    if error:
+    if error is not None:
         return error
     if not isinstance(uuid, str) or not UUID.match(uuid) or not any(c.uuid == uuid for c in snap.connections):
         return Outcome(False, "that saved connection is no longer there")
@@ -203,7 +203,7 @@ def activate_saved(uuid, interface, run):
 def connect_ap(interface, bssid, run):
     """Connect to a network that is in the list (no password handling: NetworkManager asks its own program when one is needed)."""
     snap, error = _fresh(run)
-    if error:
+    if error is not None:
         return error
     ap = next((a for a in snap.access_points if a.interface == interface and a.bssid == str(bssid).upper()), None) \
         if isinstance(bssid, str) and BSSID.match(bssid.upper()) else None
@@ -216,7 +216,7 @@ def connect_ap(interface, bssid, run):
 
 def disconnect(interface, run):
     snap, error = _fresh(run)
-    if error:
+    if error is not None:
         return error
     if not _interface_ok(snap, interface):
         return Outcome(False, "that network device is no longer there")

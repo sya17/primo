@@ -186,6 +186,10 @@ for bad in (nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000004", "wlan0", r
     assert not bad and bad.reason, bad
 assert len(muts()) == before, "nothing was sent for any of them"
 assert "no longer" in nc.connect_ap("wlan0", "00:00:00:00:00:00", run).reason
+# when NetworkManager cannot even be read, an action says so and sends nothing (a failed outcome is falsy: it must still be returned)
+dead = lambda argv, **k: pc.Run(reason="timeout")
+for out in (nc.activate_saved("aaaaaaaa-0000-0000-0000-000000000002", "wlan0", dead), nc.connect_ap("wlan0", "77:88:99:AA:BB:CC", dead), nc.disconnect("wlan0", dead)):
+    assert not out and "too long" in out.reason, out
 out = nc.connect_ap("wlan0", "12:12:12:12:12:12", run)                                       # enterprise Wi-Fi needs the advanced editor
 assert not out and out.advice == "editor" and len(muts()) == before, out
 assert not nc.set_wifi("yes", run), "the radio state is a real boolean"
