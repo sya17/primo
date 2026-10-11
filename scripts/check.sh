@@ -41,6 +41,7 @@ else skip "shellcheck not installed"; fi
 echo "python"
 python3 scripts/test-idle.py && pass "idle settings and Never" || fail "idle settings"
 python3 scripts/test-control-center.py >"$work/cc.out" 2>&1 && pass "notification panel: buttons follow the installed tools, base config untouched, last good config kept" || { fail "control center"; tail -6 "$work/cc.out"; }
+python3 scripts/test-interaction.py >"$work/interaction.out" 2>&1 && pass "interaction: panel, launcher and Health agree on missing tools; slow tools and 30 open/close cycles leak nothing" || { fail "interaction"; tail -6 "$work/interaction.out"; }
 python3 scripts/test-overview.py >"$work/overview.out" 2>&1 && pass "overview: read and acted on by workers, last view kept when Hyprland is slow, vanished targets refused" || { fail "overview"; tail -6 "$work/overview.out"; }
 python3 scripts/test-network.py >"$work/net.out" 2>&1 && pass "network: Wi-Fi list and saved profiles by identity, no scan unless asked" || { fail "network"; tail -6 "$work/net.out"; }
 python3 scripts/test-audio.py >"$work/audio.out" 2>&1 && pass "audio: devices, volume, mute and defaults by name; gone devices refused" || { fail "audio"; tail -6 "$work/audio.out"; }
