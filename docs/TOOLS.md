@@ -16,6 +16,10 @@ system reports afterwards. If a tool is slow you see "it is taking too long" and
   (through `awww`), videos (through `mpvpaper`, paused on battery with a notification). Lock and login screens: the desktop
   wallpaper, blurred windows (lock only) or a picture, GIF or video of their own. When a GIF or video cannot play, its still
   frame is shown instead of the theme's wallpaper; `~/.local/state/hyprland-dotfiles/wallpaper.log` says why.
+- **Audio** (needs `pactl`): the output and input device (the system default), volume and mute for each, refreshed every two seconds while the
+  page is open. A device is chosen by its name, so two with the same label stay apart, and one that was unplugged meanwhile is refused with
+  a message, not replaced by another. Choosing a device sets the system default; a program that is already playing may keep its old one.
+  A level above 100 % is shown as it is and left alone until you move it. `--page audio` opens it; "More audio settings" opens `pavucontrol` when it is installed.
 - **Displays**: resolution, refresh rate, scale, rotation and arrangement for each monitor. Changes apply live and revert by themselves
   after 10 seconds unless you press Keep. Kept settings are saved to `~/.config/hypr/displays.lua` (git-ignored). It replaces
   `nwg-displays`, which writes hyprlang files the Lua config does not read.

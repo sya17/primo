@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Primo Settings: Appearance, Wallpaper and Displays in one libadwaita window.
 
-Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|modes|workflow|health|vpn|more]
+Usage: primo-settings.py [--page appearance|wallpaper|displays|power|bluetooth|audio|modes|workflow|health|vpn|more]
 
 Everything here drives the same tools you can run by hand:
   themes     -> scripts/theme-switch  (hypr-theme)
@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 import config_core as cc
 import idle_core
+import audio_core as sj_audio
 import settings_jobs as sj
 import thumbnail_core as tc
 
@@ -48,6 +49,7 @@ PAGES = [
     ("displays", "Displays", "preferences-desktop-display-symbolic"),
     ("power", "Power", "battery-symbolic"),
     ("bluetooth", "Bluetooth", "bluetooth-symbolic"),
+    ("audio", "Audio", "audio-volume-high-symbolic"),
     ("modes", "Modes", "emblem-system-symbolic"),
     ("workflow", "Workflow", "view-list-symbolic"),
     ("health", "Health", "emblem-default-symbolic"),
@@ -212,6 +214,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "modes": self.build_modes,
             "workflow": self.build_workflow,
             "health": self.build_health,
+            "audio": self.build_audio,
             "vpn": self.build_vpn,
             "more": self.build_more,
         }
@@ -256,7 +259,7 @@ class SettingsWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text, timeout=2))
 
-    REFRESH_ON_RETURN = {"power", "bluetooth", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
+    REFRESH_ON_RETURN = {"power", "bluetooth", "audio", "vpn", "health"}     # what changes while you are elsewhere; displays only if it was unfinished
 
     # ---- navigation
     def select_page(self, pid):
@@ -1285,6 +1288,161 @@ class SettingsWindow(Adw.ApplicationWindow):
         group.connect("notify::active-name", lambda g, _p: self.set_profile(g.get_active_name()))
         row.add_suffix(group)
         self.show_power_rows([row])
+
+    # ======================================================================= Audio
+    def build_audio(self):
+        page = Adw.PreferencesPage()
+        if shutil.which("pactl") is None:
+            group = Adw.PreferencesGroup()
+            group.add(Adw.ActionRow(title="Audio control is not installed", subtitle="sudo pacman -S libpulse"))
+            page.add(group)
+            return page
+        self.audio_gen = 0                   # bumped by every change, so a read that started earlier cannot overwrite what the change confirmed
+        self.audio_reading = False
+        self.audio_snapshot = None
+        self.audio_ui = {}
+        self.audio_status = Adw.PreferencesGroup()
+        self.audio_status_row = Adw.ActionRow(title="Reading the audio devices…")
+        self.audio_status.add(self.audio_status_row)
+        page.add(self.audio_status)
+        for kind, title, note in (("sink", "Output", "Where sound plays. Choosing a device sets the system default; a program that is already playing may keep its old device."),
+                                  ("source", "Input", "Microphones. Choosing one sets the system default.")):
+            group = Adw.PreferencesGroup(title=title, description=note)
+            combo = Adw.ComboRow(title="Device", model=Gtk.StringList.new([]))
+            combo_handler = combo.connect("notify::selected", lambda r, _p, k=kind: self.on_audio_default(k))
+            adjustment = Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10)
+            scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adjustment, hexpand=True, draw_value=False, valign=Gtk.Align.CENTER)
+            scale.update_property([Gtk.AccessibleProperty.LABEL], [f"{title} volume"])
+            level = Gtk.Label(label="", width_chars=5, xalign=1, css_classes=["dim"])
+            scale_handler = scale.connect("value-changed", lambda sc, k=kind: self.on_audio_volume(k, sc))
+            volume = Adw.ActionRow(title="Volume")
+            volume.add_suffix(scale)
+            volume.add_suffix(level)
+            mute = Adw.SwitchRow(title="Muted" if kind == "sink" else "Microphone muted")
+            mute_handler = mute.connect("notify::active", lambda r, _p, k=kind: self.on_audio_mute(k, r))
+            for row in (combo, volume, mute):
+                group.add(row)
+            group.set_visible(False)
+            page.add(group)
+            self.audio_ui[kind] = dict(group=group, combo=combo, combo_h=combo_handler, scale=scale, scale_h=scale_handler, level=level,
+                                       mute=mute, mute_h=mute_handler, names=[], adjustment=adjustment)
+        if shutil.which("pavucontrol"):
+            more = Adw.PreferencesGroup()
+            row = Adw.ActionRow(title="More audio settings…", subtitle="Opens the full mixer", activatable=True)
+            row.add_prefix(Gtk.Image.new_from_icon_name("preferences-system-symbolic"))
+            row.connect("activated", lambda *_: spawn("pavucontrol"))
+            more.add(row)
+            page.add(more)
+        self.audio_volume = sj_audio.VolumeCoalescer(sj_audio.set_volume, lambda argv: sj.Budget(threading.Event(), total=sj.ORDINARY, per_child=3.0)(argv),
+                                                     lambda key, pct, outcome: GLib.idle_add(self.audio_volume_done, outcome))
+        self.refreshers["audio"] = self.refresh_audio
+        self.refresh_audio()
+        GLib.timeout_add_seconds(2, self.audio_tick, page)
+        return page
+
+    def audio_tick(self, page):
+        if page.get_mapped() and not self.audio_reading and self.audio_changes_idle():
+            self.refresh_audio()
+        return True
+
+    def audio_changes_idle(self):
+        return "audio" not in self.ops.jobs.active and self.audio_volume.idle.is_set()
+
+    def refresh_audio(self):
+        gen = self.audio_gen
+        self.audio_reading = True
+
+        def work(cancel):
+            return sj_audio.snapshot(sj.Budget(cancel))
+
+        def done(result):
+            self.audio_reading = False
+            if gen != self.audio_gen:
+                return                       # a change was made after this read began: its own refresh follows
+            self.apply_audio(result)
+        self.read("audio/state", work, done)
+
+    def apply_audio(self, result):
+        self.audio_status.set_visible(True)
+        if isinstance(result, Exception):
+            self.audio_status.remove(self.audio_status_row)
+            self.audio_status_row = self.read_failed_row("Could not read the audio devices", result, self.refresh_audio)
+            self.audio_status.add(self.audio_status_row)
+            return
+        self.audio_status.set_visible(False)
+        self.audio_snapshot = result
+        for kind, devices, default in (("sink", result.outputs, result.default_output), ("source", result.inputs, result.default_input)):
+            ui = self.audio_ui[kind]
+            ui["group"].set_visible(True)
+            if not devices:
+                ui["names"] = []
+                ui["combo"].set_model(Gtk.StringList.new(["Nothing connected"]))
+                for w in ("combo", "scale", "mute"):
+                    ui[w].set_sensitive(False)
+                ui["level"].set_label("")
+                continue
+            ui["names"] = [d.name for d in devices]
+            labels = [d.label if [x.label for x in devices].count(d.label) == 1 else f"{d.label} ({d.name.rsplit('.', 1)[-1][:24]})" for d in devices]
+            current = next((d for d in devices if d.name == default), devices[0])
+            ui["combo"].handler_block(ui["combo_h"])
+            ui["combo"].set_model(Gtk.StringList.new(labels))
+            ui["combo"].set_selected(ui["names"].index(current.name))
+            ui["combo"].handler_unblock(ui["combo_h"])
+            ui["scale"].handler_block(ui["scale_h"])
+            ui["adjustment"].set_upper(max(100.0, current.volume))        # a level above 100 % is shown as it is, and left alone
+            ui["scale"].set_value(current.volume)
+            ui["scale"].handler_unblock(ui["scale_h"])
+            ui["level"].set_label(f"{current.volume:.0f}%")
+            ui["mute"].handler_block(ui["mute_h"])
+            ui["mute"].set_active(current.muted)
+            ui["mute"].handler_unblock(ui["mute_h"])
+            for w in ("combo", "scale", "mute"):
+                ui[w].set_sensitive(True)
+
+    def audio_selected(self, kind):
+        ui = self.audio_ui[kind]
+        names = ui["names"]
+        i = ui["combo"].get_selected()
+        return names[i] if names and i < len(names) else None
+
+    def audio_change(self, what, work):
+        """One change at a time: the result is the system's own state, read again afterwards."""
+        self.audio_gen += 1
+
+        def done(result):
+            if isinstance(result, Exception) or not result:
+                self.toast(failure_text(f"Could not change the {what}", result if isinstance(result, Exception) else ReadError(result.reason)))
+            self.audio_gen += 1
+            self.refresh_audio()
+        self.operate("audio", lambda budget: work(budget), done, busy="Still changing the last audio setting")
+
+    def on_audio_default(self, kind):
+        name = self.audio_selected(kind)
+        if name:
+            self.audio_change("audio device", lambda budget: sj_audio.set_default(kind, name, budget))
+
+    def on_audio_mute(self, kind, row):
+        name = self.audio_selected(kind)
+        if name:
+            muted = row.get_active()
+            self.audio_change("mute setting", lambda budget: sj_audio.set_mute(kind, name, muted, budget))
+
+    def on_audio_volume(self, kind, scale):
+        name = self.audio_selected(kind)
+        if not name:
+            return
+        self.audio_gen += 1                                   # reads that began before this are ignored
+        percent = int(round(scale.get_value()))
+        self.audio_ui[kind]["level"].set_label(f"{percent}%")
+        self.audio_volume.change(kind, name, percent)
+
+    def audio_volume_done(self, outcome):
+        if not outcome:
+            self.toast(failure_text("Could not change the volume", ReadError(outcome.reason)))
+        if self.audio_volume.idle.is_set():
+            self.audio_gen += 1
+            self.refresh_audio()
+        return False
 
     # ======================================================================= Bluetooth
     def build_bluetooth(self):

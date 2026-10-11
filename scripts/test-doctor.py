@@ -164,6 +164,16 @@ assert len({f.id for f in dc.FEATURES}) == len(dc.FEATURES)
 for f in dc.FEATURES:
     assert f.name and f.summary and all(len(r) == 2 for r in f.requires) and all(len(o) == 3 for o in f.optional), f.id
 
+# ---- Audio is a feature of its own: pactl is required, pavucontrol only adds a link, and the Settings page is named
+audio = dc.FEATURES_BY_ID["audio"]
+assert audio.page == "audio" and ("pactl", "libpulse") in audio.requires and any(o[0] == "pavucontrol" for o in audio.optional)
+res = dc.run_all(Fake(h, ALL_TOOLS - {"pactl"}, ALL_PROCS, active=UNITS, repo=repo))
+assert {f["id"]: f for f in dc.feature_states(res)}["audio"]["state"] == "unavailable"
+dep = next(r for r in res if r.id == "dependency.audio")
+assert dep.status == "warning" and dep.fix == "sudo pacman -S libpulse"
+res = dc.run_all(Fake(h, ALL_TOOLS - {"pavucontrol"}, ALL_PROCS, active=UNITS, repo=repo))
+assert {f["id"]: f for f in dc.feature_states(res)}["audio"]["state"] == "working", "the optional mixer link is not required"
+
 # ---- the sample Health page for documentation screenshots: every feature works, and it cannot drift from the registry
 sample = dc.sample_results()
 assert dc.summary(sample)["health"] == "HEALTHY" and all(r.status == dc.PASS for r in sample)

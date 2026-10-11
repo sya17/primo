@@ -71,6 +71,8 @@ FEATURES = [
     Feature("battery", "Battery warnings", "Warns at 20, 10 and 4 percent", process=r"battery-watch\.sh", start=f"{SCRIPTS}/battery-watch.sh"),
     Feature("bluetooth", "Bluetooth", "Devices and pairing", requires=(("bluetoothctl", "bluez-utils"),), optional=(("blueman-manager", "blueman", "pairing window"),), page="bluetooth"),
     Feature("vpn", "VPN", "NetworkManager VPN connections", requires=(("nmcli", "networkmanager"),), page="vpn"),
+    Feature("audio", "Audio", "Output and input devices, volume and microphone mute", requires=(("pactl", "libpulse"),),
+            optional=(("pavucontrol", "pavucontrol", "the full mixer"),), page="audio"),
     Feature("nightlight", "Night light", "Warmer screen colours", requires=(("hyprsunset", "hyprsunset"),), keybind="Super+N"),
     Feature("colorpicker", "Colour picker", "Pick a colour from the screen", requires=(("hyprpicker", "hyprpicker"),), keybind="Super+Ctrl+P"),
     Feature("files", "File manager", "Nautilus as a floating window; Dolphin for heavy work", optional=(("nautilus", "nautilus", "Quick Look window"), ("dolphin", "dolphin", "split view")), keybind="Super+E"),

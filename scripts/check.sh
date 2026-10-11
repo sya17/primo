@@ -40,6 +40,7 @@ else skip "shellcheck not installed"; fi
 
 echo "python"
 python3 scripts/test-idle.py && pass "idle settings and Never" || fail "idle settings"
+python3 scripts/test-audio.py >"$work/audio.out" 2>&1 && pass "audio: devices, volume, mute and defaults by name; gone devices refused" || { fail "audio"; tail -6 "$work/audio.out"; }
 python3 scripts/test-clipboard.py >"$work/clip.out" 2>&1 && pass "clipboard: history, copy, delete, clear and previews run in the background under limits" || { fail "clipboard"; tail -6 "$work/clip.out"; }
 python3 scripts/test-thumbnails.py >"$work/thumbs.out" 2>&1 && pass "previews: input, pixel, output, time and memory limits; private job folders; cancelled cleanly" || { fail "thumbnails"; tail -6 "$work/thumbs.out"; }
 python3 scripts/test-settings-jobs.py >"$work/sjobs.out" 2>&1 && pass "Settings reads: two at a time, four waiting, one per key, cancelled when the page is left" || { fail "Settings jobs"; tail -6 "$work/sjobs.out"; }
