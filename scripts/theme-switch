@@ -2,6 +2,7 @@
 # Render a theme into the config directories and reload the running apps.
 #
 # Usage: theme-switch [--no-reload] <theme | dark | light | toggle>
+#        theme-switch --generate-only <theme>    only the generated files in the repository: no ~/.config, no gsettings, no login screen, no reload
 #        theme-switch --list | --current
 #        theme-switch --lock-wallpaper blur|desktop|PATH     --login-wallpaper desktop|PATH   (no reload)
 #
@@ -34,11 +35,13 @@ pick_for_mode() {
     die "no $mode theme found in $themes_dir"
 }
 
+generate_only=""
 reload=1; [[ -n "${PRIMO_NO_RELOAD:-}" ]] && reload=0   # set by scripts/check.sh: render only, never touch the running desktop
 case "${1:-}" in
     --list)    for t in $(list_themes); do printf '%-20s %s\n' "$t" "$(theme_mode "$t")"; done; exit 0 ;;
     --current) cat "$state_dir/current" 2>/dev/null || echo "(none)"; exit 0 ;;
     --no-reload) reload=0; shift ;;
+    --generate-only) reload=0; generate_only=1; shift ;;
     --wallpaper)
         [[ -n "${2:-}" ]] || die "usage: theme-switch --wallpaper PATH|reset"
         mkdir -p "$state_dir"
@@ -190,6 +193,7 @@ render "$tpl_dir/wofi/menu.css.tpl"          "$out_dir/wofi/menu.css"
 render "$tpl_dir/swaync/style.css.tpl"         "$out_dir/swaync/style.css"
 render "$tpl_dir/swayosd/style.css.tpl"       "$out_dir/swayosd/style.css"
 render "$tpl_dir/dunst/10-theme.conf.tpl"     "$out_dir/dunst/dunstrc.d/10-theme.conf"
+if [[ -z "$generate_only" ]]; then
 render "$tpl_dir/sddm/theme.conf.tpl"         "$root/sddm/primo/theme.conf"
 render "$tpl_dir/logo/mark.svg.tpl"           "$root/sddm/primo/logo.svg"
 rm -f "$root/sddm/primo"/background.*
@@ -201,7 +205,9 @@ if [[ -w "$login_dir" ]]; then
     rm -f "$login_dir"/background.*
     cp -f "$root/sddm/primo/theme.conf" "$root/sddm/primo/logo.svg" "$root/sddm/primo/${v[login_bg]}" "$login_dir/"
 fi
+fi
 render "$tpl_dir/kitty/theme.conf.tpl"        "$out_dir/kitty/theme.conf"
+[[ -n "$generate_only" ]] && { echo "generated the files for $theme"; exit 0; }   # the Doctor's repair: nothing outside the repository is touched
 
 # ---- toolkit theming: written to ~/.config / ~/.local (not into the repo) ----
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"

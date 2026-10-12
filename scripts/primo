@@ -70,22 +70,34 @@ def state_value(name, default=""):
 def cmd_repair(args):
     out = make_out(args)
     plan = rp.plan_repair(args.repair)
+    res = rp.apply_repair(plan) if args.apply else None
     if args.json:
         print(json.dumps({"version": 1, "finding": plan.finding_id, "title": plan.title, "blocked": plan.blocked, "blocked_detail": plan.blocked_detail,
                           "steps": [x.__dict__ for x in plan.steps], "effects": list(plan.effects), "backup": plan.backup, "recovery": plan.recovery,
-                          "applied": False}, indent=2))
+                          "applied": bool(res and res.changed), "result": None if res is None else {"ok": res.ok, "changed": res.changed, "reason": res.reason,
+                                                                                                "detail": res.detail, "journals": list(res.journals)}}, indent=2))
     else:
-        print(out.c("1", f"Repair {plan.finding_id}: {plan.title}") + out.c("2", "  (nothing is written)"))
+        print(out.c("1", f"Repair {plan.finding_id}: {plan.title}") + ("" if res else out.c("2", "  (nothing is written; add --apply)")))
         if plan.blocked:
             print(f"  cannot be done: {plan.blocked}: {plan.blocked_detail}")
         else:
             for x in plan.steps:
                 print(f"  {x.kind}  {x.target}\n      {x.detail}")
             print(f"  writes: {len(plan.effects)} file(s)\n  kept for undo: {plan.backup}\n  undo: {plan.recovery}")
+        if res:
+            word = "done" if res.ok and res.changed else "nothing to do" if res.ok else "NOT done"
+            print(f"\n  {out.c(COLOUR[dc.PASS] if res.ok else COLOUR[dc.FAIL], word)}: {res.detail or res.reason}")
+            for jid in res.journals:
+                print(f"  journal: {jid}")
+    if res:
+        return 0 if res.ok else 2
     return 2 if plan.blocked not in (None, "nothing-to-repair") else 1 if plan.blocked else 0
 
 
 def cmd_doctor(args):
+    if args.apply and not args.repair:
+        print("primo doctor: --apply goes with --repair FINDING", file=sys.stderr)
+        return 64
     if args.repair:
         return cmd_repair(args)
     results = dc.run_all()
@@ -442,6 +454,7 @@ def main(argv=None):
             sp.add_argument("--category", help="only one of: " + ", ".join(dc.CATEGORIES))
             sp.add_argument("-v", "--verbose", action="store_true", help="also list the checks that pass")
             sp.add_argument("--repair", metavar="FINDING", help="show the plan to repair one finding (" + ", ".join(rp.REPAIRABLE) + "); the Doctor itself stays read-only")
+            sp.add_argument("--apply", action="store_true", help="with --repair: really do it (without --apply nothing is written)")
         sp.set_defaults(fn=fn)
     sp = sub.add_parser("config", help="the settings files: where they are, what is in effect, whether they are valid",
                         description="path: the folders and files Primo reads. show: the settings in effect and where each comes from. "

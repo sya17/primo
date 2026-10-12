@@ -167,6 +167,7 @@ primo restore ID             # what restoring a snapshot would create or replace
 primo restore ID --apply     # restore it (--only NAME ..., --include-machine); keeps a copy of each replaced file and a journal
 primo restore --rollback J   # undo that restore from its journal id
 primo doctor --repair ID     # the plan to fix one finding Primo can fix itself (config.json, theme.generated); writes nothing
+primo doctor --repair ID --apply   # do it: re-checks the plan, keeps what it replaces, reads the result back
 primo update check           # is this checkout ready for a manual `git pull`? read-only; exit 0 ready, 1 warnings, 2 blocked
 primo update check --remote  # also ask GitHub once for the latest release (the only network access; never without --remote)
 ```
@@ -195,9 +196,13 @@ sent but a User-Agent, never in the background) and shows its version, date and 
 and never "up to date", and an older answer is shown only as a hint with its age.
 
 The Doctor marks the two findings Primo can fix itself: a settings file that does not parse (`config.json`: put that one file back from the newest snapshot that holds a
-good copy) and generated theme files that are missing or unfinished (`theme.generated`: run `scripts/theme-switch --no-reload` for the current theme).
+good copy) and generated theme files that are missing or unfinished (`theme.generated`: `scripts/theme-switch --generate-only` for the current theme, which writes only the
+generated files in the repository, not `~/.config`, no setting, and reloads nothing).
 `primo doctor --repair ID` shows exactly which files would be written, what is kept for undoing it, and why a repair is not possible (no snapshot, a snapshot whose copy is
-no good, a file from a newer Primo, a missing theme). Every other finding stays text for you to read; no hint is ever run.
+no good, a file from a newer Primo, a missing theme). With `--apply` it first checks that the plan is still true (otherwise it changes nothing), keeps a private
+copy of what it replaces (a restore journal you can undo with `primo restore --rollback`; for theme files a copy folder under `~/.local/share/primo/recovery`), runs
+the repair, and reads the result back: the files must parse or be complete, or it puts everything back and says so. Repeating it is harmless. Every other finding
+stays text for you to read; no hint is ever run, and `primo doctor` on its own never repairs anything.
 
 Apart from `primo snapshot` and `primo restore --apply`/`--rollback`, which write only what is described above, nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into

@@ -149,8 +149,8 @@ finally:
     undo()
 assert tree(home) == before
 assert p.blocked is None and len(p.steps) == 1 and p.steps[0].kind == "regenerate-theme"
-assert p.steps[0].target == str(repo / "themes/primo-dusk") and p.steps[0].detail == f"{repo / 'scripts/theme-switch'} --no-reload primo-dusk"
-assert p.effects == tuple(str(repo / g) for g in dc.GENERATED) and "git-ignored" in p.backup and "nothing is reloaded" in p.backup and "hypr-theme" in p.recovery
+assert p.steps[0].target == str(repo / "themes/primo-dusk") and p.steps[0].detail == f"{repo / 'scripts/theme-switch'} --generate-only primo-dusk"
+assert p.effects == tuple(str(repo / g) for g in rp.THEME_OUTPUTS) and set(dc.GENERATED) <= set(rp.THEME_OUTPUTS) and "git-ignored" in p.backup and "nothing in ~/.config" in p.backup and "hypr-theme" in p.recovery
 for bad in ("../x", "/etc", ".hidden", "no-such-theme", ""):
     (home / ".local/state/hyprland-dotfiles/current").write_text(bad + "\n")
     q = rp.plan_repair("theme.generated", s)
@@ -171,6 +171,173 @@ finally:
 
 # ---- the Doctor: only findings on the list can say they are repairable
 assert dc.Result("x", "c", "t", "pass").repairable is False
+# ---- the real theme-switch --generate-only writes exactly THEME_OUTPUTS, and nothing else anywhere
+ROOT = Path(__file__).resolve().parent.parent
+import shutil  # noqa: E402
+T = Path(tempfile.mkdtemp(prefix="primo-repair-"))
+copy = T / "repo"
+(copy / "scripts").mkdir(parents=True)
+shutil.copy(ROOT / "scripts/theme-switch", copy / "scripts/theme-switch")
+shutil.copytree(ROOT / "templates", copy / "templates")
+(copy / "themes").mkdir()
+shutil.copytree(ROOT / "themes/primo-dusk", copy / "themes/primo-dusk")
+for d in ("wallpaper",):
+    if (ROOT / d).exists():
+        shutil.copytree(ROOT / d, copy / d)
+th_home = T / "home"
+th_home.mkdir()
+shim = T / "shim"
+shim.mkdir()
+shot = T / "shim.log"
+for tool in ("gsettings", "kwriteconfig6", "hyprctl", "pkill", "swaync-client", "notify-send", "setsid", "dconf", "systemctl"):
+    (shim / tool).write_text(f'#!/bin/sh\necho "{tool} $*" >> "{shot}"\n')
+    (shim / tool).chmod(0o755)
+login = T / "login"
+login.mkdir()
+before_files = {str(p.relative_to(copy)) for p in copy.rglob("*") if p.is_file()}
+r = subprocess.run([str(copy / "scripts/theme-switch"), "--generate-only", "primo-dusk"], cwd=copy, capture_output=True, text=True, timeout=120,
+                   env=dict(os.environ, HOME=str(th_home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", PRIMO_LOGIN_DIR=str(login), PATH=f"{shim}:{os.environ['PATH']}"))
+assert r.returncode == 0, r.stderr
+new = {str(p.relative_to(copy)) for p in copy.rglob("*") if p.is_file()} - before_files
+gone = before_files - {str(p.relative_to(copy)) for p in copy.rglob("*") if p.is_file()}
+assert new == set(rp.THEME_OUTPUTS) or new == set(rp.THEME_OUTPUTS) - {"config/hypr/logo.png"}, sorted(new ^ set(rp.THEME_OUTPUTS))
+assert not gone and not list(th_home.rglob("*")) and not list(login.iterdir()), "nothing outside the repository's generated files is written"
+assert not shot.exists(), shot.read_text() if shot.exists() else ""      # no gsettings, no kwriteconfig6, no hyprctl, no reload
+assert not (copy / "sddm").exists(), "the login screen files are not touched"
+shutil.rmtree(T)
+
+# ---- T068: apply
+import errno  # noqa: E402
+
+
+def fake_theme_script(repo, mode="ok"):
+    """A stand-in for theme-switch: writes every output (ok), fails (fail), or exits 0 having written nothing (lazy)."""
+    body = {"ok": "for f in " + " ".join(rp.THEME_OUTPUTS) + '; do mkdir -p "$(dirname "$f")"; echo rendered > "$f"; done\n', "fail": "echo boom >&2\nexit 3\n", "lazy": "exit 0\n"}[mode]
+    (repo / "scripts/theme-switch").write_text("#!/bin/sh\ncd \"$(dirname \"$0\")/..\" || exit 9\n" + body)
+    (repo / "scripts/theme-switch").chmod(0o755)
+
+
+def journals(home):
+    d = home / ".local/share/primo/recovery"
+    return sorted(p.name for p in d.iterdir()) if d.exists() else []
+
+
+# config.json: restore, keep the broken copy, read it back, harmless to repeat
+home, repo, s = make()
+snap = snapshot(home)
+(home / ".config/primo/modes.json").write_text("[")
+(home / ".config/primo/ui.json").write_text('{"version": 1, "reduce_motion": true}')           # a valid edit made since: must survive
+isf = lambda k: Path(k).is_file()
+other = {k: v for k, v in tree(home).items() if isf(k) and "modes.json" not in k and "/recovery/" not in k and "/snapshots/" not in k}
+plan = rp.plan_repair("config.json", s)
+res = rp.apply_repair(plan, s)
+assert res.ok and res.changed and not res.reason and res.steps_done == ("modes",) and len(res.journals) == 1, res
+assert (home / ".config/primo/modes.json").read_text() == '[{"id": "work"}]'
+bads = list((home / ".config/primo").glob("modes.json.bad-*"))
+assert len(bads) == 1 and bads[0].read_text() == "[" and stat.S_IMODE(bads[0].stat().st_mode) == 0o600, "the broken bytes are kept"
+assert {k: v for k, v in tree(home).items() if isf(k) and "modes.json" not in k and "/recovery/" not in k and "/snapshots/" not in k and ".bad-" not in k} == {k: v for k, v in other.items() if ".bad-" not in k}, "nothing else changed, later edits included"
+assert rp.plan_repair("config.json", s).blocked == "nothing-to-repair", "read back: the files parse now"
+count = len(journals(home))
+again = rp.apply_repair(plan, s)                                                               # the same, now stale, plan
+assert again.ok and not again.changed and again.reason == "nothing-to-repair" and len(journals(home)) == count, "repeating is harmless and leaves no trace"
+back = rc.rollback_restore(res.journals[0], env={}, home=home)
+assert back.rolled_back and (home / ".config/primo/modes.json").read_text() == "[", "and the repair can be undone"
+
+# a plan that is no longer true changes nothing
+home, repo, s = make()
+snap = snapshot(home)
+(home / ".config/primo/modes.json").write_text("[")
+plan = rp.plan_repair("config.json", s)
+time_before = tree(home)
+newer_snap = None
+import time as _t  # noqa: E402
+_t.sleep(1.1)
+(home / ".config/primo/modes.json").write_text('[{"id": "newer good"}]')
+newer_snap = snapshot(home)
+(home / ".config/primo/modes.json").write_text("[")
+assert rp.plan_repair("config.json", s).steps[0].snapshot == newer_snap.id != plan.steps[0].snapshot
+before = tree(home)
+res = rp.apply_repair(plan, s)
+assert not res.ok and res.reason == "target-changed" and not res.changed and tree(home) == before, "a plan made for another snapshot is refused whole"
+blob = home / ".local/share/primo/snapshots" / newer_snap.id / "files" / "0"
+snapdir = home / ".local/share/primo/snapshots"
+import shutil as _sh  # noqa: E402
+for sid in (newer_snap.id, snap.id):
+    _sh.rmtree(snapdir / sid)
+res = rp.apply_repair(plan, s)
+assert not res.ok and res.reason == "target-changed" and tree(home) == tree(home) and (home / ".config/primo/modes.json").read_text() == "[", "no source left: refused, untouched"
+blocked_plan = rp.plan_repair("config.json", s)
+res = rp.apply_repair(blocked_plan, s)
+assert not res.ok and res.reason == "no-snapshot" and not res.changed
+assert rp.apply_repair(rp.plan_repair("service.hub", s), s).reason == "not-allowlisted"
+fake = rp.RepairPlan("rm -rf /", "x", (rp.RepairStep("restore-file", "/etc/passwd", "x"),), None)
+assert rp.apply_repair(fake, s).reason == "not-allowlisted"
+
+# failures: the restore stops, or the file still does not parse afterwards
+home, repo, s = make()
+snapshot(home)
+(home / ".config/primo/modes.json").write_text("[")
+plan = rp.plan_repair("config.json", s)
+real_apply = rc.apply_restore
+def stops(restore_plan, env=None, home_=None, now=None):
+    raise rc.RecoveryError("a stand-in failure")
+rc.apply_restore = stops
+try:
+    res = rp.apply_repair(plan, s)
+finally:
+    rc.apply_restore = real_apply
+assert not res.ok and res.reason == "failed" and "stand-in" in res.detail and (home / ".config/primo/modes.json").read_text() == "["
+real_broken = rp._broken_files
+calls = {"n": 0}
+def still_broken(s_):
+    calls["n"] += 1
+    return real_broken(s_) if calls["n"] <= 1 else [("modes", home / ".config/primo/modes.json", list, False)]
+rp._broken_files = still_broken
+try:
+    res = rp.apply_repair(plan, s)
+finally:
+    rp._broken_files = real_broken
+assert not res.ok and res.reason == "verification-failed" and "rolled back" in res.detail and (home / ".config/primo/modes.json").read_text() == "[", res
+
+# theme.generated: regenerate, keep copies, read back
+home, repo, s = make()
+fake_theme_script(repo, "ok")
+(repo / dc.GENERATED[0]).unlink()
+(repo / dc.GENERATED[1]).write_text("color: {{accent}};\n")
+(repo / "config/hypr/hyprland.lua").write_text("my own config\n")                              # not a generated file: must stay as it is
+plan = rp.plan_repair("theme.generated", s)
+res = rp.apply_repair(plan, s)
+assert res.ok and res.changed and res.steps_done == ("primo-dusk",), res
+assert all((repo / g).read_text() == "rendered\n" for g in dc.GENERATED) and (repo / "config/hypr/hyprland.lua").read_text() == "my own config\n"
+jdir = home / ".local/share/primo/recovery" / res.journals[0]
+assert stat.S_IMODE(jdir.stat().st_mode) == 0o700 and any(p.read_text() == "color: {{accent}};\n" for p in (jdir / "pre").iterdir()), "a copy of what was there is kept"
+assert rp.plan_repair("theme.generated", s).blocked == "nothing-to-repair"
+count = len(journals(home))
+assert rp.apply_repair(plan, s).reason == "nothing-to-repair" and len(journals(home)) == count
+# a failing or lazy script leaves the files exactly as they were
+for mode, reason in (("fail", "failed"), ("lazy", "verification-failed")):
+    home, repo, s = make()
+    fake_theme_script(repo, mode)
+    (repo / dc.GENERATED[0]).unlink()
+    (repo / dc.GENERATED[1]).write_text("color: {{accent}};\n")
+    snap_files = {str(p): p.read_bytes() for p in repo.rglob("*") if p.is_file()}
+    res = rp.apply_repair(rp.plan_repair("theme.generated", s), s)
+    assert not res.ok and res.reason == reason and "put back" in res.detail, (mode, res)
+    assert {str(p): p.read_bytes() for p in repo.rglob("*") if p.is_file()} == snap_files, mode
+# the script times out
+home, repo, s = make()
+fake_theme_script(repo, "ok")
+(repo / dc.GENERATED[0]).unlink()
+plan = rp.plan_repair("theme.generated", s)
+real_run = subprocess.run
+subprocess.run = lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired("theme-switch", 60))
+try:
+    res = rp.apply_repair(plan, s)
+finally:
+    subprocess.run = real_run
+assert not res.ok and res.reason == "failed" and not (repo / dc.GENERATED[0]).exists(), res
+
+
 # ---- the CLI: preview only, stable JSON, exit codes (0 plan, 1 nothing to repair, 2 cannot)
 PRIMO = str(Path(__file__).resolve().parent / "primo")
 home, repo, s = make()
@@ -188,5 +355,21 @@ assert code == 0 and doc["blocked"] is None and doc["applied"] is False and doc[
 code, out, _e = cli("--repair", "config.json")
 assert code == 0 and "restore-file" in out and "nothing is written" in out and "undo:" in out
 assert cli("--repair", "service.hub")[0] == 2 and "not-allowlisted" in cli("--repair", "service.hub")[1]
+
+# ---- the Doctor itself never repairs: no import, no default action
+assert "import repair_core" not in Path(dc.__file__).read_text() and "apply_repair" not in Path(dc.__file__).read_text()
+
+home, repo, s = make()
+cenv = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", NO_COLOR="1")
+snapshot(home)
+(home / ".config/primo/modes.json").write_text("[")
+assert cli("--apply")[0] == 64, "--apply alone is a usage error"
+code, out, _e = cli("--repair", "config.json", "--apply")
+assert code == 0 and "done" in out and "journal:" in out and (home / ".config/primo/modes.json").read_text() == '[{"id": "work"}]', out
+code, out, _e = cli("--repair", "config.json", "--apply", "--json")
+doc = json.loads(out)
+assert code == 0 and doc["result"]["ok"] and not doc["result"]["changed"] and doc["result"]["reason"] == "nothing-to-repair" and doc["applied"] is False
+assert cli("--repair", "service.hub", "--apply")[0] == 2
+
 
 print("ok: repair")
