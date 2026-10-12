@@ -7,7 +7,7 @@
     primo config path         the folders and files Primo reads
     primo config show         the settings in effect and where each comes from (private links and snippet texts hidden)
     primo config validate     check every settings file; exit 2 naming the file and line of the first problem in each
-    primo update check        is this checkout ready for a manual `git pull`? (read-only)
+    primo update check        is this checkout ready for a manual `git pull`? (read-only; --remote also asks GitHub for the latest release)
     primo restore ID          show what restoring a snapshot would change; --apply restores it, --rollback JOURNAL undoes it
     primo snapshot            copy your Primo settings into a private snapshot (--dry-run lists what it would take); also: list, show ID, remove ID
 
@@ -219,9 +219,12 @@ def cmd_update(args):
         return 64
     out = make_out(args)
     report = uc.preflight()
+    remote = None
+    if args.remote:
+        remote = uc.check_release(uc.current_version(), url=uc.releases_url(os.environ.get("PRIMO_RELEASES_URL", "")))
     if args.json:
         print(json.dumps({"version": 1, "verdict": report.verdict, "revision": report.revision, "branch": report.branch, "ahead": report.ahead,
-                          "behind": report.behind, "checks": [c.__dict__ for c in report.checks]}, indent=2))
+                          "behind": report.behind, "checks": [c.__dict__ for c in report.checks], "remote": remote.__dict__ if remote else None}, indent=2))
         return report.exit_code()
     colour = {uc.OK: COLOUR[dc.PASS], uc.WARN: COLOUR[dc.WARNING], uc.BLOCK: COLOUR[dc.FAIL]}
     mark = {uc.OK: "ok", uc.WARN: "!!", uc.BLOCK: "XX"}
@@ -230,6 +233,24 @@ def cmd_update(args):
         print(f"  {out.c(colour[c.level], mark[c.level])}  {c.title}: {c.detail}")
         if c.hint and c.level != uc.OK:
             print(f"       try: {c.hint}")
+    if remote:
+        print("\n" + out.c("1", "Latest release") + out.c("2", "  (asked GitHub just now, nothing was sent but this request)"))
+        words = {"newer": f"{remote.latest} is available (you have {remote.current})", "current": f"you have the latest release, {remote.latest}",
+                 "ahead": f"your version {remote.current} is newer than the latest release {remote.latest}", "unknown": remote.detail or "no answer",
+                 "offline": remote.detail, "rate-limited": remote.detail, "redirected": remote.detail, "too-large": remote.detail, "malformed": remote.detail}
+        print(f"  {out.c(COLOUR[dc.WARNING] if remote.status in ('newer',) else COLOUR[dc.PASS] if remote.status in ('current', 'ahead') else COLOUR[dc.SKIPPED], remote.status)}  {words[remote.status]}")
+        if remote.last_known:
+            print(f"       last known answer: {remote.last_known}; that is a hint, not a check")
+        if remote.name or remote.published:
+            print(f"       {remote.name}  {remote.published}".rstrip())
+        if remote.url:
+            print(f"       {remote.url}")
+        if remote.breaking:
+            print("       the notes mention a breaking change: read them before updating")
+        if remote.notes:
+            print("       release notes (text from the internet, shown as plain text):")
+            for line in remote.notes.splitlines()[:30]:
+                print("         | " + line)
     word = {"ready": "READY", "ready-with-warnings": "READY, with warnings", "blocked": "BLOCKED"}[report.verdict]
     print(f"\n  {out.c(colour[uc.OK] if report.verdict == 'ready' else colour[uc.WARN] if report.verdict != 'blocked' else colour[uc.BLOCK], word)}"
           "  Primo does not update itself: when you are ready, run `git pull` in the checkout.")
@@ -432,6 +453,7 @@ def main(argv=None):
                         description="check: looks at the git checkout, your settings files, the tools Primo needs and your last settings snapshot, "
                                     "and says whether `git pull` is safe to try. Never fetches, pulls or changes anything.")
     sp.add_argument("action", nargs="?", metavar="check")
+    sp.add_argument("--remote", action="store_true", help="also ask GitHub for the latest release (the only network access; off unless you add it)")
     sp.add_argument("--json", action="store_true", help="machine-readable output on stdout")
     sp.add_argument("--no-color", action="store_true", help="never use colours")
     sp.set_defaults(fn=cmd_update)

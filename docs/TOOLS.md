@@ -167,6 +167,7 @@ primo restore ID             # what restoring a snapshot would create or replace
 primo restore ID --apply     # restore it (--only NAME ..., --include-machine); keeps a copy of each replaced file and a journal
 primo restore --rollback J   # undo that restore from its journal id
 primo update check           # is this checkout ready for a manual `git pull`? read-only; exit 0 ready, 1 warnings, 2 blocked
+primo update check --remote  # also ask GitHub once for the latest release (the only network access; never without --remote)
 ```
 
 If you turned on Primo's systemd user units (`scripts/install.sh --services`, see `docs/ARCHITECTURE.md`), the Services checks also say how each
@@ -188,7 +189,9 @@ the time hub keeps its data in memory (log out and in, or restart it), and a res
 
 `primo update check` looks at your git checkout (branch, local changes, how far it is from the remote as of your last fetch), your settings files, the tools
 Primo needs and your last snapshot, and says whether a `git pull` is likely to go smoothly. It never fetches, pulls, resets or installs anything, and Primo
-never updates itself; a snapshot only covers your Primo settings, not the repository or packages. Remotes are shown without any user name or token.
+never updates itself; a snapshot only covers your Primo settings, not the repository or packages. Remotes are shown without any user name or token. With `--remote` it also asks GitHub once for the latest release (a 5 second limit, no redirects, nothing
+sent but a User-Agent, never in the background) and shows its version, date and notes as plain text; a lookup that fails says offline, rate-limited or malformed
+and never "up to date", and an older answer is shown only as a hint with its age.
 
 Apart from `primo snapshot` and `primo restore --apply`/`--rollback`, which write only what is described above, nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into

@@ -6,12 +6,15 @@ writes a file (git runs with optional locks off, so even `git status` does not r
 `git pull` after reading this. `check_release` (the only network access) is added below, behind an explicit command.
 """
 import importlib.util
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,3 +203,126 @@ def preflight(repo=None, env=None, home=None, now=None):
 
     verdict = "blocked" if any(c.level == BLOCK for c in checks) else "ready-with-warnings" if any(c.level == WARN for c in checks) else "ready"
     return UpdateReport(verdict, revision, branch, ahead, behind, tuple(checks))
+
+
+# ---------------------------------------------------------------------------------------------------- release lookup (T066)
+# The only network access in Primo's update code, and only when the user asks (`primo update check --remote`): one GET, no redirects, a short
+# timeout and a size cap, nothing sent but a User-Agent, nothing run or applied from what comes back.
+RELEASES_URL = "https://api.github.com/repos/sya17/primo/releases/latest"
+RELEASE_PAGE = "https://github.com/sya17/primo/releases/"
+REMOTE_TIMEOUT = 5
+REMOTE_CAP = 64 * 1024
+NOTES_CAP = 2000
+_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$")
+
+
+@dataclass(frozen=True)
+class RemoteResult:
+    status: str               # newer, current, ahead, unknown, offline, rate-limited, redirected, too-large, malformed
+    current: str
+    latest: str = ""
+    published: str = ""
+    name: str = ""
+    notes: str = ""           # untrusted text from the release, shortened and made printable; never executed
+    url: str = ""
+    breaking: bool = False    # the notes mention a breaking change
+    detail: str = ""
+    last_known: str = ""      # from the cache, only when this lookup gave no answer; never a proof of "up to date"
+
+
+def releases_url(override=""):
+    """The release page to ask: GitHub's, unless a test points PRIMO_RELEASES_URL at this machine (any other override is ignored)."""
+    return override if re.match(r"^http://(127\.0\.0\.1|localhost)[:/]", override or "") else RELEASES_URL
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def _fetch(url, timeout):
+    """(status code, headers, body bytes) for one GET, or raises URLError/OSError. Never follows a redirect (a 3xx comes back as its code)."""
+    req = urllib.request.Request(url, headers={"User-Agent": "primo-update-check", "Accept": "application/vnd.github+json"})
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(req, timeout=timeout) as r:
+            return r.status, dict(r.headers), r.read(REMOTE_CAP + 1)
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers or {}), e.read(REMOTE_CAP + 1)
+
+
+def printable(text, limit):
+    """Remote text made safe to print: control characters (escape sequences included) become '?', length capped."""
+    clean = "".join(ch if ch == "\n" or ch >= " " and ch != "\x7f" else "?" for ch in text.replace("\r", ""))
+    return clean if len(clean) <= limit else clean[:limit].rstrip() + " [shortened]"
+
+
+def parse_version(text):
+    m = _VERSION.match((text or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def current_version(repo=None):
+    """The installed version, from the changelog heading (the same source as `primo --version`)."""
+    repo = Path(repo) if repo else default_repo()
+    try:
+        m = re.search(r"^##\s+\[?(\d+\.\d+\.\d+)", (repo / "CHANGELOG.md").read_text(), re.M)
+        return m.group(1) if m else ""
+    except (OSError, TypeError):
+        return ""
+
+
+def _cache_path(env=None, home=None):
+    return cc.state_home(env, home) / "hyprland-dotfiles" / "update-check.json"
+
+
+def check_release(current, url=RELEASES_URL, fetch=_fetch, env=None, home=None, now=None):
+    """Ask for the latest release once and say what it is, honestly: a lookup that fails is `offline`, `rate-limited`, `redirected`, `too-large`
+    or `malformed`, never "up to date". After a failure the last answer is shown as `last_known` with its age, as a hint only."""
+    now = now or time.time()
+    cache = _cache_path(env, home)
+
+    def failed(status, detail):
+        known = ""
+        try:
+            old = json.loads(cache.read_text())
+            if isinstance(old.get("latest"), str) and parse_version(old["latest"]) and isinstance(old.get("checked_at"), (int, float)):
+                known = f"{old['latest']} (looked up {max(0, (now - old['checked_at']) / 86400):.0f} day(s) ago)"
+        except (OSError, ValueError, AttributeError):
+            pass
+        return RemoteResult(status, current, detail=detail, last_known=known)
+
+    try:
+        code, headers, body = fetch(url, REMOTE_TIMEOUT)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return failed("offline", f"could not reach the release page ({type(e).__name__})")
+    low = {str(k).lower(): str(v) for k, v in headers.items()}
+    if 300 <= code < 400:
+        return failed("redirected", "the release page answered with a redirect; it was not followed")
+    if code == 429 or (code == 403 and low.get("x-ratelimit-remaining") == "0"):
+        return failed("rate-limited", "GitHub is limiting requests from this address; try again later")
+    if len(body) > REMOTE_CAP:
+        return failed("too-large", "the answer was larger than expected and was dropped")
+    if code != 200:
+        return failed("unknown", f"the release page answered HTTP {code}")
+    try:
+        doc = json.loads(body.decode("utf-8"))
+        tag, published = doc["tag_name"], doc.get("published_at") or ""
+        latest = parse_version(tag)
+        if not isinstance(doc, dict) or latest is None or not isinstance(published, str) or (published and not _DATE.match(published)):
+            raise ValueError
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        return failed("malformed", "the answer is not a release description")
+    name = printable(str(doc.get("name") or "")[:200], 120)
+    notes = printable(str(doc.get("body") or ""), NOTES_CAP)
+    page = doc.get("html_url") if isinstance(doc.get("html_url"), str) and doc["html_url"].startswith(RELEASE_PAGE) else ""
+    mine = parse_version(current)
+    status = "unknown" if mine is None else "newer" if latest > mine else "current" if latest == mine else "ahead"
+    tag_text = "{}.{}.{}".format(*latest)
+    try:
+        cc.atomic_write(cache, json.dumps({"latest": tag_text, "checked_at": now, "published": published}), 0o600)
+    except OSError:
+        pass
+    return RemoteResult(status, current, tag_text, published, name, notes, page, bool(re.search(r"BREAKING[ -]CHANGE", notes, re.I)),
+                        "" if mine is not None else "the installed version could not be read")

