@@ -98,6 +98,7 @@ class Result:
     fix: str = ""               # a command to suggest, never run
     feature: str = ""
     state: str = ""             # for a service unit: unmanaged, not installed, disabled, starting, running, stopped or failed
+    repairable: bool = False    # Primo can fix this itself (see repair_core.REPAIRABLE); every other finding is guidance only
 
 
 class System:
@@ -327,7 +328,8 @@ def check_configuration(s):
             bad.append(exc)
     out.append(Result("config.json", "Configuration", "Settings files", PASS if not bad else FAIL,
                       "All settings files are valid" if not bad else "; ".join(f"{e.where}: {e.problem}" for e in bad)[:300],
-                      "" if not bad else f"{bad[0].hint or 'Fix the file'}. Before saving over a broken one, Primo keeps a copy as <name>.bad-<time>"))
+                      "" if not bad else f"{bad[0].hint or 'Fix the file'}. Before saving over a broken one, Primo keeps a copy as <name>.bad-<time>",
+                      repairable=bool(bad) and not any(e.newer for e in bad)))
     wb = cfg / "waybar" / "config.jsonc"
     if s.exists(wb):
         try:
@@ -371,7 +373,7 @@ def check_theme(s):
                     pass
         if missing or unresolved:
             msg = ("Missing: " + ", ".join(missing) if missing else "") + ("; unresolved placeholders in: " + ", ".join(unresolved) if unresolved else "")
-            out.append(Result("theme.generated", "Theme", "Generated theme files", FAIL, msg.strip("; "), f"hypr-theme {current or 'primo-dusk'}"))
+            out.append(Result("theme.generated", "Theme", "Generated theme files", FAIL, msg.strip("; "), f"hypr-theme {current or 'primo-dusk'}", repairable=True))
         else:
             out.append(Result("theme.generated", "Theme", "Generated theme files", PASS, f"{len(GENERATED)} files present, no placeholders left"))
     fonts = s.fonts()

@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "config" / "hypr" / "scripts"))
 import config_core as cc  # noqa: E402
 import doctor_core as dc  # noqa: E402
 import recovery_core as rc  # noqa: E402
+import repair_core as rp  # noqa: E402
 import update_core as uc  # noqa: E402
 
 MARK = {dc.PASS: "ok", dc.WARNING: "!!", dc.FAIL: "XX", dc.SKIPPED: "--"}
@@ -66,7 +67,27 @@ def state_value(name, default=""):
         return default
 
 
+def cmd_repair(args):
+    out = make_out(args)
+    plan = rp.plan_repair(args.repair)
+    if args.json:
+        print(json.dumps({"version": 1, "finding": plan.finding_id, "title": plan.title, "blocked": plan.blocked, "blocked_detail": plan.blocked_detail,
+                          "steps": [x.__dict__ for x in plan.steps], "effects": list(plan.effects), "backup": plan.backup, "recovery": plan.recovery,
+                          "applied": False}, indent=2))
+    else:
+        print(out.c("1", f"Repair {plan.finding_id}: {plan.title}") + out.c("2", "  (nothing is written)"))
+        if plan.blocked:
+            print(f"  cannot be done: {plan.blocked}: {plan.blocked_detail}")
+        else:
+            for x in plan.steps:
+                print(f"  {x.kind}  {x.target}\n      {x.detail}")
+            print(f"  writes: {len(plan.effects)} file(s)\n  kept for undo: {plan.backup}\n  undo: {plan.recovery}")
+    return 2 if plan.blocked not in (None, "nothing-to-repair") else 1 if plan.blocked else 0
+
+
 def cmd_doctor(args):
+    if args.repair:
+        return cmd_repair(args)
     results = dc.run_all()
     if args.category:
         wanted = args.category.lower()
@@ -92,6 +113,8 @@ def cmd_doctor(args):
             print(f"  {out.mark(r.status)}  {r.title}: {r.message}")
             if r.fix and r.status in (dc.WARNING, dc.FAIL):
                 print(f"       try: {r.fix}")
+            if r.repairable and r.status in (dc.WARNING, dc.FAIL):
+                print(f"       Primo can repair this: primo doctor --repair {r.id}")
     c = sm["counts"]
     print(f"\nHealth: {out.c(COLOUR[dc.PASS] if sm['health'] == 'HEALTHY' else COLOUR[dc.WARNING] if sm['health'] == 'DEGRADED' else COLOUR[dc.FAIL], sm['health'])}"
           f"  ({c[dc.PASS]} ok, {c[dc.WARNING]} warnings, {c[dc.FAIL]} failures, {c[dc.SKIPPED]} skipped)")
@@ -418,6 +441,7 @@ def main(argv=None):
         if name == "doctor":
             sp.add_argument("--category", help="only one of: " + ", ".join(dc.CATEGORIES))
             sp.add_argument("-v", "--verbose", action="store_true", help="also list the checks that pass")
+            sp.add_argument("--repair", metavar="FINDING", help="show the plan to repair one finding (" + ", ".join(rp.REPAIRABLE) + "); the Doctor itself stays read-only")
         sp.set_defaults(fn=fn)
     sp = sub.add_parser("config", help="the settings files: where they are, what is in effect, whether they are valid",
                         description="path: the folders and files Primo reads. show: the settings in effect and where each comes from. "

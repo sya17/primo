@@ -188,6 +188,7 @@ assert config_result().status == "pass"
 (h / ".config/primo/workflow.json").write_text('{\n "ics": ["https://calendar.example/private.ics"],\n "snippets": [ x ]\n}')
 r = config_result()
 assert r.status == "fail" and "workflow.json:3:" in r.message and "private.ics" not in r.message and r.fix, (r.message, r.fix)
+assert r.repairable is True, "a file that does not parse is one of the findings Primo can repair"
 (h / ".config/primo/workflow.json").write_text("{}")
 (h / ".config/primo/modes.json").write_text("{}")
 r = config_result()
@@ -209,7 +210,7 @@ assert status_of(dc.run_all(Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=rep
 (repo / "config" / "waybar.gone").rename(repo / "config" / "waybar")
 (repo / dc.GENERATED[0]).write_text("color = {{accent}}\n")
 t = next(r for r in dc.run_all(Fake(h, ALL_TOOLS, ALL_PROCS, active=UNITS, repo=repo)) if r.id == "theme.generated")
-assert t.status == "fail" and "placeholders" in t.message and "primo-dusk" in t.fix
+assert t.status == "fail" and "placeholders" in t.message and "primo-dusk" in t.fix and t.repairable is True
 (repo / dc.GENERATED[0]).write_text("ok\n")
 
 # ---- system and theme extras

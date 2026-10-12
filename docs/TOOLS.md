@@ -166,6 +166,7 @@ primo snapshot list          # also: show ID (checks its integrity), remove ID
 primo restore ID             # what restoring a snapshot would create or replace; writes nothing
 primo restore ID --apply     # restore it (--only NAME ..., --include-machine); keeps a copy of each replaced file and a journal
 primo restore --rollback J   # undo that restore from its journal id
+primo doctor --repair ID     # the plan to fix one finding Primo can fix itself (config.json, theme.generated); writes nothing
 primo update check           # is this checkout ready for a manual `git pull`? read-only; exit 0 ready, 1 warnings, 2 blocked
 primo update check --remote  # also ask GitHub once for the latest release (the only network access; never without --remote)
 ```
@@ -192,6 +193,11 @@ Primo needs and your last snapshot, and says whether a `git pull` is likely to g
 never updates itself; a snapshot only covers your Primo settings, not the repository or packages. Remotes are shown without any user name or token. With `--remote` it also asks GitHub once for the latest release (a 5 second limit, no redirects, nothing
 sent but a User-Agent, never in the background) and shows its version, date and notes as plain text; a lookup that fails says offline, rate-limited or malformed
 and never "up to date", and an older answer is shown only as a hint with its age.
+
+The Doctor marks the two findings Primo can fix itself: a settings file that does not parse (`config.json`: put that one file back from the newest snapshot that holds a
+good copy) and generated theme files that are missing or unfinished (`theme.generated`: run `scripts/theme-switch --no-reload` for the current theme).
+`primo doctor --repair ID` shows exactly which files would be written, what is kept for undoing it, and why a repair is not possible (no snapshot, a snapshot whose copy is
+no good, a file from a newer Primo, a missing theme). Every other finding stays text for you to read; no hint is ever run.
 
 Apart from `primo snapshot` and `primo restore --apply`/`--rollback`, which write only what is described above, nothing here changes the system, `primo config` included: a fix is only ever printed as a command for you to run. Exit codes: 0 healthy, 1 warnings, 2 at least one
 failure, 64 usage error. Colours are off when `NO_COLOR` is set or the output is not a terminal. `scripts/install.sh` links `primo` into
