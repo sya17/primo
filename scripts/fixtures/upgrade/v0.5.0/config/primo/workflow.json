@@ -1,0 +1,17 @@
+{
+ "ics": [
+  "https://calendar.invalid/work.ics"
+ ],
+ "ics_alert": 10,
+ "app_rules": [],
+ "snippets": [
+  {
+   "trigger": "sig",
+   "text": "Thanks, and regards"
+  }
+ ],
+ "backup": {
+  "on": false,
+  "push": false
+ }
+}

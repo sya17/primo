@@ -1,0 +1,90 @@
+{
+ "reminders": [
+  {
+   "id": "r1",
+   "title": "call the dentist",
+   "due": "2026-10-20T09:00",
+   "repeat": null,
+   "done": false,
+   "fired": false
+  },
+  {
+   "id": "r2",
+   "title": "water plants",
+   "due": "2026-10-13T08:00",
+   "repeat": "daily",
+   "done": false,
+   "fired": false
+  }
+ ],
+ "alarms": [
+  {
+   "id": "a1",
+   "time": "07:30",
+   "label": "wake up",
+   "days": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "on": true,
+   "next": null
+  }
+ ],
+ "timers": [
+  {
+   "id": "t1",
+   "total": 600,
+   "end": 0,
+   "left": 300.0
+  }
+ ],
+ "world": [],
+ "work": {
+  "days": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ],
+  "start": "09:00",
+  "end": "17:00",
+  "end_on": true,
+  "end_notice": 10,
+  "break_on": false,
+  "break_every": 50,
+  "dnd_focus": true
+ },
+ "pomodoro": {
+  "focus": 25,
+  "short": 5,
+  "long": 15,
+  "cycles": 4
+ },
+ "session": {
+  "phase": "idle",
+  "end": 0.0,
+  "cycle": 0,
+  "left": null,
+  "label": "",
+  "category": "",
+  "seg": null,
+  "worked": 0.0
+ },
+ "stopwatch": {
+  "running": false,
+  "start": 0.0,
+  "elapsed": 0.0,
+  "laps": []
+ },
+ "focus": {
+  "label": "",
+  "category": "Work"
+ },
+ "log": [],
+ "last_tab": "calendar",
+ "fired": {}
+}

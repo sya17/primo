@@ -1,0 +1,101 @@
+[
+ {
+  "id": "work",
+  "name": "Work",
+  "icon": "applications-engineering",
+  "ask_dir": true,
+  "vpn": "",
+  "power": "performance",
+  "dnd": true,
+  "focus": true,
+  "category": "Work",
+  "apps": [
+   {
+    "cmd": "kitty --directory {dir}",
+    "ws": 1,
+    "match": ""
+   },
+   {
+    "cmd": "code {dir}",
+    "ws": 2,
+    "match": "com.microsoft.VSCode"
+   }
+  ]
+ },
+ {
+  "id": "research",
+  "name": "Research",
+  "icon": "system-search",
+  "ask_dir": false,
+  "vpn": "",
+  "power": "balanced",
+  "dnd": true,
+  "focus": true,
+  "category": "Research",
+  "apps": [
+   {
+    "cmd": "firefox",
+    "ws": 2,
+    "match": "firefox"
+   },
+   {
+    "cmd": "obsidian",
+    "ws": 3,
+    "match": "obsidian"
+   },
+   {
+    "cmd": "kitty",
+    "ws": 1,
+    "match": ""
+   }
+  ]
+ },
+ {
+  "id": "writing",
+  "name": "Writing",
+  "icon": "document-edit",
+  "ask_dir": false,
+  "vpn": "",
+  "power": "",
+  "dnd": true,
+  "focus": true,
+  "category": "Work",
+  "apps": [
+   {
+    "cmd": "obsidian",
+    "ws": 1,
+    "match": "obsidian"
+   }
+  ]
+ },
+ {
+  "id": "relax",
+  "name": "Relax",
+  "icon": "applications-multimedia",
+  "ask_dir": false,
+  "vpn": "",
+  "power": "",
+  "dnd": false,
+  "focus": false,
+  "category": "Personal",
+  "apps": []
+ },
+ {
+  "id": "docs",
+  "name": "Docs",
+  "icon": "document-edit",
+  "ask_dir": false,
+  "vpn": "",
+  "power": "",
+  "dnd": false,
+  "focus": false,
+  "category": "Work",
+  "apps": [
+   {
+    "cmd": "kitty",
+    "ws": 3,
+    "match": ""
+   }
+  ]
+ }
+]
