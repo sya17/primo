@@ -106,7 +106,7 @@ Primo is developed and tested on one machine: Arch Linux, Hyprland 0.56, an HP l
 
 | | |
 | --- | --- |
-| Checked on every push | Shell syntax and ShellCheck, Python and Lua syntax, all five themes render with no placeholder left, generated TOML, JSON and SVG are valid, and the logic of the hub, modes, calendar feeds and activity monitor has tests. [![CI](https://github.com/sya17/primo/actions/workflows/ci.yml/badge.svg)](https://github.com/sya17/primo/actions/workflows/ci.yml) |
+| Checked on every push | Shell syntax and ShellCheck, Python and Lua syntax, all five themes render with no placeholder left, generated TOML, JSON and SVG are valid, and the logic of the hub, modes, calendar feeds, activity monitor, settings snapshots, restore, update check and repairs has tests, as do a fresh and a repeated install on a copy and reading the settings written by releases 0.2 to 0.7. [![CI](https://github.com/sya17/primo/actions/workflows/ci.yml/badge.svg)](https://github.com/sya17/primo/actions/workflows/ci.yml) |
 | Checked by hand on that machine | The bar, launcher, Settings, time hub, activity monitor, theme switching, and the Firefox and VS Code themes. |
 | Not tested | NVIDIA graphics, several monitors, a display scale above 1, other distributions, and the boot splash on a real boot. Video wallpapers need `mpvpaper`, and the Docker view needs your user in the `docker` group. |
 
