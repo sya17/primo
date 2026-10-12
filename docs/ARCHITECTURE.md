@@ -88,6 +88,23 @@ Running and paused timers keep their end and remaining time. A focus block that 
 the restart. Nothing runs while the session is stopped: a logout does not execute timers early. The Done and Snooze buttons of a notification shown
 before a restart no longer work, because the process that waited for the click is gone.
 
+## Recovery, updates and repairs
+
+Four small standard-library modules, all behind the `primo` command and none of them resident or automatic:
+
+- `recovery_core.py` copies and restores Primo's own settings, from a fixed inventory (not your home folder): the settings files in `~/.config/primo`, the time
+  hub's data file, and a few state files such as the current theme. Each file has a class: portable, machine-specific, or sensitive (calendar links, snippets,
+  launcher history; only taken with `--include-sensitive`). A snapshot is a private folder (`~/.local/share/primo/snapshots/<id>`) with a manifest of sizes and
+  SHA-256 hashes, built aside and renamed when complete. A restore is planned first (create, replace, same or skip, per file), refused for any snapshot that was
+  changed or is not complete, written one file at a time through the same atomic write the settings use, and journaled with a private copy of every replaced file
+  (`~/.local/share/primo/recovery/<id>`), so `primo restore --rollback` can undo it without overwriting anything you edited since.
+- `update_core.py` answers "is a manual `git pull` likely to go well?" from the checkout, the settings files and the last snapshot, without ever fetching,
+  pulling or changing anything. Only `--remote` asks GitHub, once, for the latest release, with strict limits, and shows its text as plain text.
+- `repair_core.py` holds the reviewed list of findings Primo may fix itself (a settings file that does not parse, generated theme files missing) and applies them
+  with the same safeguards: re-check the plan, keep what is replaced, read the result back. `scripts/theme-switch --generate-only` writes just the generated files
+  in the repository.
+- What none of this does: roll back packages or the repository, back up your home folder, export secrets, update Primo, or run a command taken from a diagnostic.
+
 ## Logs
 
 Each resident service calls `config_core.setup_logging("<name>")` once and logs through Python's `logging` (`primo.<name>`):

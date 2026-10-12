@@ -372,4 +372,49 @@ assert code == 0 and doc["result"]["ok"] and not doc["result"]["changed"] and do
 assert cli("--repair", "service.hub", "--apply")[0] == 2
 
 
+# ---- acceptance: one story end to end, the read-only commands stay read-only, and no secret or private file ever reaches a snapshot
+home, repo, s = make()
+cenv = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME="", XDG_DATA_HOME="", XDG_STATE_HOME="", NO_COLOR="1", PRIMO_REPO=str(repo))
+SECRET = "S3CR3T-" + "TOKEN"
+(home / ".config/primo/workflow.json").write_text(json.dumps({"ics": ["https://calendar.invalid/feed?token=" + SECRET], "snippets": [{"text": SECRET}]}))
+(home / ".config/primo/workflow.json").chmod(0o600)
+(home / ".local/state/hyprland-dotfiles/launcher-history.json").write_text(json.dumps(["search " + SECRET]))
+(home / ".local/share/primo/hub.json").write_text(json.dumps({"reminders": [{"title": "call", "due": None}]}))
+for private in (".ai/rules.md", ".tasks/plan.md", "Notes/diary.md", ".config/keepassxc/db.kdbx", ".config/mozilla/prefs.js", "workspace/secret.txt", ".ssh/id_ed25519"):
+    (home / private).parent.mkdir(parents=True, exist_ok=True)
+    (home / private).write_text("private " + SECRET)
+def run(*a, extra=None):
+    r = subprocess.run([sys.executable, PRIMO, *a], env=dict(cenv, **(extra or {})), capture_output=True, text=True, timeout=60)
+    return r.returncode, r.stdout, r.stderr
+before = tree(home)
+for cmd in (("config", "path"), ("config", "show"), ("config", "validate"), ("snapshot", "--dry-run"), ("snapshot", "list"), ("update", "check"), ("doctor", "--repair", "config.json"),
+            ("doctor", "--repair", "theme.generated"), ("doctor", "--repair", "nope")):
+    run(*cmd)
+assert tree(home) == before, "the read-only commands change nothing, not even a timestamp"
+code, out, _e = run("snapshot")
+assert code == 0
+snap_dir = home / ".local/share/primo/snapshots"
+everything = b"".join(p.read_bytes() for p in snap_dir.rglob("*") if p.is_file())
+assert SECRET.encode() not in everything and b"private " not in everything and b"diary" not in everything, "no secret, private file or planning folder is in a snapshot"
+sid = rc.list_snapshots(env={}, home=home)[0].id
+man = rc.read_manifest(sid, {}, home)
+assert {f.name for f in man.files} == {"modes", "ui", "hub", "current"} and ("workflow", "sensitive-skipped") in man.skipped
+code, out, _e = run("snapshot", "--include-sensitive")
+assert code == 0 and SECRET.encode() in b"".join(p.read_bytes() for p in snap_dir.rglob("*") if p.is_file()), "taken only when asked for"
+# the story: settings break, the Doctor's plan fixes them, a restore brings back an older hub, a rollback undoes it, an update check reads all of it
+(home / ".config/primo/modes.json").write_text("[")
+(home / ".local/share/primo/hub.json").write_text(json.dumps({"reminders": []}))
+code, out, _e = run("doctor", "--repair", "config.json", "--apply")
+assert code == 0 and (home / ".config/primo/modes.json").read_text() == '[{"id": "work"}]', out
+code, out, _e = run("restore", sid, "--only", "hub", "--apply")
+assert code == 0 and json.loads((home / ".local/share/primo/hub.json").read_text())["reminders"][0]["title"] == "call", out
+code, out, _e = run("restore", "--rollback", sorted(p.name for p in (home / ".local/share/primo/recovery").iterdir())[-1])
+assert code == 0 and json.loads((home / ".local/share/primo/hub.json").read_text())["reminders"] == []
+code, out, _e = run("update", "check", "--json")
+doc = json.loads(out)
+assert {c["id"]: c["level"] for c in doc["checks"]}["config"] == "ok" and {c["id"] for c in doc["checks"]} >= {"snapshot", "checkout", "tools"}
+# nothing in the commands claims more than they do
+help_text = run("snapshot", "--help")[1] + run("restore", "--help")[1] + run("update", "--help")[1] + run("doctor", "--help")[1]
+assert "rollback" in run("restore", "--help")[1] and "package" not in help_text.lower().replace("not the repository or packages", "")
+
 print("ok: repair")

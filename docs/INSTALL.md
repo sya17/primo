@@ -58,6 +58,20 @@ Log out and in once after the first install (Qt apps read `QT_QPA_PLATFORMTHEME=
 Delete the links in `~/.config` and move your `<app>.bak-<timestamp>` folders back. Files the theme tools changed outside the links are
 backed up once as `*.bak-primo` the first time they are touched. Each optional script below has its own `--uninstall` or `--remove`.
 
+## Before you update
+
+Primo updates by `git pull` in its folder; nothing updates it for you. Three read-only helpers make that safer:
+
+```bash
+primo snapshot                  # copy your Primo settings aside (add --dry-run to see what it takes; --include-sensitive adds calendar links and snippets)
+primo update check              # is the checkout ready for a pull? (--remote also asks GitHub what the latest release is)
+git pull                        # you run this
+primo doctor                    # afterwards: anything broken? `primo doctor --repair ID` shows what Primo can fix
+```
+
+If settings go wrong afterwards, `primo restore ID` previews what a snapshot would change and `primo restore ID --apply` puts it back, with a journal you can undo.
+A snapshot covers your Primo settings only: not the repository, your packages or the rest of your home folder.
+
 ## Optional: run the services under systemd
 
 By default Hyprland starts the resident services (launcher, switcher, overview, activity, time hub) at login and nothing restarts one that
