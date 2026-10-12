@@ -64,6 +64,7 @@ python3 scripts/test-update.py >"$work/update.out" 2>&1 && pass "update check: r
 python3 scripts/test-repair.py >"$work/repair.out" 2>&1 && pass "doctor repairs: two reviewed findings, a read-only plan, no command run" || { fail "doctor repairs"; tail -6 "$work/repair.out"; }
 python3 scripts/test-install.py >"$work/install.out" 2>&1 && pass "install: dry run writes nothing, repeat is idempotent, foreign config is moved aside, missing tools handled" || { fail "install"; tail -6 "$work/install.out"; }
 python3 scripts/test-upgrade.py >"$work/upgrade.out" 2>&1 && pass "upgrade: what releases 0.2 to 0.7 wrote is read whole, kept, and restorable; no way to reset or pull" || { fail "upgrade"; tail -6 "$work/upgrade.out"; }
+python3 scripts/test-release.py >"$work/release.out" 2>&1 && pass "release route: manual, main only, behind a green ci, no tag moved, version from commits only" || { fail "release route"; tail -6 "$work/release.out"; }
 while IFS= read -r f; do
     python3 -m py_compile "$f" 2>/dev/null && pass "$f" || fail "$f"
 done < <(find scripts config -type f -name '*.py')
