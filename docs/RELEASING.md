@@ -58,6 +58,21 @@ pull request, which a squash merge turns into the commit).
 
 A tag `vMAJOR.MINOR.PATCH` marks a release, and it is never moved or deleted. A bad release is fixed forward with the next patch release.
 
+## What decides the number
+
+Only the commits since the last tag decide it. A `fix`, `perf` or `revert` gives a patch, a `feat` or a breaking change gives a minor, and `test`, `docs`,
+`chore`, `ci`, `style`, `build` and `refactor` alone give nothing: the dry run then says there are no relevant changes and no release is cut. A stretch of
+work that is only checking and documentation therefore has no number of its own, and a single fix is a patch release however large the effort behind it was.
+Nobody types a version and no commit is written just to move it.
+
+## Going to 1.0.0
+
+Below 1.0.0 a breaking change raises only the minor number (`.releaserc.json`), so 1.0.0 cannot happen by accident. When the maintainer decides it is time
+(the configuration format and the update path are stable), the route is two reviewed commits on `main`: one that changes the `breaking` rule in
+`.releaserc.json` from `minor` to `major`, and one with a `BREAKING CHANGE:` footer saying what the stable promise starts from. A dry run must then show
+1.0.0 before anything is created; this path has not been run yet and is checked only when it is used. After 1.0.0 the rules above apply with a major
+number for breaking changes and a `1.x` branch for fixes to an old line.
+
 ## The pipeline
 
 ```
