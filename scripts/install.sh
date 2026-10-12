@@ -124,6 +124,11 @@ run ln -sf "$root/scripts/primo" "$bin_dir/primo"
 echo "link: $bin_dir/primo"
 case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "note: add $bin_dir to PATH to use 'hypr-theme' and 'primo'" ;; esac
 
-"$root/scripts/configure-apps.sh" >/dev/null 2>&1 || true   # file manager prefs, defaults (safe to re-run)
-command -v code >/dev/null && python3 "$root/scripts/gen-vscode-theme.py" --install >/dev/null 2>&1 && echo "VS Code: Primo themes installed" || true
+if (( dry )); then
+    echo "[dry-run] $root/scripts/configure-apps.sh"
+    command -v code >/dev/null && echo "[dry-run] $root/scripts/gen-vscode-theme.py --install"
+else
+    "$root/scripts/configure-apps.sh" >/dev/null 2>&1 || true   # file manager prefs, defaults (safe to re-run)
+    command -v code >/dev/null && python3 "$root/scripts/gen-vscode-theme.py" --install >/dev/null 2>&1 && echo "VS Code: Primo themes installed" || true
+fi
 echo "Done. Log in to Hyprland, or run 'hyprctl reload' inside a session."
