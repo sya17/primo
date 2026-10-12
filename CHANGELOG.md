@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.1](https://github.com/sya17/primo/compare/v0.7.0...v0.7.1) (2026-10-12)
+
+### Fixed
+
+* **install:** a dry run no longer writes app settings ([b589b64](https://github.com/sya17/primo/commit/b589b64b2a239577d97aa9489ef782e322647404))
+
 ## [0.7.0](https://github.com/sya17/primo/compare/v0.6.0...v0.7.0) (2026-10-12)
 
 ### Added
