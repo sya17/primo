@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/sya17/primo/compare/v0.6.0...v0.7.0) (2026-10-12)
+
+### Added
+
+* **cli:** primo restore --apply writes a snapshot back, with a rollback ([63a560f](https://github.com/sya17/primo/commit/63a560f2d11f390d097450e89cb260d0ba9772cb))
+* **cli:** primo restore previews what a snapshot would change ([572384a](https://github.com/sya17/primo/commit/572384abcc0ac0b238fce904c1d39123094624bf))
+* **cli:** primo snapshot copies your settings into a private snapshot ([2a4632d](https://github.com/sya17/primo/commit/2a4632d46ebdfff024bb55bac0f87ec8f37ed72c))
+* **cli:** primo update check --remote shows the latest release ([317b06c](https://github.com/sya17/primo/commit/317b06c594bbfa312aacca1f65845e9c5c7b3c58))
+* **cli:** primo update check says if a manual update is safe to try ([8676bd3](https://github.com/sya17/primo/commit/8676bd3ab0c2004d8cd558c37aa6f70f2c7f2731))
+* **doctor:** doctor --repair --apply fixes two findings safely ([31c161c](https://github.com/sya17/primo/commit/31c161cedc179131d31712f6d3b9dac05ab4d432))
+* **doctor:** show the plan to repair two findings Primo can fix ([77fa6f8](https://github.com/sya17/primo/commit/77fa6f89088ac6946a89b9e751370dd7ad4aee85))
+* **recovery:** plan what a settings snapshot would hold ([630148b](https://github.com/sya17/primo/commit/630148b485ca375b33a2f691e264e8ca0a4e7d5a))
+
 ## [0.6.0](https://github.com/sya17/primo/compare/v0.5.0...v0.6.0) (2026-10-11)
 
 ### Added
